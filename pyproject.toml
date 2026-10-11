@@ -1,0 +1,28 @@
+[project]
+name = "opensv-train"
+version = "1.0.0"
+description = "Finetune Synthesizer V voice models."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "torch>=2.2",
+    "soundfile",
+    "praat-parselmouth",
+]
+
+[project.scripts]
+trainsv = "opensv_train.__main__:main"
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["opensv_train"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

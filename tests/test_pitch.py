@@ -1,0 +1,50 @@
+import dataclasses
+
+import numpy as np
+
+import parity
+from opensv_train.pitch import PitchModel, PitchNote, pad_pitch_notes
+from opensv_train.synthetic import random_phrase
+from opensv_train.voice import load_voice
+from test_duration import duration_model
+
+
+def pitch_model(voice):
+    return PitchModel(voice.models["pitch"], None if voice.info is None else voice.info.pitch_speaker)
+
+
+def random_pitch_notes(phone_sets, language, rng, notes=8):
+    syllables = random_phrase(phone_sets, language, rng, notes=notes)[1:-1]
+    result = []
+    for syllable in syllables:
+        silent = syllable.phonemes == ["sil"]
+        result.append(PitchNote(syllable, silence=silent, continuation=syllable.continuation, rap=bool(rng.random() < 0.2), tone=int(rng.integers(0, 5)), vibrato=float(rng.uniform(0.5, 1.5))))
+    return pad_pitch_notes(result)
+
+
+def note_json(notes):
+    return [{
+        "language": n.syllable.language, "phonemes": n.syllable.phonemes, "duration": n.syllable.seconds, "pitch": n.syllable.pitch,
+        "continuation": n.continuation, "silence": n.silence, "breath": n.breath, "rap": n.rap, "tone": n.tone, "vibrato": n.vibrato,
+    } for n in notes]
+
+
+def test_pitch_matches_engine(voice_path):
+    voice = load_voice(voice_path)
+    timing = duration_model(voice)
+    model = pitch_model(voice)
+    rng = np.random.default_rng(4)
+    for language in ("japanese", "mandarin", "english"):
+        notes = random_pitch_notes(model.phone_sets, language, rng)
+        if language == "english":
+            for note in notes[1:-1]:
+                note.syllable.pitch += 30
+        phonemes = timing.predict([note.syllable for note in notes])
+        envelope = rng.uniform(0.5, 1.2, 20000).astype(np.float32)
+        expected = parity.run({
+            "voice": voice_path, "command": "pitch", "notes": note_json(notes),
+            "phonemes": [dataclasses.asdict(p) for p in phonemes], "vibratoEnvelope": envelope.tolist(),
+        })["midi"]
+        actual = model.predict(notes, phonemes, vibrato_envelope=envelope)
+        assert actual.shape == expected.shape
+        np.testing.assert_allclose(actual, expected, atol=5e-3)
