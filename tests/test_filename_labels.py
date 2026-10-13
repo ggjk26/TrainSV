@@ -1,0 +1,79 @@
+import json
+
+import numpy as np
+import pytest
+import soundfile
+
+from opensv_train.filename_labels import (
+    filename_recordings,
+    labels_from_phones,
+    parse_filename_phones,
+    read_phone_table,
+    write_lab_files,
+)
+
+
+PHONES = {"sil", "7", "@", ":n", "N", "a", "iE", "u@", "y{", "kh", "ts\\"}
+
+
+def test_order_retake_suffix_and_internal_underscores():
+    assert parse_filename_phones("7 @_n_0.wav", PHONES) == ["sil", "7", "@", ":n", "sil"]
+    assert parse_filename_phones("@_n @_n_1.wav", PHONES) == ["sil", "@", ":n", "@", ":n", "sil"]
+
+
+def test_internal_sil_is_kept_and_boundary_sils_are_always_added():
+    assert parse_filename_phones("Sil m_0.wav", PHONES | {"m"}) == ["sil", "sil", "m", "sil"]
+
+
+def test_explicit_composites_and_replacements():
+    assert parse_filename_phones("@N_0.wav", PHONES) == ["sil", "@", "N", "sil"]
+    assert parse_filename_phones("a_n_0.wav", PHONES) == ["sil", "a", ":n", "sil"]
+    assert parse_filename_phones("iE_n_0.wav", PHONES) == ["sil", "iE", ":n", "sil"]
+    assert parse_filename_phones("u@N_0.wav", PHONES) == ["sil", "u@", "N", "sil"]
+    assert parse_filename_phones("y{_n_0.wav", PHONES) == ["sil", "y{", ":n", "sil"]
+    assert parse_filename_phones("k_h_0.wav", PHONES) == ["sil", "kh", "sil"]
+    assert parse_filename_phones(r"ts%5c_0.wav", PHONES) == ["sil", "ts\\", "sil"]
+
+
+def test_known_complete_phone_wins_before_generic_segmentation():
+    assert parse_filename_phones("@_n_0.wav", PHONES | {"@_n"}) == ["sil", "@_n", "sil"]
+
+
+def test_equal_duration_boundaries_are_contiguous():
+    entries = labels_from_phones(["sil", "sil", "m", "sil"], 20_000_000)
+    assert entries == [
+        (0, 2_000_000, "sil"),
+        (2_000_000, 10_000_000, "sil"),
+        (10_000_000, 18_000_000, "m"),
+        (18_000_000, 20_000_000, "sil"),
+    ]
+    assert entries[0][0] == 0 and entries[-1][1] == 20_000_000
+    assert all(a[1] == b[0] for a, b in zip(entries, entries[1:]))
+
+
+def test_reads_json_phone_table(tmp_path):
+    table = tmp_path / "phone_table.json"
+    table.write_text(json.dumps({"phones": [{"symbol": "a"}, {"symbol": ":n"}]}), encoding="utf-8")
+    assert read_phone_table(table) == {"sil", "a", ":n"}
+
+
+def test_wav_duration_and_lab_output(tmp_path):
+    wav_dir = tmp_path / "wav"
+    wav_dir.mkdir()
+    soundfile.write(str(wav_dir / "Sil m_0.wav"), np.zeros(48000, dtype=np.float32), 48000)
+    recordings = filename_recordings(wav_dir, PHONES | {"m"})
+    assert len(recordings) == 1
+    assert [phone for _, _, phone in recordings[0][2]] == ["sil", "sil", "m", "sil"]
+    assert recordings[0][2][-1][1] == 10_000_000
+    paths = write_lab_files(recordings, tmp_path / "lab")
+    assert paths[0].read_text("utf-8").splitlines() == [
+        "0 1000000 sil",
+        "1000000 5000000 sil",
+        "5000000 9000000 m",
+        "9000000 10000000 sil",
+    ]
+
+
+def test_unknown_phone_fails_loudly():
+    with pytest.raises(ValueError, match="unknown phone"):
+        parse_filename_phones("definitely_unknown_0.wav", PHONES)

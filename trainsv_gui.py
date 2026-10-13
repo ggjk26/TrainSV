@@ -565,12 +565,18 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <select id="i_src" data-s>
         <option value="folder">One folder with both .wav and .lab files</option>
         <option value="split">One folder of .wav files and another of .lab files</option>
+        <option value="filenames">Generate .lab from phonemes in WAV filenames</option>
         <option value="manifest">A TrainV6 manifest.json</option>
       </select></div>
     <div data-src="folder"><div class="field" data-id="i_corpus" data-kind="path" data-mode="dir" data-label="Recordings folder" data-hint="Each <code>song.wav</code> needs a matching <code>song.lab</code>."></div></div>
     <div data-src="split" hidden>
       <div class="field" data-id="i_wavs" data-kind="path" data-mode="dir" data-label="Folder of .wav files"></div>
       <div class="field" data-id="i_labs" data-kind="path" data-mode="dir" data-label="Folder of .lab files"></div>
+    </div>
+    <div data-src="filenames" hidden>
+      <div class="field" data-id="i_wavs_names" data-kind="path" data-mode="dir" data-label="Folder of WAV files" data-hint="Filenames must use spaces between phones, e.g. <code>@_n @_n_0.wav</code>. Only the final _0/_1 retake suffix is removed."></div>
+      <div class="field" data-id="i_phone_table" data-kind="path" data-mode="file" data-ext="json" data-label="phone_table.json (optional)" data-hint="If omitted, TrainSV uses the selected voice's phone set. The table must include the target symbols for composite splitting."></div>
+      <p class="note">Approximation: the first and last <code>sil</code> each take 10% of the audio; all middle phones share the remaining 80% equally. This creates labels from filename order, not acoustic forced alignment.</p>
     </div>
     <div data-src="manifest" hidden><div class="field" data-id="i_manifest" data-kind="path" data-mode="file" data-ext="json" data-label="manifest.json"></div></div>
     <div class="status" id="i_src_st"></div>
@@ -743,6 +749,8 @@ const FIELD_HELP = {
   "dataset": "选择包含 wavs 子文件夹和 transcriptions.csv 的数据集目录。CSV 至少需要音素序列和时长；要训练 Timing 或 Pitch，还需要相应的音符与词边界信息。",
   "i_corpus": "选择同时存放录音与标注的文件夹。每个 song.wav 都需要同名的 song.lab 文件。",
   "i_wavs": "选择存放录音 .wav 文件的文件夹。每份录音都应有同名的 .lab 标注文件。",
+  "i_wavs_names": "选择 WAV 文件夹。生成模式会按文件名空格分隔的音素顺序生成 LAB；末尾 _0/_1 是重录编号。",
+  "i_phone_table": "选择 phone_table.json，用于判断自定义音素是否存在以及复合音素应如何拆分。若留空，TrainSV 会尝试使用所选声库的音素表。",
   "i_labs": "选择存放 .lab 音素标注文件的文件夹。文件名需要与对应的 .wav 录音一致。",
   "i_manifest": "选择 TrainV6 的 manifest.json 文件。文件中应列出录音路径及其时间对齐的音素标签。",
   "i_output": "指定转换后的数据集保存目录。转换成功后，TrainSV 会自动将该目录设为当前数据集。",
@@ -782,7 +790,7 @@ const FIELD_HELP = {
 };
 const STATIC_HELP = {
   "language": "选择录音所使用的语言/音素集。它必须与数据集标签采用的音素体系一致，否则可能出现声库不认识某些音素的问题。",
-  "i_src": "选择现有素材的组织方式：同一目录内的 .wav/.lab、分开放置的录音与标注目录，或 TrainV6 manifest.json。",
+  "i_src": "选择素材组织方式：现有 WAV/LAB、分开放置的 WAV 与 LAB、从 WAV 文件名生成 LAB，或 TrainV6 manifest.json。",
   "i_words": "开启后，导入时会借助第 1 步选择的声库为词边界写入额外信息。若之后要训练 Timing 或 Pitch，这些信息可能是必要条件；只训练 Sound 时可以不勾选。",
   "i_map": "可选：给导入过程中的音素改名。每行写一组 old=new；适用于标注里的音素名与声库使用的名称不一致的情况。",
   "m_acoustic": "Sound（声学模型）决定合成声音的音色与音频细节。它可使用只有音素与时长的数据集，也是建议优先尝试的模型。",
@@ -929,7 +937,7 @@ function suggest(){
     setAuto("t_run",join(ENV.root,"runs",sl));
     setAuto("e_out",join(ENV.root,"runs",sl,"eval"));
     const src=val("i_src");
-    let from=src==="manifest"?dirname(val("i_manifest")||""):src==="split"?val("i_wavs"):val("i_corpus");
+    let from=src==="manifest"?dirname(val("i_manifest")||""):src==="split"?val("i_wavs"):src==="filenames"?val("i_wavs_names"):val("i_corpus");
     if(/^(wav|wavs)$/i.test(basename(from||"")))from=dirname(from);
     setAuto("i_output",join(ENV.root,"data",from?slug(basename(from)):"dataset"));
     setAuto("s_output",join(ENV.root,"data","practice"));
@@ -950,6 +958,7 @@ const B={
   import(){const p=[],a=[],src=val("i_src");
     if(src==="folder"){if(!val("i_corpus"))p.push("Choose the recordings folder.");a.push("--corpus",val("i_corpus"))}
     else if(src==="manifest"){if(!val("i_manifest"))p.push("Choose the manifest.json file.");a.push("--corpus",val("i_manifest"))}
+    else if(src==="filenames"){if(!val("i_wavs_names"))p.push("Choose the folder of WAV files.");a.push("--from-filenames","--wavs",val("i_wavs_names"));if(val("i_phone_table"))a.push("--phone-table",val("i_phone_table"))}
     else{if(!val("i_wavs"))p.push("Choose the folder of .wav files.");if(!val("i_labs"))p.push("Choose the folder of .lab files.");a.push("--labs",val("i_labs"),"--wavs",val("i_wavs"))}
     if(!val("i_output"))p.push("Choose where to save the dataset.");a.push("--output",val("i_output"));
     if(val("i_songs"))a.push("--songs",val("i_songs"));
@@ -1059,9 +1068,14 @@ function checkSource(){
     const src=val("i_src");if(src==="manifest"){say("i_src_st","","");return}
     const dir=src==="folder"?val("i_corpus"):"";
     if(src==="folder"&&!dir){say("i_src_st","","");return}
+    if(src==="filenames"&&!val("i_wavs_names")){say("i_src_st","","");return}
     try{
       if(src==="folder"){const f=await api("folder-info?path="+enc(dir));
         say("i_src_st",f.exists&&f.wav&&f.lab?"ok":"warn",!f.exists?"Folder not found.":`Found ${f.wav} .wav and ${f.lab} .lab files.`+(f.wav&&f.lab?"":" Each recording needs both."))}
+      else if(src==="filenames"){
+        const f=await api("folder-info?path="+enc(val("i_wavs_names")));
+        say("i_src_st",f.exists&&f.wav?"ok":"warn",!f.exists?"Folder not found.":`Found ${f.wav||0} WAV files. Labels will be estimated from filenames and equal-duration timing.`)
+      }
       else{const w=val("i_wavs"),l=val("i_labs");if(!w||!l){say("i_src_st","","");return}
         const [a,b]=await Promise.all([api("folder-info?path="+enc(w)),api("folder-info?path="+enc(l))]);
         say("i_src_st",a.wav&&b.lab?"ok":"warn",`Found ${a.wav||0} .wav and ${b.lab||0} .lab files.`)}
@@ -1255,9 +1269,9 @@ async function init(){
     if(AUTO.includes(t.id))EXTRA.manual[t.id]=t.value.trim()!=="";
     if(t.id==="voice")checkVoice();
     if(t.id==="dataset")checkDataset();
-    if(["i_corpus","i_wavs","i_labs"].includes(t.id))checkSource();
+    if(["i_corpus","i_wavs","i_labs","i_wavs_names"].includes(t.id))checkSource();
     if(t.id==="t_steps")$$("input[name=preset]").forEach(r=>r.checked=false);
-    if(["v_name","i_corpus","i_wavs","i_manifest"].includes(t.id))suggest();
+    if(["v_name","i_corpus","i_wavs","i_wavs_names","i_manifest"].includes(t.id))suggest();
     persist();refresh();
   });
   document.addEventListener("change",e=>{

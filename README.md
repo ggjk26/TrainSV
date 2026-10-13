@@ -72,6 +72,14 @@ Every command takes `--config file.json` (repeatable). A config is a JSON object
 
 `--labs <dir> --wavs <dir>` names the two directories separately instead. Every `.lab` with a matching `.wav` is imported; `--songs a,b` picks some. Labels are HTS/vLabeler alignments (`start end phoneme` in 100 ns units). `pau` and `sil` become silence, `br` breath, and `--map vf=cl` renames others. A manifest's `split` is ignored: `finetune --validation` holds out phrases instead.
 
+If your WAV filenames already contain space-separated phones, you can generate approximate labels directly:
+
+```bash
+trainsv import-lab --from-filenames --wavs /path/to/wavs --phone-table /path/to/phone_table.json --output /path/to/dataset --language mandarin
+```
+
+The generator preserves left-to-right order, strips only a terminal `_0` or `_1` retake suffix, checks complete symbols before splitting known composites, and always adds leading and trailing `sil` without deduplicating an internal silence. Each boundary silence receives 10% of the WAV duration; middle phones share the remaining 80% equally. Generated LAB files are saved under the output dataset's `lab/` directory. This is a filename-driven equal-duration approximation, **not acoustic forced alignment**; inspect the boundaries before training. If `--phone-table` is omitted, pass `--voice <voice>` to use the selected voice's phone set.
+
 Labels carry no notes, so an imported dataset trains the acoustic model. With `--voice <voice>` the importer also writes `ph_num` word spans, which lets stuff like OpenVPI's [GAME](https://github.com/openvpi/GAME) add notes for duration and pitch training.
 
 ## Dataset
