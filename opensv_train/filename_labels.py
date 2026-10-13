@@ -16,7 +16,6 @@ import soundfile
 TICKS_PER_SECOND = 10_000_000
 SILENCE_FRACTION = 0.10
 
-# Tokens explicitly represented by multiple phones in the user's reclist.
 COMPOSITE_PHONES: dict[str, tuple[str, ...]] = {
     "@_n": ("@", ":n"),
     "@N": ("@", "N"),
@@ -25,24 +24,13 @@ COMPOSITE_PHONES: dict[str, tuple[str, ...]] = {
     "u@N": ("u@", "N"),
     "y{_n": ("y{", ":n"),
 }
-
-# These are replacements, not splits.
-PHONE_REPLACEMENTS = {
-    "k_h": "kh",
-    r"ts%5c": "ts\\",
-}
-
+PHONE_REPLACEMENTS = {"k_h": "kh", r"ts%5c": "ts\\"}
 _TABLE_KEYS = ("phones", "phonemes", "symbols", "phone_table", "phoneTable", "inventory")
 _SYMBOL_KEYS = ("symbol", "phone", "phoneme", "xsampa", "x_sampa", "name")
 
 
 def read_phone_table(path: str | Path | None, fallback: Iterable[str] = ()) -> set[str]:
-    """Read phone symbols from a JSON table, or use the supplied voice phone set.
-
-    JSON can be a list of symbols/records, an object with a phones,
-    phonemes, symbols, or phone_table field, or an object keyed by phone symbol
-    (for example, {"a": "vowel", "b": "consonant"}).
-    """
+    """Read phone symbols from JSON, or use the selected voice's phone set."""
     if path is None or not str(path).strip():
         symbols = {str(symbol) for symbol in fallback if str(symbol)}
         if not symbols:
@@ -81,12 +69,10 @@ def _extract_symbols(document: object) -> set[str]:
                         found.add(value)
                         break
         return found
-
     if isinstance(document, dict):
         for key in _TABLE_KEYS:
             if key in document:
                 return _extract_symbols(document[key])
-        # Supports symbol-keyed phone tables, e.g. {"a": {"type": "vowel"}}.
         if document and all(isinstance(key, str) for key in document):
             reserved = {"version", "language", "name", "description", "metadata"}
             keys = {key for key in document if key not in reserved}
@@ -96,15 +82,9 @@ def _extract_symbols(document: object) -> set[str]:
 
 
 def parse_filename_phones(filename: str | Path, phone_table: Iterable[str]) -> list[str]:
-    """Parse a WAV filename into its ordered phones, adding fixed boundary sils.
-
-    Only the terminal _0 or _1 retake suffix is removed. Underscores inside
-    the phoneme spelling are retained. The original internal sequence is never
-    deduplicated: a filename containing Sil m_0.wav becomes sil sil m sil.
-    """
+    """Parse ordered phones and add fixed boundary sils without deduplication."""
     valid = set(phone_table)
     valid.add("sil")
-
     stem = Path(filename).stem
     if stem.endswith(("_0", "_1")):
         stem = stem[:-2]
@@ -117,10 +97,6 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str]) -> l
         if token.casefold() == "sil":
             phones.append("sil")
             continue
-        if token in valid:
-            phones.append(token)
-            continue
-
         replacement = PHONE_REPLACEMENTS.get(token)
         if replacement is not None:
             if replacement not in valid:
@@ -130,7 +106,9 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str]) -> l
                 )
             phones.append(replacement)
             continue
-
+        if token in valid:
+            phones.append(token)
+            continue
         composite = COMPOSITE_PHONES.get(token)
         if composite is not None:
             missing = [phone for phone in composite if phone not in valid]
@@ -141,7 +119,6 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str]) -> l
                 )
             phones.extend(composite)
             continue
-
         pieces = _segment(token, valid)
         if pieces is None:
             raise ValueError(
@@ -149,13 +126,12 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str]) -> l
                 "the phone table and could not be split into existing phones"
             )
         phones.extend(pieces)
-
     phones.append("sil")
     return phones
 
 
 def _segment(token: str, valid: set[str]) -> list[str] | None:
-    """Split a composite spelling using only known symbols, preferring long phones."""
+    """Split a composite spelling using only known symbols, preferring longer phones."""
     candidates = tuple(sorted((phone for phone in valid if phone != "sil"), key=lambda p: (-len(p), p)))
 
     @lru_cache(maxsize=None)
@@ -179,20 +155,18 @@ def _segment(token: str, valid: set[str]) -> list[str] | None:
 def labels_from_phones(
     phones: list[str], total_ticks: int, silence_fraction: float = SILENCE_FRACTION
 ) -> list[tuple[int, int, str]]:
-    """Make contiguous labels with fixed 10% boundary sils and equal middle spans."""
+    """Make contiguous labels with fixed boundary sils and equal middle spans."""
     if len(phones) < 3 or phones[0] != "sil" or phones[-1] != "sil":
         raise ValueError("phone sequence must contain fixed leading and trailing sil")
     if total_ticks <= 0:
         raise ValueError("audio duration must be positive")
     if not 0 < silence_fraction < 0.5:
         raise ValueError("silence fraction must be between 0 and 0.5")
-
     middle_count = len(phones) - 2
     boundary_ticks = round(total_ticks * silence_fraction)
     middle_ticks = total_ticks - 2 * boundary_ticks
     if boundary_ticks < 1 or middle_ticks < middle_count:
         raise ValueError("audio is too short to give every phoneme a positive-duration interval")
-
     entries: list[tuple[int, int, str]] = [(0, boundary_ticks, "sil")]
     start = boundary_ticks
     for index, phone in enumerate(phones[1:-1], start=1):
@@ -206,14 +180,13 @@ def labels_from_phones(
 def filename_recordings(
     wav_directory: str | Path, phone_table: Iterable[str]
 ) -> list[tuple[str, Path, list[tuple[int, int, str]]]]:
-    """Build standard (name, WAV path, 100-ns label tuples) records from WAV names."""
+    """Build standard recording tuples from WAV names and actual WAV durations."""
     directory = Path(wav_directory).expanduser()
     if not directory.is_dir():
         raise ValueError(f"WAV directory does not exist: {directory}")
     wavs = sorted(directory.glob("*.wav"), key=lambda path: path.name.casefold())
     if not wavs:
         raise ValueError(f"no .wav files found in {directory}")
-
     recordings = []
     for wav in wavs:
         phones = parse_filename_phones(wav.name, phone_table)
@@ -224,8 +197,7 @@ def filename_recordings(
         if info.samplerate <= 0 or info.frames <= 0:
             raise ValueError(f"{wav.name}: audio has no samples or an invalid sample rate")
         total_ticks = round(info.frames * TICKS_PER_SECOND / info.samplerate)
-        entries = labels_from_phones(phones, total_ticks)
-        recordings.append((wav.stem, wav, entries))
+        recordings.append((wav.stem, wav, labels_from_phones(phones, total_ticks)))
     return recordings
 
 
@@ -238,7 +210,6 @@ def write_lab_files(
     paths = []
     for name, _wav, entries in recordings:
         path = output / f"{name}.lab"
-        text = "".join(f"{start} {end} {phone}\n" for start, end, phone in entries)
-        path.write_text(text, encoding="utf-8")
+        path.write_text("".join(f"{start} {end} {phone}\n" for start, end, phone in entries), encoding="utf-8")
         paths.append(path)
     return paths
