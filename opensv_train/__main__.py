@@ -17,6 +17,7 @@ from .data import LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
 from .voice import ROLES, Voice
 from .sfpk import format_report, inspect_sfpk as inspect_sfpk_path
+from .diagnostics import diagnose_voice, format_diagnostic
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -235,6 +236,17 @@ def inspect_sfpk_command(arguments) -> None:
         print(f"wrote diagnostic report: {destination}")
 
 
+def diagnose_nofs_command(arguments) -> None:
+    """Report container, DNNI graph and architecture compatibility signals."""
+    report = diagnose_voice(arguments.path)
+    print(format_diagnostic(report))
+    if arguments.json_output:
+        destination = Path(arguments.json_output).expanduser()
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(json.dumps(report, ensure_ascii=False, indent=2), "utf-8")
+        print(f"wrote diagnostic report: {destination}")
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trainsv")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -323,6 +335,11 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--path", required=True, help=".sfpk candidate or extracted directory")
     command.add_argument("--json-output", help="optional path to save the diagnostic report as JSON")
     command.set_defaults(handler=inspect_sfpk_command)
+
+    command = commands.add_parser("diagnose-nofs", help="diagnose NOFS/DNNI architecture support without training")
+    command.add_argument("--path", required=True, help="voice.nofs or info.<version>.nofs")
+    command.add_argument("--json-output", help="optional path to save the diagnostic report as JSON")
+    command.set_defaults(handler=diagnose_nofs_command)
     for command in commands.choices.values():
         command.add_argument("--config", action="append", default=[], metavar="FILE", help="JSON file of option values; repeat for several, later files win and command-line options override them")
     return parser
