@@ -1,330 +1,308 @@
-# TrainSV - Synthesizer V 声库训练工具包
+# TrainSV：Synthesizer V AI 声库再训练工具
 
 [简体中文](README.zh-CN.md) | [English](README.md)
 
-一个完整的 Python 工具包，用于在录制的语料库上微调 SynthV AI 声音的四个神经模型。简而言之，这是一个 **SynthV 开发工具包**。
+TrainSV 是用于微调 Synthesizer V AI 声库模型的 Python 工具。它从已有声库（`voice.nofs` 或 `info.<版本>.nofs`）出发，使用录音与时间对齐的音素标注训练声学、时长、音高等模型。
 
-## ✨ 主要特性
+> **请先了解**
+> - 这是开发与实验工具，不是 Dreamtonics 官方声库制作器。
+> - 并非所有 `.nofs` 都受支持。底模必须包含 TrainSV 当前实现的模型架构；如果报架构不支持，请保留完整错误日志和 `trainsv inspect` 输出。
+> - 请只使用你有权修改的底模、录音、标注、头像和背景素材。
+> - `.sfpk` 属于 Synthesizer V Studio Flat 的声库包格式，并非官方 `.svpk` 安装包格式。当前版本尚未提供经验证的 `.sfpk` 打包器。
 
-### 🎨 图形界面
-- **Web GUI** - 内置图形界面，开箱即用
-- 点击式操作，无需记忆命令行参数
-- 实时显示训练日志和进度
-- 自动检测 GPU/CPU 设备
+## 功能
 
-### 🎯 四个可训练模型
+- WebUI：在浏览器中选择底模、准备数据、训练和对比结果。
+- 自动生成 CSV：导入 WAV + LAB 时，自动创建 `transcriptions.csv`。
+- 数据输入：同目录 WAV/LAB、分开的 WAV 与 LAB 目录、TrainV6 `manifest.json`。
+- 训练模型：声学（acoustic）、时长（duration）、音高（pitch）和可选声码器（vocoder）。
+- 训练恢复、日志、验证指标和原始/训练后声库试听对比。
 
-| 模型 | DNNI 架构 | 训练目标 |
-|------|-----------|---------|
-| **duration** | `gen2a` | 每个音素在其音符中的时长分配 |
-| **pitch** | `f0model-dds` | 录音的 F0 音高曲线（有声段） |
-| **acoustic** | `dds` | 通过可微分声码器训练声学模型 |
-| **vocoder** | `nhv` | 相同的音频损失（可选） |
+## 系统要求
 
-### 🌍 支持的语言
-- 🇯🇵 日语 (japanese / ja)
-- 🇨🇳 中文 (mandarin / zh)
-- 🇬🇧 英语 (english / en)
-- 🇭🇰 粤语 (cantonese / yue)
-- 🇪🇸 西班牙语 (spanish / es)
+- Python 3.10+（推荐 3.11）、PyTorch 2.2+。
+- Windows、macOS 或 Linux。
+- NVIDIA CUDA 或 Apple Silicon MPS 可加速；否则可使用 CPU，但会慢很多。
+- 一个 TrainSV 当前支持的 Synthesizer V AI 底模。
+- 已经完成时间对齐的录音数据。只有 WAV、没有 LAB 或等价的时间标签，不能直接训练。
 
-## 🚀 快速开始
+## 安装
 
-### 安装
+在项目根目录执行。
 
-**前置要求**: Python 3.10+
+### 使用 uv（推荐）
 
 ```bash
-# 创建虚拟环境
 uv venv --python 3.11 .venv
-
-# 安装依赖
-uv pip install --python .venv/bin/python -e '.[test]'
+uv pip install --python .venv/bin/python -e ".[test]"
 ```
 
-这会安装 `trainsv` 命令（等同于 `python -m opensv_train`）。
+Windows PowerShell 也可以使用虚拟环境内的 Python 安装：
 
-### 启动 GUI
+```powershell
+uv venv --python 3.11 .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[test]"
+```
+
+### 使用 Python venv
 
 ```bash
-# 激活虚拟环境
-source .venv/bin/activate  # macOS/Linux
-# 或
-.venv\Scripts\activate.bat  # Windows
-
-# 启动 Web GUI
-python trainsv_gui.py
+python -m venv .venv
 ```
 
-GUI 会在浏览器中自动打开（默认端口 8765）。
+Windows：
 
-## 📖 完整工作流程
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[test]"
+```
 
-### 使用 GUI（推荐）
-
-1. 启动 `python trainsv_gui.py`
-2. 在浏览器中选择声库文件 (`.nofs`)
-3. 导入你的语料库（WAV + LAB 文件）
-4. 点击"Finetune"开始训练
-5. 评估并导出训练后的声库
-
-### 使用命令行
+macOS / Linux：
 
 ```bash
-# 1. 导入数据集
-trainsv import-lab --corpus <语料库目录> --output <数据集目录> --voice <声库文件>
-
-# 2. 评估基础声库
-trainsv evaluate --voice <声库文件> --data <数据集目录> --language ja
-
-# 3. 微调训练
-trainsv finetune \
-  --voice <声库文件> \
-  --data <数据集目录> \
-  --language ja \
-  --models acoustic,duration,pitch \
-  --output out/voice.nofs \
-  --name "我的歌手" \
-  --run runs/my-singer
-
-# 4. 评估训练结果
-trainsv evaluate \
-  --voice <声库文件> \
-  --voice out/voice.nofs \
-  --data <数据集目录> \
-  --language ja \
-  --out <评估目录>
+.venv/bin/python -m pip install -e ".[test]"
 ```
 
-## 📦 语料库格式
+## 启动 WebUI
 
-### 目录结构
+Windows PowerShell：
 
-支持两种格式：
-
-**格式 1: 简单目录**
-```
-corpus/
-  song_001.wav
-  song_001.lab
-  song_002.wav
-  song_002.lab
+```powershell
+.\.venv\Scripts\python.exe trainsv_gui.py
 ```
 
-或使用子目录：
-```
-corpus/
-  wav/
-    song_001.wav
-    song_002.wav
-  lab/
-    song_001.lab
-    song_002.lab
+macOS / Linux：
+
+```bash
+.venv/bin/python trainsv_gui.py
 ```
 
-**格式 2: TrainV6 manifest.json**
-```json
-{
-  "recordings": [
-    {
-      "id": "song_000",
-      "wav": "/path/song_000.wav",
-      "split": "train",
-      "labels": [
-        {"start_100ns": 0, "end_100ns": 5000000, "phoneme": "sil"}
-      ]
-    }
-  ]
-}
+程序会在本机启动 Web 服务，并尝试打开浏览器，默认端口为 `8765`。如果端口被占用，可运行 `python trainsv_gui.py --port 8888`；不需要自动打开浏览器时使用 `--no-browser`。不要把本地 Web 服务暴露到不可信网络。
+
+## 推荐流程：从录音到训练结果
+
+### 1. 选择底模
+
+1. 在 WebUI 选择 `.nofs` 文件。
+2. 选择录音对应的语言：日语、普通话、英语、粤语或西班牙语。
+3. 点击检查声库，查看模型、参数量和音素表。
+4. 若提示模型架构不受支持，请先停止，不要强行训练；记录完整错误日志和底模信息。
+
+普通 `voice.nofs` 与共享模型声库 `info.<版本>.nofs` 的输出结构不同，工具会按底模类型使用相应的保存方式。
+
+### 2. 准备 WAV 与 LAB
+
+推荐目录结构：
+
+```text
+my-corpus/
+├── song_001.wav
+├── song_001.lab
+├── song_002.wav
+└── song_002.lab
 ```
 
-### 标注格式
+也支持 `wav/` 与 `lab/` 两个子目录。每个 WAV 必须有同名 LAB。
 
-每个 `.lab` 文件为 HTS/vLabeler 格式（每行 3 列）：
+LAB 使用 HTS / vLabeler 对齐格式，每行包含开始时间、结束时间、音素，时间单位为 **100 纳秒**：
 
-```
+```text
 0 1200000 sil
 1200000 1850000 k
 1850000 7400000 a
 7400000 9000000 sil
 ```
 
-- 时间单位：100 纳秒
-- 格式：`开始时间 结束时间 音素`
-- `pau` 和 `sil` 表示静音，`br` 表示呼吸
+- 区间必须按时间排序，不能有重叠或间隙。
+- `pau` / `sil` 会转换为静音 `SP`，`br` 会转换为呼吸 `AP`。
+- 音素名必须与底模音素表匹配；不匹配时需要音素映射。
+- 普通 LAB 通常只有音素与时长信息，可用于声学模型训练；时长和音高模型还需要音符、词边界等额外标注。
 
-## 🎓 训练选项
+### 3. 导入数据，自动生成 CSV
 
-### 基础选项
+在 WebUI 的数据页面：
 
-```bash
---models acoustic,duration,pitch    # 选择要训练的模型
---steps 6000                        # 训练步数（默认 2000）
---lr 2e-5                           # 学习率（默认全参数 2e-5，嵌入向量 3e-3）
---batch 4                           # 批大小
---validation 0.1                    # 验证集比例
---device cuda                       # 设备：cuda/mps/cpu
+1. 选择“我有 WAV 和 LAB”。
+2. 选择同目录 WAV/LAB、分开的目录，或 TrainV6 的 `manifest.json`。
+3. 指定数据集输出目录并开始导入。
+4. 导入完成后，程序会复制 WAV，并自动生成 `transcriptions.csv`。
+
+生成的目录类似：
+
+```text
+my-dataset/
+├── wavs/
+│   ├── song_001.wav
+│   └── song_002.wav
+└── transcriptions.csv
 ```
 
-### 高级选项
+因此，大多数情况下不需要手动制作 CSV。已有符合格式的数据集可以直接选择并跳过导入。
+
+CSV 必需列：
+- `name`：WAV 名称，不含扩展名。
+- `ph_seq`：空格分隔的音素序列。
+- `ph_dur`：空格分隔的音素时长，单位秒。
+
+时长/音高训练还需要有效的 `ph_num`、`note_seq`、`note_dur` 等音符和词边界信息。
+
+### 4. 训练
+
+初次使用建议：
+
+1. 先只选择 **Sound / Acoustic（声学模型）**。
+2. 先运行快速测试，确认环境、底模和数据正常。
+3. 快速测试通过后，再运行标准训练。
+4. 初次使用保留默认学习率、验证比例和自动设备选择。
+5. 只有数据包含音符与词边界标注时，才选择 Timing / Pitch。
+6. Vocoder 属于可选高级项目，初次训练建议关闭。
+
+| 参数 | 作用 | 建议 |
+| --- | --- | --- |
+| Steps | 训练步数 | 先快速测试，再逐步增加 |
+| Learning rate | 学习率 | 初次使用留空，采用默认值 |
+| Batch | 每步累计的短语数 | 显存不足时保持较小值 |
+| Validation | 留作验证的数据比例或数量 | 默认 0.1 约为 10% |
+| Device | 训练设备 | 优先 Automatic |
+| Save best | 验证结果改善时额外保存 | 建议开启 |
+
+训练步数更多不代表效果一定更好。请结合验证结果和试听判断，不能只看训练损失。
+
+### 5. 评估并试听
+
+训练完成后，进入结果页面，选择刚生成的声库并点击“比较声库”。工具会在留出的验证短语上比较原始声库和新声库，并可输出试听文件与 `metrics.json`。
+
+检查辅音清晰度、音色一致性、音高和时长。如果结果变差，先检查录音、对齐、音素映射和标注质量。
+
+### 6. 保存结果
+
+- 普通底模输出为更新后的 `voice.nofs` 文件。
+- `info.<版本>.nofs` 共享模型底模输出为数据库目录和相关模型文件。
+- 保留原始底模、数据集和训练运行目录，避免覆盖唯一副本。
+
+## 命令行使用
+
+### 检查底模
 
 ```bash
---params all                        # 训练所有参数（默认）
---params embeddings                 # 仅训练嵌入向量
---warmup 100                        # 学习率预热步数
---lr-end 2e-6                       # 余弦衰减的最终学习率
---consonant-weight 4                # 辅音帧权重
---vocal-modes Solid,High            # 声乐模式（用于 info 声库）
---resume                            # 从检查点恢复训练
+trainsv inspect --voice /path/to/voice.nofs
 ```
 
-### 配置文件
+### 导入并生成 CSV
 
-可以使用 JSON 配置文件（支持多个文件）：
+```bash
+trainsv import-lab \
+  --corpus /path/to/my-corpus \
+  --output /path/to/my-dataset \
+  --voice /path/to/voice.nofs
+```
+
+WAV 与 LAB 分开放置时：
+
+```bash
+trainsv import-lab \
+  --wavs /path/to/my-corpus/wav \
+  --labs /path/to/my-corpus/lab \
+  --output /path/to/my-dataset \
+  --voice /path/to/voice.nofs
+```
+
+### 训练声学模型
+
+```bash
+trainsv finetune \
+  --voice /path/to/voice.nofs \
+  --data /path/to/my-dataset \
+  --language ja \
+  --models acoustic \
+  --steps 2000 \
+  --output out/voice.nofs \
+  --name "我的声库" \
+  --run runs/my-voice
+```
+
+支持的语言名/代码：`japanese/ja`、`mandarin/zh`、`english/en`、`cantonese/yue`、`spanish/es`。
+
+### 评估训练结果
+
+```bash
+trainsv evaluate \
+  --voice /path/to/voice.nofs \
+  --voice out/voice.nofs \
+  --data /path/to/my-dataset \
+  --language ja \
+  --out out/evaluation
+```
+
+### JSON 配置文件
 
 ```json
 {
   "steps": 6000,
-  "lr": 2e-5,
+  "lr": 0.00002,
   "warmup": 100,
-  "lr-end": 2e-6,
-  "models": "acoustic,duration,pitch",
-  "consonant-weight": 4
+  "lr-end": 0.000002,
+  "models": "acoustic",
+  "validation": 0.1
 }
 ```
 
-使用方式：
-```bash
-trainsv finetune --config config.json --voice ... --data ...
-```
+运行：`trainsv finetune --config config.json --voice ... --data ...`。
 
-## 🔍 其他命令
+## 数据集格式
 
-### 检查声库信息
-```bash
-trainsv inspect --voice <声库文件>
-```
-
-列出声库的模型、参数数量、声乐模式和音素集。
-
-### 合成数据集
-```bash
-trainsv synthesize-dataset --voice <声库文件> --output <数据集目录>
-```
-
-用任何声库渲染标注数据集（可用于端到端测试）。
-
-### 转换字典
-```bash
-trainsv convert-dict \
-  --data <源数据集> \
-  --output <目标数据集> \
-  --source-dict <源字典> \
-  --target-dict <目标字典> \
-  --voice <声库文件> \
-  --language zh
-```
-
-## 📊 数据集格式
-
-训练使用 DiffSinger 风格的数据集目录：
-
-```
+```text
 my-dataset/
-  wavs/<名称>.wav              # 任意采样率，会重采样到 48 kHz
-  transcriptions.csv           # 元数据文件
+├── wavs/<名称>.wav
+└── transcriptions.csv
 ```
 
-### transcriptions.csv 格式
+| 列名 | 说明 |
+| --- | --- |
+| `name` | WAV 文件名，不含扩展名 |
+| `ph_seq` | 音素序列 |
+| `ph_dur` | 音素时长（秒） |
+| `ph_num` | 词边界/音素分组 |
+| `note_seq` | 音符序列 |
+| `note_dur` | 音符时长 |
+| `note_slur` | 连音标记 |
+| `style` | Vocal Mode 名称 |
 
-必需列：
-- `name` - 文件名（不含扩展名）
-- `ph_seq` - 音素序列（用空格分隔）
-- `ph_dur` - 音素时长（秒，用空格分隔）
+## 其他工具
 
-可选列（用于时长/音高训练）：
-- `ph_num` - 音素分组（DiffSinger 词边界）
-- `note_seq` - 音符序列（MIDI 音高）
-- `note_dur` - 音符时长
-- `note_slur` - 连音标记
-- `style` - 声乐风格
+- `trainsv synthesize-dataset --voice <声库> --output <数据集>`：生成练习数据，检查训练流程。
+- `trainsv convert-dict`：在源、目标字典之间转换音素拼写。
+- `--resume`：从运行目录的 `state.pt` 恢复；模型和参数范围必须与之前一致。
+- `--history`：将验证指标保存为 JSON。
+- `--save-best`：验证结果改善时额外保存声库。
 
-示例：
-```csv
-name,ph_seq,ph_dur,ph_num,note_seq,note_dur,note_slur
-song_001,SP k a SP,0.1 0.05 0.6 0.1,0 1 1 2,rest C4 rest,0.1 0.65 0.1,0 0 0
-```
+## 常见问题
 
-## 🎯 训练建议
+**导入后没有生成 CSV？** 检查 LAB 是否存在、是否与 WAV 同名、标注区间是否连续，以及输出目录是否可写。
 
-1. **从声学模型开始** - 先只训练 `--models acoustic`，验证效果后再添加其他模型
-2. **使用验证集** - 设置 `--validation 0.1` 预留 10% 数据用于验证
-3. **监控指标** - 关注 `log-mel` 距离和 `voicing` 准确率
-4. **声乐模式训练** - 先用 `--params embeddings` 训练模式向量，再用 `--params all` 训练全网络
-5. **保持录音水平** - 使用 `--level-reference` 指定基础声库，防止音量漂移
+**为什么 Timing / Pitch 无法训练？** 它们需要音符时长与词边界等标注。只有音素对齐的 LAB 通常不足以训练它们。
 
-## 🧪 验证
+**为什么提示底模架构不支持？** TrainSV 只支持代码明确实现的模型架构。请提供 `trainsv inspect` 输出和完整错误日志，以便针对具体底模扩展。
 
-### 运行测试
+**训练慢或显存不足？** 减小 Batch、先只训练声学模型、缩短测试步数，或使用 GPU。CPU 可用但速度可能很慢。
+
+**运行测试：**
 
 ```bash
-# 构建原生引擎
 cmake -S parity -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target OpenSVParity
-
-# 运行测试
 .venv/bin/python -m pytest
 ```
 
-测试需要已安装的声库（通过 `OPENSV_TEST_VOICES` 环境变量指定）。
+部分测试需要可用的声库样本，可通过 `OPENSV_TEST_VOICES` 指定。
 
-## 📁 项目结构
+## 项目结构
 
-```
-TrainSV_1.0/
-├── opensv_train/          # CLI、数据集、模型、训练和导出代码
-├── parity/                # 内置的 OpenSV 引擎和测试工具
-├── tests/                 # 对等性和训练测试
-├── trainsv_gui.py         # Web GUI（新增！）
-├── pyproject.toml         # 项目配置
-└── README.md              # 英文文档
-```
+- `opensv_train/`：CLI、数据集、模型、训练和导出
+- `parity/`：OpenSV 引擎及对比测试
+- `tests/`：训练和引擎测试
+- `trainsv_gui.py`：WebUI
+- `pyproject.toml`：Python 项目配置
 
-## 🔧 系统要求
+## 许可
 
-- **Python**: 3.10 或更高
-- **PyTorch**: 2.2 或更高
-- **CMake**: 3.20 或更高（用于测试）
-- **GPU**: 支持 CUDA/MPS（可选，CPU 也能训练）
-
-## 🐛 常见问题
-
-### 端口被占用
-```bash
-python trainsv_gui.py --port 8888  # 使用其他端口
-```
-
-### CUDA 不可用
-训练会自动回退到 MPS（Apple Silicon）或 CPU。
-
-### 内存不足
-- 减少 `--batch` 批大小
-- 使用更短的音频片段
-- 训练单个模型而不是多个
-
-## 📝 许可证
-
-GPL-3.0
-
-## 🙏 致谢
-
-感谢 [OpenSV](https://github.com/cubeww/OpenSV) 项目提供的参考实现。
-
-## 📮 联系方式
-
-- **GitHub Issues**: [报告问题](https://github.com/Quadimension-CL/TrainSV/issues)
-- **Email**: amd-miku@foxmail.com
-
----
-
-**开始训练你的 SynthV AI 声库！🎤**
+项目采用 GPL-3.0。感谢 [OpenSV](https://github.com/cubeww/OpenSV) 项目提供的参考实现。请通过当前仓库的 [Issues](https://github.com/ggjk26/TrainSV/issues) 提交复现步骤、底模类型和完整日志。

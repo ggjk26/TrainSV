@@ -1,5 +1,7 @@
 # TrainSV
 
+[简体中文](README.zh-CN.md) | [English](README.md)
+
 A Python toolkit that finetunes the four neural models of a SynthV AI voice on a recorded corpus. To sum it up it's a SynthV devkit
 
 Prerequisites: Python 3.10+, PyTorch, and a Synthesizer V voice (`voice.nofs` or `info.<version>.nofs`) to start from. Training uses a CUDA GPU when one is present, then Apple's `mps`, then the CPU; `--device` overrides it.
