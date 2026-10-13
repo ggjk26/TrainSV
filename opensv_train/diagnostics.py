@@ -126,7 +126,8 @@ def diagnose_voice(path: str | Path) -> dict[str, Any]:
         if mismatches:
             report["warnings"].append("Architecture identifiers outside TrainSV's current allowlist: " + "; ".join(mismatches))
         all_models_parsed = all(report["models"].get(role, {}).get("parsed", False) for role in ("duration", "pitch", "acoustic", "vocoder"))
-        report["trainability"] = "candidate-current-architecture" if not mismatches and all_models_parsed else "requires-adaptation-or-repair"
+        all_node_types_known = all(not report["models"].get(role, {}).get("unknown_node_types") for role in ("duration", "pitch", "acoustic", "vocoder"))
+        report["trainability"] = "candidate-current-architecture" if not mismatches and all_models_parsed and all_node_types_known else "requires-adaptation-or-repair"
     else:
         all_models_parsed = all(report["models"].get(role, {}).get("parsed", False) for role in ("duration", "pitch", "acoustic", "vocoder"))
         report["trainability"] = "candidate-needs-runtime-check" if all_models_parsed else "requires-adaptation-or-repair"
