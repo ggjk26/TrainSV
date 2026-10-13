@@ -28,7 +28,7 @@ COMPOSITE_PHONES: dict[str, tuple[str, ...]] = {
 # complete symbol exists in the table; otherwise approximate with a vowel plus
 # a rhotic phone from the target inventory.
 RHOTICIZED_VOWELS = {"@`": "@", "3`": "3"}
-RHOTIC_APPROXIMANTS = (r"r\", "ɹ", "ɻ", "r", "R", r"R\")
+RHOTIC_APPROXIMANTS = ("r\\", "ɹ", "ɻ", "r", "R", "R\\")
 PHONE_REPLACEMENTS = {"k_h": "kh", r"ts%5c": "ts\\"}
 _TABLE_KEYS = ("phones", "phonemes", "symbols", "phone_table", "phoneTable", "inventory")
 _SYMBOL_KEYS = ("symbol", "phone", "phoneme", "xsampa", "x_sampa", "name")
