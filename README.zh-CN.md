@@ -189,6 +189,40 @@ trainsv inspect --voice /path/to/voice.nofs
 trainsv diagnose-nofs --path /path/to/voice.nofs --json-output /path/to/architecture-report.json
 ```
 
+### 导出 SVPK 安装包
+
+训练完成后，将输出的模型文件和资源打成 `.svpk`。当前命令依据你提供的样例结构，生成根目录中的 `voice.nofs`、可选的 `background.png` / `license.txt` / `profile.png`，以及无扩展名的 `package-profile` JSON 文件。
+
+```bash
+trainsv package-svpk \
+  --voice ./output/voice.nofs \
+  --output ./dist/kasane-teto-ai-100.svpk \
+  --product-name "Kasane Teto" \
+  --vendor-name "AHS Co., Ltd." \
+  --version-string "104" \
+  --version-number 104 \
+  --depending-version-number 0 \
+  --profile ./assets/profile.png \
+  --background ./assets/background.png \
+  --license-file ./assets/license.txt
+```
+
+头像、背景和许可证是可选参数；图片必须是 PNG。生成器会检查 ZIP CRC，但这不等同于在 Synthesizer V Studio 中验证安装成功。
+
+### 打包共享声库 SFPK
+
+```bash
+trainsv package-sfpk \
+  --info ./shared/info.nofs \
+  --config-json ./shared/config.json \
+  --output ./dist/hanakuma-chifuyu.sfpk \
+  --profile ./shared/profile.png \
+  --background ./shared/background.png
+```
+
+SFPK 打包器会保留你提供的 `info.nofs` 和 `config.json` 内容，并按样例根目录名添加资源。配置中的 `profile` / `background` 布尔值必须与是否提供对应图片一致；`models`、`model_types`、`phonesets` 必须为数组。请不要为了让命令通过而随意将这些数组填空：模型引用及共享声库的实际语义仍需从完整样例核实。
+
+**重要限制：** 这条命令只负责封装已经准备好的 `info.nofs` 和配置文件，不会自动把普通 `voice.nofs` 转换成 Flat 所需的共享模型描述，也不会凭空生成 `.dnni` 模型文件。生成后必须在 Synthesizer V Flat 中验证加载和渲染结果。
 ### 检查 Flat 声库包或解包目录（只读）
 
 ```bash
@@ -197,7 +231,7 @@ trainsv inspect-sfpk --path /path/to/sample.sfpk --json-output /path/to/sfpk-rep
 trainsv inspect-sfpk --path /path/to/extracted-sfpk
 ```
 
-`diagnose-nofs` 会分别报告 NOFS 容器解析、各角色 DNNI 图解析和当前架构标识限制；这是初步诊断，不等于完整训练兼容保证。该命令只读取文件列表与可识别的 JSON 配置候选，不会解包或修改输入。ZIP 可读不代表它一定是有效的 SFPK；在取得可用样例并确认内部布局前，打包功能保持关闭。WebUI 的 “More tools” 页面也提供相同的检查功能。
+`diagnose-nofs` 会分别报告 NOFS 容器解析、各角色 DNNI 图解析和当前架构标识限制；这是初步诊断，不等于完整训练兼容保证。该命令只读取文件列表与可识别的 JSON 配置候选，不会解包或修改输入。ZIP 可读不代表它一定能被目标宿主加载。当前打包命令依据你提供的根目录文件名和配置字段实现，但仍需在 Synthesizer V Studio / Flat 中做实际加载验证。WebUI 的 “More tools” 页面也提供结构检查功能。
 
 ### 导入并生成 CSV
 
