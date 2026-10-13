@@ -24,6 +24,11 @@ COMPOSITE_PHONES: dict[str, tuple[str, ...]] = {
     "u@N": ("u@", "N"),
     "y{_n": ("y{", ":n"),
 }
+# X-SAMPA uses a grave accent for rhoticity. These remain one phone when the
+# complete symbol exists in the table; otherwise approximate with a vowel plus
+# a rhotic phone from the target inventory.
+RHOTICIZED_VOWELS = {"@`": "@", "3`": "3"}
+RHOTIC_APPROXIMANTS = (r"r\", "ɹ", "ɻ", "r", "R", r"R\")
 PHONE_REPLACEMENTS = {"k_h": "kh", r"ts%5c": "ts\\"}
 _TABLE_KEYS = ("phones", "phonemes", "symbols", "phone_table", "phoneTable", "inventory")
 _SYMBOL_KEYS = ("symbol", "phone", "phoneme", "xsampa", "x_sampa", "name")
@@ -109,6 +114,28 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str]) -> l
         if token in valid:
             phones.append(token)
             continue
+
+        # @` and 3` are valid X-SAMPA rhoticized vowels. If this target
+        # inventory lacks the complete symbol, approximate it without dropping
+        # rhoticity; prefer an approximant spelling over a trill when available.
+        base_vowel = RHOTICIZED_VOWELS.get(token)
+        if base_vowel is not None:
+            if base_vowel not in valid:
+                raise ValueError(
+                    f"{Path(filename).name}: {token!r} is not in the phone table "
+                    f"and its base vowel {base_vowel!r} is unavailable"
+                )
+            rhotic = next((phone for phone in RHOTIC_APPROXIMANTS if phone in valid), None)
+            if rhotic is None:
+                raise ValueError(
+                    f"{Path(filename).name}: {token!r} is a rhoticized vowel, but the "
+                    "phone table has no compatible rhotic phone. Add the complete symbol "
+                    "to the phone table, or include one of: "
+                    + ", ".join(RHOTIC_APPROXIMANTS)
+                )
+            phones.extend((base_vowel, rhotic))
+            continue
+
         composite = COMPOSITE_PHONES.get(token)
         if composite is not None:
             missing = [phone for phone in composite if phone not in valid]
