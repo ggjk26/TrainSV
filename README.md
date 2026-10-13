@@ -80,6 +80,8 @@ trainsv import-lab --from-filenames --wavs /path/to/wavs --phone-table /path/to/
 
 The generator preserves left-to-right order, strips only a terminal `_0` or `_1` retake suffix, checks complete symbols before splitting known composites, and always adds leading and trailing `sil` without deduplicating an internal silence. Each boundary silence receives 10% of the WAV duration; middle phones share the remaining 80% equally. Generated LAB files are saved under the output dataset's `lab/` directory. This is a filename-driven equal-duration approximation, **not acoustic forced alignment**; inspect the boundaries before training. If `--phone-table` is omitted, pass `--voice <voice>` to use the selected voice's phone set.
 
+X-SAMPA `@\`` and `3\`` are rhoticized vowels. If the complete symbol exists in the target phone table, it is preserved. Otherwise, the generator tries to approximate it as the base vowel plus a rhotic phone available in the table (preferring `r\\`, then `ɹ`, `ɻ`, `r`, etc.). If no compatible phone exists, it raises a specific error rather than silently dropping rhoticity.
+
 Labels carry no notes, so an imported dataset trains the acoustic model. With `--voice <voice>` the importer also writes `ph_num` word spans, which lets stuff like OpenVPI's [GAME](https://github.com/openvpi/GAME) add notes for duration and pitch training.
 
 ## Dataset
