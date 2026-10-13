@@ -432,6 +432,15 @@ h3{margin:28px 0 8px;font-size:1.05rem}
 .lead{margin:0 0 22px;color:var(--mute);max-width:62ch}
 .field{margin:0 0 16px}
 .field label,legend{display:block;font-weight:600;margin-bottom:4px;padding:0}
+.field-label-row{display:flex;align-items:center;gap:5px;margin-bottom:4px}
+.field-label-row>label{display:block;font-weight:600;margin:0;padding:0}
+.help-wrap{position:relative;display:inline-flex;vertical-align:middle;flex:0 0 auto;margin-left:3px}
+button.help-btn{display:inline-grid;place-items:center;width:18px;height:18px;min-width:18px;padding:0;border:1px solid var(--mute);border-radius:50%;background:transparent;color:var(--accent);font-size:12px;font-weight:700;line-height:1}
+button.help-btn:hover{background:var(--accent-soft);border-color:var(--accent)}
+.help-pop{position:absolute;z-index:50;left:0;top:calc(100% + 7px);display:block;width:min(320px,76vw);padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:0 8px 24px rgba(0,0,0,.18);color:var(--ink);font-size:.86rem;font-weight:400;line-height:1.5;white-space:normal}
+.help-pop[hidden]{display:none!important}
+label.choice .help-wrap{margin-left:5px;vertical-align:baseline}
+@media(max-width:540px){.help-pop{width:min(280px,78vw)}}
 .field small,.hint{display:block;color:var(--mute);margin-top:3px;font-size:.86rem;max-width:66ch}
 input[type=text],select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
 textarea{min-height:60px;resize:vertical}
@@ -729,14 +738,154 @@ async function api(path,body){
   return j;
 }
 
+const FIELD_HELP = {
+  "voice": "选择作为微调起点的 Synthesizer V 声库文件。支持 voice.nofs 或 info.<版本>.nofs。训练会生成新声库，不会直接覆盖这个源文件。",
+  "dataset": "选择包含 wavs 子文件夹和 transcriptions.csv 的数据集目录。CSV 至少需要音素序列和时长；要训练 Timing 或 Pitch，还需要相应的音符与词边界信息。",
+  "i_corpus": "选择同时存放录音与标注的文件夹。每个 song.wav 都需要同名的 song.lab 文件。",
+  "i_wavs": "选择存放录音 .wav 文件的文件夹。每份录音都应有同名的 .lab 标注文件。",
+  "i_labs": "选择存放 .lab 音素标注文件的文件夹。文件名需要与对应的 .wav 录音一致。",
+  "i_manifest": "选择 TrainV6 的 manifest.json 文件。文件中应列出录音路径及其时间对齐的音素标签。",
+  "i_output": "指定转换后的数据集保存目录。转换成功后，TrainSV 会自动将该目录设为当前数据集。",
+  "i_songs": "可选：只导入指定录音。填写不带扩展名的名称，多个名称用逗号分隔；留空表示导入全部录音。",
+  "t_steps": "训练总步数。数值越大，训练通常越久；更多步数不保证效果更好。可先用快速测试确认数据和环境正常，再逐步增加。",
+  "v_name": "为输出声库设置显示名称。建议使用容易识别的名称；该名称也会用于自动生成部分输出路径。",
+  "t_output": "指定训练后声库的保存位置。普通 voice.nofs 声库保存为文件；info.*.nofs 类型的共享模型声库会按工具规则保存到目录中。",
+  "t_lr": "学习率，控制每次更新模型参数时的调整幅度。默认值取决于“调整内容”：全部权重通常为 2e-5，仅训练身份向量时通常为 3e-3。过高可能不稳定，过低可能进展缓慢。",
+  "t_warmup": "预热步数。大于 0 时，学习率会在指定步数内逐渐升高；留空或为 0 时不启用预热。",
+  "t_lrend": "最终学习率。填写后，训练会按余弦衰减逐步降至该值；留空时学习率保持不变（除非设置了预热）。",
+  "t_anchor": "控制微调权重向原始声库权重靠拢的强度。值越大，约束通常越强、越能保留原声库特征；具体效果仍取决于数据和训练设置。",
+  "t_batch": "每一步累计计算的短语数量；音频训练使用对应音频窗口。增加批次通常会占用更多显存，显存不足时可尝试减小，常从 1 开始。",
+  "t_cons": "辅音帧在训练音频损失中的权重。大于 1 会更强调辅音；留空使用程序默认值。验证集评分不应用此额外权重。",
+  "t_val": "留作验证、不会用于训练的短语比例或数量。小于 1 的数值表示比例（例如 0.1 约为 10%）；大于或等于 1 时按数量解释。设为 0 可不留验证数据。",
+  "t_seed": "随机种子，用于控制随机数据划分等步骤。比较不同设置时尽量使用相同的种子；更改种子可能会改变验证集。",
+  "t_evalevery": "每隔多少训练步数评估一次验证集。间隔较小能更频繁观察效果，但会增加评估开销。",
+  "t_logevery": "每隔多少训练步数输出一次训练日志。它主要影响日志的详细程度，不直接改变训练目标。",
+  "t_pmap": "可选的 JSON 音素映射文件，用于把数据集中的音素名称转换成当前声库使用的名称。映射不匹配时可能导致训练数据无法正确识别。",
+  "t_modes": "可选：设置要训练的 Vocal Mode 名称，多个名称用逗号分隔。此功能主要适用于 info 声库；新增模式时通常先用“仅身份向量”训练，再进行完整微调。",
+  "t_version": "可选：指定 info 声库输出使用的版本名称。仅适用于 info.*.nofs 类型声库。",
+  "t_final": "可选：为最后一步的权重另存一个版本。填写要使用的版本标识；它与验证过程中保存的最佳权重版本不同。仅适用于 info 声库。",
+  "t_levelref": "可选的响度参考声库。连续微调时可指定最初的基础声库，避免每次训练都以微调后的声音重新定标。",
+  "t_gain": "可选：手动固定录音响度缩放系数。留空时由程序测量；只有在明确知道需要的缩放幅度时再填写。",
+  "t_run": "训练运行目录，用来保存日志和可恢复的训练状态。启用后，之后可以尝试从该目录继续训练。",
+  "t_history": "可选：将验证评分历史写入 JSON 文件，便于比较多次训练结果或进一步分析。",
+  "e_new": "选择训练后生成的新声库文件。对比时会将它与第 1 步选择的原始声库进行评估。",
+  "e_out": "指定评估结果的保存目录。结果包含 metrics.json，以及用于试听对比的渲染音频（如果成功生成）。",
+  "e_max": "最多渲染多少条留出的短语用于试听比较。数量越多，评估与渲染可能越耗时。",
+  "s_output": "指定合成练习数据的保存目录。生成完成后，该数据集会自动设为当前数据集。",
+  "s_phrases": "要合成的短语数量。数量越多，生成测试数据所需时间和磁盘空间通常越多。",
+  "s_notes": "每条练习短语包含的音符数量。它影响合成数据的长度与复杂程度。",
+  "c_data": "选择需要转换音素拼写的数据集目录。原始数据集不会被直接修改。",
+  "c_output": "指定转换后的数据集保存目录。建议使用新目录，以便保留原始数据并比较转换结果。",
+  "c_src": "选择源数据集使用的字典文本文件，用于解释原有音素拼写。请确保它与源数据集的标注体系相匹配。",
+  "c_tgt": "选择目标 Synthesizer V 声库对应的字典文本文件。目标字典需要与所选声库及语言相匹配。",
+  "c_coda": "控制一个音节中分配给韵尾的时长比例。只在特定字典转换场景中需要调整；不确定时建议先使用默认值。"
+};
+const STATIC_HELP = {
+  "language": "选择录音所使用的语言/音素集。它必须与数据集标签采用的音素体系一致，否则可能出现声库不认识某些音素的问题。",
+  "i_src": "选择现有素材的组织方式：同一目录内的 .wav/.lab、分开放置的录音与标注目录，或 TrainV6 manifest.json。",
+  "i_words": "开启后，导入时会借助第 1 步选择的声库为词边界写入额外信息。若之后要训练 Timing 或 Pitch，这些信息可能是必要条件；只训练 Sound 时可以不勾选。",
+  "i_map": "可选：给导入过程中的音素改名。每行写一组 old=new；适用于标注里的音素名与声库使用的名称不一致的情况。",
+  "m_acoustic": "Sound（声学模型）决定合成声音的音色与音频细节。它可使用只有音素与时长的数据集，也是建议优先尝试的模型。",
+  "m_duration": "Timing（时长模型）学习每个音素在音符中的时长分配。数据集需要包含音符信息和词边界；缺少这些信息时不建议选择。",
+  "m_pitch": "Pitch（音高模型）学习音高曲线及相关表达。需要包含音符与词边界的标注；不带音符的数据集无法有效训练该模型。",
+  "m_vocoder": "Vocoder 是最终音频生成阶段的模型。它属于可选项目，训练通常更慢；初次使用建议先保持关闭。",
+  "p_quick": "快速测试：运行少量步数，用来确认声库、数据集和运行环境可以正常工作。它不是完整训练。",
+  "p_std": "标准训练：使用适中的初始步数，适合作为第一轮正式尝试。之后可根据验证结果调整。",
+  "p_long": "较长训练：步数更多、耗时更长，并会缓慢降低学习率。只有在短训练正常且验证结果仍有改善空间时再尝试。",
+  "t_savebest": "每当验证指标改善时额外保存一次权重版本，方便保留训练中间表现较好的结果，即使之后提前停止也有机会使用。",
+  "t_params": "选择要更新的参数范围。“Everything” 会训练所选模型的权重，并通过 Anchor 约束接近原权重；“Only the voice's identity vectors” 只训练声库的说话人、风格和 Vocal Mode 向量，通常更轻量。",
+  "t_device": "选择训练设备。Automatic 会按环境选择可用设备；NVIDIA 使用 CUDA，Apple 芯片可使用 MPS，CPU 通常较慢但可作为兼容性选项。",
+  "t_keep": "勾选后保留录音的原始响度；不勾选时，程序通常会将录音缩放到起始声库的输出响度。",
+  "t_resume": "尝试从运行目录中已有的 state.pt 继续训练。应保持此前使用的模型与参数范围一致，并将 Steps 设为高于已完成步数的值。"
+};
+const controlLabels = {
+  "language": "Language your recordings are sung in",
+  "i_src": "Where are your files?",
+  "i_words": "Mark word boundaries using my voice",
+  "i_map": "Rename phonemes",
+  "m_acoustic": "Sound (acoustic)",
+  "m_duration": "Timing (duration)",
+  "m_pitch": "Pitch (melody and vibrato)",
+  "m_vocoder": "Vocoder (final audio stage)",
+  "p_quick": "Quick test",
+  "p_std": "Standard",
+  "p_long": "Thorough",
+  "t_savebest": "Also save whenever it improves",
+  "t_params": "What to adjust",
+  "t_device": "Computer part to use",
+  "t_keep": "Keep recordings at their original loudness",
+  "t_resume": "Continue the previous run"
+};
+
+
+function helpMarkup(label, text) {
+  return '<span class="help-wrap"><button class="help-btn" type="button" data-help-toggle aria-label="帮助：' + esc(label) + '" aria-expanded="false" title="点击查看说明">?</button><span class="help-pop" role="tooltip" hidden>' + esc(text) + '</span></span>';
+}
+function addStaticHelp() {
+  Object.entries(STATIC_HELP).forEach(([id, text]) => {
+    const control = document.getElementById(id);
+    if (!control) return;
+    const choice = control.closest("label.choice, .seg label");
+    const help = document.createElement("span");
+    const template = document.createElement("template");
+    template.innerHTML = helpMarkup(controlLabels[id] || id, text);
+    help.replaceWith(template.content.firstElementChild);
+    const node = template.content.firstElementChild;
+    if (choice) {
+      const title = choice.querySelector("b");
+      if (title) title.insertAdjacentElement("afterend", node);
+      else choice.append(node);
+      return;
+    }
+    const label = document.querySelector('label[for="' + id + '"]');
+    if (!label) return;
+    const row = document.createElement("div");
+    row.className = "field-label-row";
+    label.parentNode.insertBefore(row, label);
+    row.append(label, node);
+  });
+}
+function closeHelp(except) {
+  $(".help-wrap.open").forEach(wrap => {
+    if (wrap === except) return;
+    wrap.classList.remove("open");
+    const button = $("[data-help-toggle]", wrap);
+    const tip = $(".help-pop", wrap);
+    if (button) button.setAttribute("aria-expanded", "false");
+    if (tip) tip.hidden = true;
+  });
+}
+function wireHelpInteractions() {
+  document.addEventListener("click", event => {
+    const button = event.target.closest("[data-help-toggle]");
+    if (button) {
+      event.preventDefault();
+      event.stopPropagation();
+      const wrap = button.closest(".help-wrap");
+      const shouldOpen = !wrap.classList.contains("open");
+      closeHelp(wrap);
+      wrap.classList.toggle("open", shouldOpen);
+      button.setAttribute("aria-expanded", String(shouldOpen));
+      const tip = $(".help-pop", wrap);
+      if (tip) tip.hidden = !shouldOpen;
+      return;
+    }
+    if (event.target.closest(".help-wrap")) return;
+    closeHelp();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeHelp();
+  });
+}
+
 /* ---------- build the repeated field markup ---------- */
 function buildFields(){
   $$(".field[data-id]").forEach(f=>{
     const d=f.dataset,id=d.id;
-    let h=`<label for="${id}">${d.label}</label>`;
+    const description = FIELD_HELP[id] || (d.hint ? d.hint.replace(/<[^>]*>/g, "") : "此设置会影响当前操作，请结合训练目标选择。");
+    let h='<div class="field-label-row"><label for="' + id + '">' + esc(d.label) + '</label>' + helpMarkup(d.label, description) + '</div>';
     if(d.kind==="path")h+=`<div class="path"><input type="text" id="${id}" data-s placeholder="${esc(d.ph||"")}" spellcheck="false" autocomplete="off"><button type="button" class="ghost" data-browse="${id}" data-mode="${d.mode}" data-ext="${d.ext||""}">Browse…</button></div>`;
     else h+=`<input type="text" id="${id}" data-s placeholder="${esc(d.ph||"")}" spellcheck="false" autocomplete="off">`;
-    if(d.hint)h+=`<small>${d.hint}</small>`;
     f.innerHTML=h;
     if(d.value)document.getElementById(id).value=d.value;
   });
@@ -1084,6 +1233,8 @@ async function loadResults(){
 /* ---------- start-up ---------- */
 async function init(){
   buildFields();
+  addStaticHelp();
+  wireHelpInteractions();
   try{ENV=await api("env")}catch(e){$("#banner").hidden=false;$("#banner").textContent=e.message;return}
   restore(await api("settings").catch(()=>({})));
   // a path the user typed earlier stays; empty or untouched ones are re-suggested
