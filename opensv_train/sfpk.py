@@ -6,6 +6,7 @@ It inspects ZIP containers and extracted directories without extracting archives
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -151,10 +152,13 @@ def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, 
                 size = item.stat().st_size
                 entries.append({"path": rel, "size": size, "kind": _kind(rel)})
                 if item.name.casefold() == "info.nofs":
-                    try:
-                        raw_info_nofs.append((rel, item.read_bytes()))
-                    except OSError as error:
-                        report["warnings"].append(f"Could not read {rel}: {error}")
+                    if size > MAX_CONFIG_BYTES:
+                        report["warnings"].append(f"Skipped {rel}: larger than {MAX_CONFIG_BYTES} bytes")
+                    else:
+                        try:
+                            raw_info_nofs.append((rel, item.read_bytes()))
+                        except OSError as error:
+                            report["warnings"].append(f"Could not read {rel}: {error}")
                 elif item.suffix.lower() == ".json":
                     try:
                         configs.append(_json_summary(rel, item.read_bytes()))
@@ -179,11 +183,14 @@ def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, 
                         continue
                     entries.append({"path": name, "size": info.file_size, "compressed_size": info.compress_size,
                                     "kind": _kind(name)})
-                    if Path(name).name.casefold() == "info.nofs" and info.file_size <= MAX_CONFIG_BYTES:
-                        try:
-                            raw_info_nofs.append((name, archive.read(info)))
-                        except (OSError, RuntimeError, zipfile.BadZipFile) as error:
-                            report["warnings"].append(f"Could not read {name}: {error}")
+                    if Path(name).name.casefold() == "info.nofs":
+                        if info.file_size > MAX_CONFIG_BYTES:
+                            report["warnings"].append(f"Skipped {name}: larger than {MAX_CONFIG_BYTES} bytes")
+                        else:
+                            try:
+                                raw_info_nofs.append((name, archive.read(info)))
+                            except (OSError, RuntimeError, zipfile.BadZipFile) as error:
+                                report["warnings"].append(f"Could not read {name}: {error}")
                     elif Path(name).suffix.lower() == ".json" and info.file_size <= MAX_CONFIG_BYTES:
                         try:
                             configs.append(_json_summary(name, archive.read(info)))
