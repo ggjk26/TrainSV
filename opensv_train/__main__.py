@@ -138,6 +138,8 @@ def import_lab(arguments) -> None:
     if arguments.from_filenames:
         from .filename_labels import filename_recordings, read_phone_table, write_lab_files
 
+        if not arguments.wavs:
+            raise SystemExit("--from-filenames requires --wavs")
         voice_symbols = []
         if arguments.voice and not arguments.phone_table:
             from .common import find_language
@@ -147,9 +149,6 @@ def import_lab(arguments) -> None:
             voice_symbols = phone_set.symbols
         phones = read_phone_table(arguments.phone_table, voice_symbols)
         recordings = filename_recordings(arguments.wavs, phones)
-        # Keep the generated HTS/vLabeler labels alongside the imported dataset.
-        write_lab_files(recordings, Path(arguments.output) / "lab")
-        print(f"generated {len(recordings)} LAB files from WAV filenames")
     elif arguments.corpus:
         recordings = corpus_recordings(arguments.corpus)
     elif arguments.labs and arguments.wavs:
@@ -163,6 +162,12 @@ def import_lab(arguments) -> None:
         if missing := [name for name in names if name not in by_name]:
             raise SystemExit(f"no matching recording for: {', '.join(missing)}")
         recordings = [by_name[name] for name in names]
+    if arguments.from_filenames:
+        from .filename_labels import write_lab_files
+
+        # Keep the generated HTS/vLabeler labels alongside the imported dataset.
+        write_lab_files(recordings, Path(arguments.output) / "lab")
+        print(f"generated {len(recordings)} LAB files from WAV filenames")
     mapping = dict(pair.split("=", 1) for pair in arguments.map)
     vowels = None
     if arguments.voice:
@@ -286,7 +291,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--output", required=True)
     command.add_argument("--map", nargs="*", default=[], help="phoneme replacements such as vf=cl")
     command.add_argument("--voice", help="voice phone set for word spans, or as a fallback phone table")
-    command.add_argument("--language", default="mandarin", type=language_name, help="language phone set for --voice")
+    command.add_argument("--language", default="japanese", type=language_name, help="language phone set for --voice")
     command.add_argument("--from-filenames", action="store_true", help="generate approximate LAB labels from space-separated phones in WAV filenames")
     command.add_argument("--phone-table", help="JSON phone table used to validate and split custom phoneme names")
     command.set_defaults(handler=import_lab)
