@@ -127,6 +127,9 @@ def package_sfpk(
     config_path = _existing_file(config, "config.json", required=True)
     avatar = _existing_file(profile, "profile image")
     backdrop = _existing_file(background, "background image")
+    for label, image in (("profile image", avatar), ("background image", backdrop)):
+        if image is not None and image.suffix.lower() != ".png":
+            raise ValueError(f"{label} must be PNG to use the sample package filename: {image}")
     try:
         config_data = json.loads(config_path.read_text("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -149,9 +152,9 @@ def package_sfpk(
         ("config.json", config_path),
     ]
     if avatar:
-        entries.append(("profile.png" if avatar.suffix.lower() == ".png" else avatar.name, avatar))
+        entries.append(("profile.png", avatar))
     if backdrop:
-        entries.append(("background.png" if backdrop.suffix.lower() == ".png" else backdrop.name, backdrop))
+        entries.append(("background.png", backdrop))
     destination = Path(output).expanduser()
     if destination.suffix.lower() != ".sfpk":
         raise ValueError("SFPK output path must end in .sfpk")
