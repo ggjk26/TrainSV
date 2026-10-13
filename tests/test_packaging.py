@@ -90,14 +90,6 @@ def test_package_outputs_require_correct_extension(tmp_path):
 def test_package_svpk_can_preserve_observed_background_typo(tmp_path):
     voice = _file(tmp_path / "voice.nofs", b"voice-model")
     background = _file(tmp_path / "background.png", b"png-data")
-    output = tmp_path / "voice.sfpk"  # wrong output extension must still be rejected
-    with pytest.raises(ValueError, match="must end in .svpk"):
-        package_svpk(
-            voice=voice, output=output, product_name="Sample", vendor_name="Vendor",
-            version_string="1", version_number=1, background=background,
-            background_entry="backgrond.png",
-        )
-
     output = tmp_path / "voice.svpk"
     package_svpk(
         voice=voice, output=output, product_name="Sample", vendor_name="Vendor",
