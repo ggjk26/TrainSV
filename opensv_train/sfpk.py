@@ -59,6 +59,61 @@ def _json_summary(name: str, data: bytes) -> dict[str, Any]:
     return result
 
 
+
+def _info_nofs_summary(name: str, data: bytes, available_paths: list[str]) -> dict[str, Any]:
+    """Parse the observed JSON info.nofs and report model references conservatively."""
+    result = _json_summary(name, data)
+    result["shared_model_metadata"] = True
+    if not result.get("parsed"):
+        return result
+    try:
+        value = json.loads(data.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return result
+    if not isinstance(value, dict):
+        result["shared_model_metadata"] = False
+        result["note"] = "info.nofs JSON must be an object"
+        return result
+
+    result["voice_metadata"] = {
+        key: value.get(key)
+        for key in ("name", "version", "vendor", "language", "phoneset")
+        if isinstance(value.get(key), (str, int, float, bool)) or value.get(key) is None
+    }
+    styles = value.get("styles")
+    result["style_names"] = [
+        style.get("name") for style in styles
+        if isinstance(style, dict) and isinstance(style.get("name"), str)
+    ] if isinstance(styles, list) else []
+    expected_roles = ("acoustic", "vocoder", "duration", "f0")
+    available = [PurePosixPath(path).as_posix().casefold() for path in available_paths]
+    references: dict[str, str] = {}
+    expected_paths: dict[str, str] = {}
+    found: dict[str, bool] = {}
+    malformed: dict[str, str] = {}
+    for role in expected_roles:
+        reference = value.get(role)
+        if not isinstance(reference, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", reference):
+            malformed[role] = "missing or not a 32-character hexadecimal model identifier"
+            continue
+        references[role] = reference
+        expected = f"models/{role}/{reference}.dnni".casefold()
+        expected_paths[role] = f"models/{role}/{reference}.dnni"
+        found[role] = any(path == expected or path.endswith("/" + expected) for path in available)
+    result["model_references"] = references
+    result["expected_model_paths_by_trainsv_convention"] = expected_paths
+    result["model_payload_found_in_container"] = found
+    result["model_references_malformed"] = malformed
+    result["model_payloads_not_found_in_container"] = [
+        role for role, exists in found.items() if not exists
+    ]
+    result["metadata_schema_fields_missing"] = [
+        key for key in ("name", "version", "vendor", "language", "phoneset",
+                        "support_languages", "styles", "f0_style", "duration_style")
+        if key not in value
+    ]
+    return result
+
 def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, Any]:
     """Summarize an .sfpk file or extracted directory without modifying it."""
     target = Path(path).expanduser()
@@ -95,7 +150,12 @@ def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, 
                 rel = item.relative_to(target).as_posix()
                 size = item.stat().st_size
                 entries.append({"path": rel, "size": size, "kind": _kind(rel)})
-                if item.suffix.lower() == ".json":
+                if item.name.casefold() == "info.nofs":
+                    try:
+                        raw_info_nofs.append((rel, item.read_bytes()))
+                    except OSError as error:
+                        report["warnings"].append(f"Could not read {rel}: {error}")
+                elif item.suffix.lower() == ".json":
                     try:
                         configs.append(_json_summary(rel, item.read_bytes()))
                     except OSError as error:
@@ -119,7 +179,12 @@ def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, 
                         continue
                     entries.append({"path": name, "size": info.file_size, "compressed_size": info.compress_size,
                                     "kind": _kind(name)})
-                    if Path(name).suffix.lower() == ".json" and info.file_size <= MAX_CONFIG_BYTES:
+                    if Path(name).name.casefold() == "info.nofs" and info.file_size <= MAX_CONFIG_BYTES:
+                        try:
+                            raw_info_nofs.append((name, archive.read(info)))
+                        except (OSError, RuntimeError, zipfile.BadZipFile) as error:
+                            report["warnings"].append(f"Could not read {name}: {error}")
+                    elif Path(name).suffix.lower() == ".json" and info.file_size <= MAX_CONFIG_BYTES:
                         try:
                             configs.append(_json_summary(name, archive.read(info)))
                         except (OSError, RuntimeError, zipfile.BadZipFile) as error:
@@ -136,7 +201,28 @@ def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, 
 
     report["entries"] = entries or report["entries"]
     report["entry_count"] = len(report["entries"])
+    available_paths = [entry["path"] for entry in report["entries"]]
+    info_summaries = [
+        _info_nofs_summary(name, data, available_paths)
+        for name, data in raw_info_nofs
+    ]
+    report["info_nofs_candidates"] = info_summaries
+    configs.extend(info_summaries)
     report["configuration_candidates"] = configs
+    for summary in info_summaries:
+        missing_payloads = summary.get("model_payloads_not_found_in_container", [])
+        malformed_refs = summary.get("model_references_malformed", {})
+        if missing_payloads:
+            report["warnings"].append(
+                f"{summary['path']}: model payload files were not found inside this container for: "
+                + ", ".join(missing_payloads)
+                + ". This is an inventory result, not proof that the installed shared-model store lacks them."
+            )
+        if malformed_refs:
+            report["warnings"].append(
+                f"{summary['path']}: model identifiers could not be validated for: "
+                + ", ".join(sorted(malformed_refs))
+            )
     report["model_candidates"] = [entry for entry in report["entries"] if entry["kind"] == "model-or-package"]
     report["image_candidates"] = [entry for entry in report["entries"] if entry["kind"] == "image"]
     if report["container_type"] == "zip-container":
@@ -159,6 +245,18 @@ def format_report(report: dict[str, Any]) -> str:
         lines.append(f"  {item['kind']:24s} {item['size']:>10,}  {item['path']}")
     for config in report.get("configuration_candidates", []):
         lines.append(f"JSON {config['path']}: " + (", ".join(config.get("top_level_keys", [])) if config.get("parsed") else config.get("note", "not parsed")))
+    for info in report.get("info_nofs_candidates", []):
+        metadata = info.get("voice_metadata", {})
+        lines.append(
+            f"info.nofs {info['path']}: {metadata.get('name', '?')} "
+            f"(version {metadata.get('version', '?')}); styles: "
+            + (", ".join(info.get("style_names", [])) or "-")
+        )
+        for role, identifier in info.get("model_references", {}).items():
+            presence = info.get("model_payload_found_in_container", {}).get(role, False)
+            lines.append(f"  model {role}: {identifier} (payload found in container: {presence})")
+        if info.get("metadata_schema_fields_missing"):
+            lines.append("  metadata fields missing: " + ", ".join(info["metadata_schema_fields_missing"]))
     for warning in report.get("warnings", []):
         lines.append("WARNING: " + warning)
     lines.append(report["packaging_note"])
