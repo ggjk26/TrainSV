@@ -30,6 +30,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from opensv_train.sfpk import inspect_sfpk as inspect_sfpk_path
+
 ROOT = Path(__file__).resolve().parent
 TOKEN = secrets.token_urlsafe(16)
 COMMANDS = {"import-lab", "convert-dict", "evaluate", "finetune", "synthesize-dataset", "inspect"}
@@ -317,6 +319,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, RUNNER.snapshot(int(one("since", "0") or 0)))
             if route == "results":
                 return self._send(200, list_results(one("path")))
+            if route == "inspect-sfpk":
+                return self._send(200, inspect_sfpk_path(one("path")))
             if route == "settings":
                 return self._send(200, read_settings())
             if route == "media":
@@ -675,6 +679,11 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <div class="field" data-id="c_tgt" data-kind="path" data-mode="file" data-ext="txt" data-label="Synthesizer V dictionary" data-hint="For example mandarin-xsampa-dict.txt"></div>
   <div class="field" data-id="c_coda" data-label="Share of a syllable given to its ending" data-ph="0.3"></div>
   <div class="actions"><button data-run="convert">Convert dictionary</button></div>
+  <h3>Inspect a Synthesizer V Flat package</h3>
+  <p class="hint">Choose a real <code>.sfpk</code> sample or its extracted folder. This read-only tool lists files and summarizes JSON configuration candidates without extracting or modifying anything. It does not assume an undocumented package layout and does not create a package yet.</p>
+  <div class="field" data-id="sfpk_path" data-label="Sample .sfpk file or extracted directory" data-ph="C:\\path\\to\\sample.sfpk"></div>
+  <div class="actions"><button class="primary" id="inspectSfpk">Inspect package structure</button></div>
+  <pre id="sfpkReport" class="mono" style="white-space:pre-wrap;overflow-wrap:anywhere;background:var(--code);padding:12px;border-radius:6px;max-height:440px;overflow:auto">No inspection run yet.</pre>
 </section>
 
 </div>
@@ -1279,6 +1288,7 @@ async function init(){
   $("#quitBtn").onclick=async()=>{if(!confirm("Stop the TrainSV GUI? Anything running will be stopped."))return;try{await api("quit",{})}catch(e){}document.body.innerHTML='<p style="padding:30px">The TrainSV GUI has stopped. You can close this tab.</p>'};
   $("#useTrained").onclick=async()=>{try{const r=await api("resolve-voice?path="+enc(val("t_output")));if(r.path)setVal("e_new",r.path);else alert(r.error)}catch(e){alert(e.message)}};
   $("#showResults").onclick=loadResults;
+  $("#inspectSfpk").onclick=async()=>{const path=val("sfpk_path");const out=$("#sfpkReport");if(!path){out.textContent="Choose a .sfpk file or extracted directory first.";return}out.textContent="Inspecting…";try{const r=await api("inspect-sfpk?path="+enc(path));out.textContent=[`Input: ${r.input}`,`Container: ${r.container_type}`,`Entries: ${r.entry_count}${r.truncated?" (truncated)":""}`,`Model/package candidates: ${(r.model_candidates||[]).length}`,`Image candidates: ${(r.image_candidates||[]).length}`,`JSON configuration candidates: ${(r.configuration_candidates||[]).length}`,"",...(r.entries||[]).map(x=>`${x.kind} | ${x.size} bytes | ${x.path}`),"",...(r.configuration_candidates||[]).map(x=>`JSON ${x.path}: ${x.parsed?(x.top_level_keys||[]).join(", "):(x.note||"not parsed")}`),"",...(r.warnings||[]).map(x=>"WARNING: "+x),"",r.packaging_note].join("\n")}catch(e){out.textContent="Inspection failed: "+e.message}};
   // resume hint
   const rh=()=>{const r=val("t_run");if(!r)return;api("stat?path="+enc(join(r,"state.pt"))).then(s=>{$("#resumeHint").textContent=s.exists?"A saved run was found here. Set “Steps” higher than what it already did to train further.":"No saved run here yet, so this would start fresh."}).catch(()=>{})};
   $("#t_run").addEventListener("input",rh);rh();
