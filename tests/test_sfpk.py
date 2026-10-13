@@ -100,3 +100,36 @@ def test_inspects_json_info_nofs_model_references_without_assuming_payloads(tmp_
     formatted = format_report(report)
     assert "info.nofs" in formatted
     assert f"model acoustic: {acoustic_id}" in formatted
+
+
+def test_inspects_local_model_store_and_does_not_substitute_models(tmp_path):
+    archive = tmp_path / "sample.sfpk"
+    models_root = tmp_path / "models"
+    (models_root / "acoustic").mkdir(parents=True)
+    (models_root / "acoustic" / ("e" * 32 + ".dnni")).write_bytes(b"not dnni")
+    (models_root / "vocoder").mkdir()
+    (models_root / "vocoder" / "candidate.dnni").write_bytes(b"not dnni")
+    info = {
+        "name": "Sample AI", "version": "1", "vendor": "Example",
+        "language": "japanese", "phoneset": "romaji",
+        "support_languages": ["japanese"],
+        "acoustic": "a" * 32, "vocoder": "b" * 32,
+        "duration": "c" * 32, "f0": "d" * 32,
+        "styles": [{"name": "(base)", "data": "00"}],
+        "f0_style": "00", "duration_style": "00",
+    }
+    with zipfile.ZipFile(archive, "w") as package:
+        package.writestr("info.nofs", json.dumps(info))
+    report = inspect_sfpk(archive, models_root=models_root)
+    inventory = report["model_store_inventory"]
+    assert inventory["exists"] is True
+    assert inventory["dnni_file_count"] == 2
+    assert len(inventory["files_by_role"]["acoustic"]) == 1
+    refs = report["model_store_reference_checks"][0]["models"]
+    assert refs["acoustic"]["expected_path_found"] is False
+    assert refs["acoustic"]["same_id_found_elsewhere"] == []
+    assert refs["acoustic"]["role_candidate_count"] == 1
+    assert "must not be used for automatic substitution" in inventory["note"]
+    formatted = format_report(report)
+    assert "Installed model store:" in formatted
+    assert "available same-role models are listed as candidates only" in formatted
