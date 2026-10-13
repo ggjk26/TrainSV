@@ -826,10 +826,8 @@ function addStaticHelp() {
     const control = document.getElementById(id);
     if (!control) return;
     const choice = control.closest("label.choice, .seg label");
-    const help = document.createElement("span");
     const template = document.createElement("template");
     template.innerHTML = helpMarkup(controlLabels[id] || id, text);
-    help.replaceWith(template.content.firstElementChild);
     const node = template.content.firstElementChild;
     if (choice) {
       const title = choice.querySelector("b");
