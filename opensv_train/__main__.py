@@ -131,19 +131,37 @@ def _check_phonemes(voice: Voice, phrases) -> None:
 
 
 def import_lab(arguments) -> None:
+    from pathlib import Path
+
     from .data import corpus_recordings, import_labels, lab_recordings
 
-    if arguments.corpus:
+    if arguments.from_filenames:
+        from .filename_labels import filename_recordings, read_phone_table, write_lab_files
+
+        voice_symbols = []
+        if arguments.voice and not arguments.phone_table:
+            from .common import find_language
+
+            phone_sets = Voice.load(arguments.voice).acoustic.phone_sets
+            phone_set = phone_sets[find_language(phone_sets, arguments.language)]
+            voice_symbols = phone_set.symbols
+        phones = read_phone_table(arguments.phone_table, voice_symbols)
+        recordings = filename_recordings(arguments.wavs, phones)
+        # Keep the generated HTS/vLabeler labels alongside the imported dataset.
+        write_lab_files(recordings, Path(arguments.output) / "lab")
+        print(f"generated {len(recordings)} LAB files from WAV filenames")
+    elif arguments.corpus:
         recordings = corpus_recordings(arguments.corpus)
     elif arguments.labs and arguments.wavs:
         recordings = lab_recordings(arguments.labs, arguments.wavs)
     else:
-        raise SystemExit("give --corpus, or --labs and --wavs")
+        raise SystemExit("give --corpus, or --labs and --wavs; use --from-filenames with --wavs to generate labels")
+
     if arguments.songs:
         by_name = {recording[0]: recording for recording in recordings}
         names = arguments.songs.split(",")
         if missing := [name for name in names if name not in by_name]:
-            raise SystemExit(f"no .lab with a matching .wav for: {', '.join(missing)}")
+            raise SystemExit(f"no matching recording for: {', '.join(missing)}")
         recordings = [by_name[name] for name in names]
     mapping = dict(pair.split("=", 1) for pair in arguments.map)
     vowels = None
@@ -263,12 +281,14 @@ def parser() -> argparse.ArgumentParser:
     command = commands.add_parser("import-lab", help="convert HTS/vLabeler .lab alignments and their wavs into a dataset")
     command.add_argument("--corpus", help="TrainV6 corpus: a directory of <name>.wav and <name>.lab (or wav/ and lab/), or a manifest.json")
     command.add_argument("--labs", help="directory of <name>.lab files (start end phoneme, 100 ns units)")
-    command.add_argument("--wavs", help="directory of the matching <name>.wav files")
-    command.add_argument("--songs", help="comma-separated names to import; default every .lab with a matching .wav")
+    command.add_argument("--wavs", help="directory of the matching .wav files, or source WAVs with --from-filenames")
+    command.add_argument("--songs", help="comma-separated recording names to import; default every matching recording")
     command.add_argument("--output", required=True)
     command.add_argument("--map", nargs="*", default=[], help="phoneme replacements such as vf=cl")
-    command.add_argument("--voice", help="also write ph_num word spans, using this voice's phone categories")
-    command.add_argument("--language", default="japanese", type=language_name, help="phone set for --voice")
+    command.add_argument("--voice", help="voice phone set for word spans, or as a fallback phone table")
+    command.add_argument("--language", default="mandarin", type=language_name, help="language phone set for --voice")
+    command.add_argument("--from-filenames", action="store_true", help="generate approximate LAB labels from space-separated phones in WAV filenames")
+    command.add_argument("--phone-table", help="JSON phone table used to validate and split custom phoneme names")
     command.set_defaults(handler=import_lab)
 
     command = commands.add_parser("convert-dict", help="re-spell a DiffSinger dataset with SV's dictionary for its language")
