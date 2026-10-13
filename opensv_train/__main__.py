@@ -18,6 +18,7 @@ from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_le
 from .voice import ROLES, Voice
 from .sfpk import format_report, inspect_sfpk as inspect_sfpk_path
 from .diagnostics import diagnose_voice, format_diagnostic
+from .packaging import package_sfpk, package_svpk
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -247,6 +248,29 @@ def diagnose_nofs_command(arguments) -> None:
         print(f"wrote diagnostic report: {destination}")
 
 
+ 
+def package_svpk_command(arguments) -> None:
+    output = package_svpk(
+        voice=arguments.voice, output=arguments.output,
+        product_name=arguments.product_name, vendor_name=arguments.vendor_name,
+        version_string=arguments.version_string, version_number=arguments.version_number,
+        depending_version_number=arguments.depending_version_number,
+        profile=arguments.profile, background=arguments.background,
+        license_file=arguments.license_file,
+    )
+    print(f"Created SVPK archive: {output}")
+    print("ZIP integrity was checked; installation/runtime compatibility still needs testing in Synthesizer V Studio.")
+
+
+def package_sfpk_command(arguments) -> None:
+    output = package_sfpk(
+        info=arguments.info, config=arguments.config_json, output=arguments.output,
+        profile=arguments.profile, background=arguments.background,
+    )
+    print(f"Created SFPK archive: {output}")
+    print("Package contents match the supplied schema; loading/runtime compatibility still needs testing in Synthesizer V Flat.")
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trainsv")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -340,6 +364,27 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--path", required=True, help="voice.nofs or info.<version>.nofs")
     command.add_argument("--json-output", help="optional path to save the diagnostic report as JSON")
     command.set_defaults(handler=diagnose_nofs_command)
+
+    command = commands.add_parser("package-svpk", help="build an SVPK archive from a trained voice.nofs and package metadata")
+    command.add_argument("--voice", required=True, help="trained voice.nofs")
+    command.add_argument("--output", required=True, help="output .svpk path")
+    command.add_argument("--product-name", required=True)
+    command.add_argument("--vendor-name", required=True)
+    command.add_argument("--version-string", required=True)
+    command.add_argument("--version-number", type=int, required=True)
+    command.add_argument("--depending-version-number", type=int, default=0)
+    command.add_argument("--profile", help="profile image, usually profile.png")
+    command.add_argument("--background", help="background image, usually background.png")
+    command.add_argument("--license-file", help="license text file")
+    command.set_defaults(handler=package_svpk_command)
+
+    command = commands.add_parser("package-sfpk", help="package a supplied info.nofs and config.json into an SFPK archive")
+    command.add_argument("--info", required=True, help="sample-validated info.nofs")
+    command.add_argument("--config-json", required=True, help="config.json following the observed SFPK schema")
+    command.add_argument("--output", required=True, help="output .sfpk path")
+    command.add_argument("--profile", help="profile image; must match config.json profile=true")
+    command.add_argument("--background", help="background image; must match config.json background=true")
+    command.set_defaults(handler=package_sfpk_command)
     for command in commands.choices.values():
         command.add_argument("--config", action="append", default=[], metavar="FILE", help="JSON file of option values; repeat for several, later files win and command-line options override them")
     return parser
