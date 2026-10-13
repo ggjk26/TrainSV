@@ -796,7 +796,9 @@ const STATIC_HELP = {
   "t_params": "选择要更新的参数范围。“Everything” 会训练所选模型的权重，并通过 Anchor 约束接近原权重；“Only the voice's identity vectors” 只训练声库的说话人、风格和 Vocal Mode 向量，通常更轻量。",
   "t_device": "选择训练设备。Automatic 会按环境选择可用设备；NVIDIA 使用 CUDA，Apple 芯片可使用 MPS，CPU 通常较慢但可作为兼容性选项。",
   "t_keep": "勾选后保留录音的原始响度；不勾选时，程序通常会将录音缩放到起始声库的输出响度。",
-  "t_resume": "尝试从运行目录中已有的 state.pt 继续训练。应保持此前使用的模型与参数范围一致，并将 Steps 设为高于已完成步数的值。"
+  "t_resume": "尝试从运行目录中已有的 state.pt 继续训练。应保持此前使用的模型与参数范围一致，并将 Steps 设为高于已完成步数的值。",
+  "d_mode_have": "选择此项表示你已经有 TrainSV 数据集：目录内应包含 wavs 子文件夹和 transcriptions.csv。若尚未生成数据集，请选择另一项并导入 .wav/.lab 文件。",
+  "d_mode_lab": "选择此项表示你手头是录音和 .lab 音素标注，需要先将它们转换为 TrainSV 数据集，然后才能进行训练。"
 };
 const controlLabels = {
   "language": "Language your recordings are sung in",
@@ -814,7 +816,9 @@ const controlLabels = {
   "t_params": "What to adjust",
   "t_device": "Computer part to use",
   "t_keep": "Keep recordings at their original loudness",
-  "t_resume": "Continue the previous run"
+  "t_resume": "Continue the previous run",
+  "d_mode_have": "I already have a dataset",
+  "d_mode_lab": "I have recordings and .lab files"
 };
 
 
