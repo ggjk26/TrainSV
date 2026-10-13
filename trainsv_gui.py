@@ -844,7 +844,7 @@ function addStaticHelp() {
   });
 }
 function closeHelp(except) {
-  $(".help-wrap.open").forEach(wrap => {
+  $$(".help-wrap.open").forEach(wrap => {
     if (wrap === except) return;
     wrap.classList.remove("open");
     const button = $("[data-help-toggle]", wrap);
