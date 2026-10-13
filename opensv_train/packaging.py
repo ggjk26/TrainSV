@@ -80,12 +80,15 @@ def package_svpk(
     profile: str | Path | None = None,
     background: str | Path | None = None,
     license_file: str | Path | None = None,
+    background_entry: str = "background.png",
 ) -> Path:
-    """Create a ZIP-based SVPK using the supplied sample's root entry names."""
+    """Create a ZIP-based SVPK using explicitly selected sample entry names."""
     model = _existing_file(voice, "voice.nofs", required=True)
     avatar = _existing_file(profile, "profile image")
     backdrop = _existing_file(background, "background image")
     license_path = _existing_file(license_file, "license file")
+    if background_entry not in {"background.png", "backgrond.png"}:
+        raise ValueError("background entry must be 'background.png' or the observed sample spelling 'backgrond.png'")
     for label, image in (("profile image", avatar), ("background image", backdrop)):
         if image is not None and image.suffix.lower() != ".png":
             raise ValueError(f"{label} must be PNG to use the sample package filename: {image}")
@@ -95,7 +98,7 @@ def package_svpk(
         raise ValueError("version numbers must be non-negative")
     entries: list[tuple[str, Path | bytes]] = [("voice.nofs", model)]
     if backdrop:
-        entries.append(("background.png", backdrop))
+        entries.append((background_entry, backdrop))
     if license_path:
         entries.append(("license.txt", license_path))
     if avatar:
