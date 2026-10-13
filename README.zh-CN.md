@@ -207,7 +207,7 @@ trainsv package-svpk \
   --license-file ./assets/license.txt
 ```
 
-头像、背景和许可证是可选参数；图片必须是 PNG。生成器会检查 ZIP CRC，但这不等同于在 Synthesizer V Studio 中验证安装成功。
+头像、背景和许可证是可选参数；图片必须是 PNG。默认背景条目名为 `background.png`；如果要逐字复现你提供的样本拼写 `backgrond.png`，可加 `--background-entry backgrond.png`。生成器会检查 ZIP CRC，但这不等同于在 Synthesizer V Studio 中验证安装成功。
 
 ### 打包共享声库 SFPK
 
