@@ -226,7 +226,7 @@ SFPK 打包器会保留你提供的 `info.nofs` 和 `config.json` 内容，并�
 ```bash
 trainsv inspect-sfpk --path /path/to/sample.sfpk --json-output /path/to/sfpk-report.json
 # 同时检查本机的 DNNI 模型目录（Windows 示例）
-trainsv inspect-sfpk --path /path/to/sample.sfpk --models-root "C:\\Users\\admin\\Documents\\OPSV\\Dreamtonics\\Synthesizer V Studio\\models" --json-output /path/to/sfpk-report.json
+trainsv inspect-sfpk --path /path/to/sample.sfpk --models-root "C:\Users\admin\Documents\OPSV\Dreamtonics\Synthesizer V Studio\models" --json-output /path/to/sfpk-report.json
 # 或者直接检查已解包的目录
 trainsv inspect-sfpk --path /path/to/extracted-sfpk
 ```
