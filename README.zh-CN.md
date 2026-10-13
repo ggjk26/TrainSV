@@ -8,7 +8,7 @@ TrainSV 是用于微调 Synthesizer V AI 声库模型的 Python 工具。它从�
 > - 这是开发与实验工具，不是 Dreamtonics 官方声库制作器。
 > - 并非所有 `.nofs` 都受支持。底模必须包含 TrainSV 当前实现的模型架构；如果报架构不支持，请保留完整错误日志和 `trainsv inspect` 输出。
 > - 请只使用你有权修改的底模、录音、标注、头像和背景素材。
-> - `.sfpk` 属于 Synthesizer V Studio Flat 的声库包格式，并非官方 `.svpk` 安装包格式。当前版本尚未提供经验证的 `.sfpk` 打包器。
+> - `.sfpk` 属于 Synthesizer V Studio Flat 的声库包格式，并非官方 `.svpk` 安装包格式。当前开发版提供只读结构检查，但尚未提供经真实样例验证的打包器；不会把普通 ZIP 直接改名为 `.sfpk`。
 
 ## 功能
 
@@ -185,7 +185,19 @@ CSV 必需列：
 
 ```bash
 trainsv inspect --voice /path/to/voice.nofs
+# 先诊断架构限制；不执行训练
+trainsv diagnose-nofs --path /path/to/voice.nofs --json-output /path/to/architecture-report.json
 ```
+
+### 检查 Flat 声库包或解包目录（只读）
+
+```bash
+trainsv inspect-sfpk --path /path/to/sample.sfpk --json-output /path/to/sfpk-report.json
+# 或者直接检查已解包的目录
+trainsv inspect-sfpk --path /path/to/extracted-sfpk
+```
+
+`diagnose-nofs` 会分别报告 NOFS 容器解析、各角色 DNNI 图解析和当前架构标识限制；这是初步诊断，不等于完整训练兼容保证。该命令只读取文件列表与可识别的 JSON 配置候选，不会解包或修改输入。ZIP 可读不代表它一定是有效的 SFPK；在取得可用样例并确认内部布局前，打包功能保持关闭。WebUI 的 “More tools” 页面也提供相同的检查功能。
 
 ### 导入并生成 CSV
 
@@ -281,7 +293,7 @@ my-dataset/
 
 **为什么 Timing / Pitch 无法训练？** 它们需要音符时长与词边界等标注。只有音素对齐的 LAB 通常不足以训练它们。
 
-**为什么提示底模架构不支持？** TrainSV 只支持代码明确实现的模型架构。请提供 `trainsv inspect` 输出和完整错误日志，以便针对具体底模扩展。
+**为什么提示底模架构不支持？** 能解析 `.nofs` 容器并不代表它的所有 DNNI 网络架构都可训练。TrainSV 目前通过固定的 duration、pitch、acoustic、vocoder 模型实现加载网络；遇到未实现的层或张量布局时不能假定兼容。请提供 `trainsv inspect` 输出、完整错误日志和底模版本，以便先识别具体限制再开发适配。
 
 **训练慢或显存不足？** 减小 Batch、先只训练声学模型、缩短测试步数，或使用 GPU。CPU 可用但速度可能很慢。
 
