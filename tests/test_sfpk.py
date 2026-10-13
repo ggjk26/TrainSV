@@ -46,3 +46,52 @@ def test_architecture_diagnostic_reports_missing_input(tmp_path):
     assert report["container_parsed"] is False
     assert report["trainability"] == "unknown"
     assert report["warnings"] == ["Input path is not a file."]
+
+
+def test_inspects_json_info_nofs_model_references_without_assuming_payloads(tmp_path):
+    sample = tmp_path / "sample.sfpk"
+    acoustic_id = "a" * 32
+    vocoder_id = "b" * 32
+    duration_id = "c" * 32
+    f0_id = "d" * 32
+    info = {
+        "name": "Sample AI",
+        "version": "1.0",
+        "vendor": "Example Vendor",
+        "language": "japanese",
+        "phoneset": "romaji",
+        "support_languages": ["japanese"],
+        "acoustic": acoustic_id,
+        "vocoder": vocoder_id,
+        "duration": duration_id,
+        "f0": f0_id,
+        "styles": [{"name": "(base)", "data": "00"}],
+        "f0_style": "00",
+        "duration_style": "00",
+    }
+    config = {
+        "name": "Sample AI",
+        "version": "1.0",
+        "profile": False,
+        "background": False,
+        "models": [],
+        "model_types": [],
+        "phonesets": [],
+        "translations": "{}",
+    }
+    with zipfile.ZipFile(sample, "w") as archive:
+        archive.writestr("info.nofs", json.dumps(info))
+        archive.writestr("config.json", json.dumps(config))
+        archive.writestr(f"models/acoustic/{acoustic_id}.dnni", b"model")
+    report = inspect_sfpk(sample)
+    summary = report["info_nofs_candidates"][0]
+    assert summary["voice_metadata"]["name"] == "Sample AI"
+    assert summary["style_names"] == ["(base)"]
+    assert summary["model_references"]["acoustic"] == acoustic_id
+    assert summary["model_payload_found_in_container"]["acoustic"] is True
+    assert summary["model_payload_found_in_container"]["vocoder"] is False
+    assert set(summary["model_payloads_not_found_in_container"]) == {"vocoder", "duration", "f0"}
+    assert any("model payload files were not found" in item for item in report["warnings"])
+    formatted = format_report(report)
+    assert "info.nofs" in formatted
+    assert f"model acoustic: {acoustic_id}" in formatted
