@@ -185,6 +185,8 @@ CSV 必需列：
 
 ```bash
 trainsv inspect --voice /path/to/voice.nofs
+# 先诊断架构限制；不执行训练
+trainsv diagnose-nofs --path /path/to/voice.nofs --json-output /path/to/architecture-report.json
 ```
 
 ### 检查 Flat 声库包或解包目录（只读）
@@ -195,7 +197,7 @@ trainsv inspect-sfpk --path /path/to/sample.sfpk --json-output /path/to/sfpk-rep
 trainsv inspect-sfpk --path /path/to/extracted-sfpk
 ```
 
-该命令只读取文件列表与可识别的 JSON 配置候选，不会解包或修改输入。ZIP 可读不代表它一定是有效的 SFPK；在取得可用样例并确认内部布局前，打包功能保持关闭。WebUI 的 “More tools” 页面也提供相同的检查功能。
+`diagnose-nofs` 会分别报告 NOFS 容器解析、各角色 DNNI 图解析和当前架构标识限制；这是初步诊断，不等于完整训练兼容保证。该命令只读取文件列表与可识别的 JSON 配置候选，不会解包或修改输入。ZIP 可读不代表它一定是有效的 SFPK；在取得可用样例并确认内部布局前，打包功能保持关闭。WebUI 的 “More tools” 页面也提供相同的检查功能。
 
 ### 导入并生成 CSV
 
