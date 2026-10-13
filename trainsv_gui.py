@@ -31,6 +31,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from opensv_train.sfpk import inspect_sfpk as inspect_sfpk_path
+from opensv_train.diagnostics import diagnose_voice, format_diagnostic
 
 ROOT = Path(__file__).resolve().parent
 TOKEN = secrets.token_urlsafe(16)
@@ -321,6 +322,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, list_results(one("path")))
             if route == "inspect-sfpk":
                 return self._send(200, inspect_sfpk_path(one("path")))
+            if route == "diagnose-voice":
+                return self._send(200, diagnose_voice(one("path")))
             if route == "settings":
                 return self._send(200, read_settings())
             if route == "media":
@@ -545,8 +548,10 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   </div>
   <div class="actions">
     <button class="ghost" data-run="inspect">Look inside this voice</button>
+    <button class="ghost" id="diagnoseVoice">Check architecture support</button>
     <button class="primary" data-go="data">Next: your recordings</button>
   </div>
+  <pre id="voiceDiagnostic" class="mono" style="white-space:pre-wrap;overflow-wrap:anywhere;background:var(--code);padding:12px;border-radius:6px;max-height:380px;overflow:auto">Architecture diagnostics have not run yet.</pre>
 </section>
 
 <section class="page" id="page-data">
@@ -1288,6 +1293,7 @@ async function init(){
   $("#quitBtn").onclick=async()=>{if(!confirm("Stop the TrainSV GUI? Anything running will be stopped."))return;try{await api("quit",{})}catch(e){}document.body.innerHTML='<p style="padding:30px">The TrainSV GUI has stopped. You can close this tab.</p>'};
   $("#useTrained").onclick=async()=>{try{const r=await api("resolve-voice?path="+enc(val("t_output")));if(r.path)setVal("e_new",r.path);else alert(r.error)}catch(e){alert(e.message)}};
   $("#showResults").onclick=loadResults;
+  $("#diagnoseVoice").onclick=async()=>{const path=val("voice");const out=$("#voiceDiagnostic");if(!path){out.textContent="Choose a .nofs file first.";return}out.textContent="Diagnosing container and model architecture…";try{const r=await api("diagnose-voice?path="+enc(path));out.textContent=[`Voice: ${r.path}`,`Container parsed: ${r.container_parsed}`,`Voice kind: ${r.voice_kind}`,`Preliminary status: ${r.trainability}`,"",...Object.entries(r.architecture_identifiers||{}).map(([k,v])=>`Architecture ${k}: ${v}`),...Object.entries(r.models||{}).map(([k,v])=>v.parsed?`${k}: DNNI v${v.dnni_version}, ${v.node_count} nodes; types: ${(v.node_types||[]).join(", ")}`:`${k}: NOT PARSED — ${v.error||"unknown error"}`),"",...(r.warnings||[]).map(x=>"WARNING: "+x),"",r.note].join("\n")}catch(e){out.textContent="Diagnosis failed: "+e.message}};
   $("#inspectSfpk").onclick=async()=>{const path=val("sfpk_path");const out=$("#sfpkReport");if(!path){out.textContent="Choose a .sfpk file or extracted directory first.";return}out.textContent="Inspecting…";try{const r=await api("inspect-sfpk?path="+enc(path));out.textContent=[`Input: ${r.input}`,`Container: ${r.container_type}`,`Entries: ${r.entry_count}${r.truncated?" (truncated)":""}`,`Model/package candidates: ${(r.model_candidates||[]).length}`,`Image candidates: ${(r.image_candidates||[]).length}`,`JSON configuration candidates: ${(r.configuration_candidates||[]).length}`,"",...(r.entries||[]).map(x=>`${x.kind} | ${x.size} bytes | ${x.path}`),"",...(r.configuration_candidates||[]).map(x=>`JSON ${x.path}: ${x.parsed?(x.top_level_keys||[]).join(", "):(x.note||"not parsed")}`),"",...(r.warnings||[]).map(x=>"WARNING: "+x),"",r.packaging_note].join("\n")}catch(e){out.textContent="Inspection failed: "+e.message}};
   // resume hint
   const rh=()=>{const r=val("t_run");if(!r)return;api("stat?path="+enc(join(r,"state.pt"))).then(s=>{$("#resumeHint").textContent=s.exists?"A saved run was found here. Set “Steps” higher than what it already did to train further.":"No saved run here yet, so this would start fresh."}).catch(()=>{})};
