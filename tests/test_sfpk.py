@@ -2,6 +2,7 @@ import json
 import zipfile
 
 from opensv_train.sfpk import format_report, inspect_sfpk
+from opensv_train.diagnostics import diagnose_voice
 
 
 def test_inspects_zip_without_extracting(tmp_path):
@@ -37,3 +38,11 @@ def test_missing_path_is_reported(tmp_path):
     report = inspect_sfpk(tmp_path / "missing.sfpk")
     assert report["exists"] is False
     assert report["warnings"] == ["Path does not exist."]
+
+
+def test_architecture_diagnostic_reports_missing_input(tmp_path):
+    report = diagnose_voice(tmp_path / "missing.nofs")
+    assert report["exists"] is False
+    assert report["container_parsed"] is False
+    assert report["trainability"] == "unknown"
+    assert report["warnings"] == ["Input path is not a file."]
