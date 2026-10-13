@@ -86,17 +86,20 @@ def package_svpk(
     avatar = _existing_file(profile, "profile image")
     backdrop = _existing_file(background, "background image")
     license_path = _existing_file(license_file, "license file")
+    for label, image in (("profile image", avatar), ("background image", backdrop)):
+        if image is not None and image.suffix.lower() != ".png":
+            raise ValueError(f"{label} must be PNG to use the sample package filename: {image}")
     if not product_name.strip() or not vendor_name.strip() or not version_string.strip():
         raise ValueError("product name, vendor name, and version string must not be blank")
     if version_number < 0 or depending_version_number < 0:
         raise ValueError("version numbers must be non-negative")
-    entries: list[tuple[str, Path | bytes]] = [(model.name if model.name.endswith(".nofs") else "voice.nofs", model)]
+    entries: list[tuple[str, Path | bytes]] = [("voice.nofs", model)]
     if backdrop:
-        entries.append(("background.png" if backdrop.suffix.lower() == ".png" else backdrop.name, backdrop))
+        entries.append(("background.png", backdrop))
     if license_path:
         entries.append(("license.txt", license_path))
     if avatar:
-        entries.append(("profile.png" if avatar.suffix.lower() == ".png" else avatar.name, avatar))
+        entries.append(("profile.png", avatar))
     metadata = {
         "productName": product_name,
         "vendorName": vendor_name,
