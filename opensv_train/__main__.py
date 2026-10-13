@@ -256,7 +256,7 @@ def package_svpk_command(arguments) -> None:
         version_string=arguments.version_string, version_number=arguments.version_number,
         depending_version_number=arguments.depending_version_number,
         profile=arguments.profile, background=arguments.background,
-        license_file=arguments.license_file,
+        license_file=arguments.license_file, background_entry=arguments.background_entry,
     )
     print(f"Created SVPK archive: {output}")
     print("ZIP integrity was checked; installation/runtime compatibility still needs testing in Synthesizer V Studio.")
@@ -375,6 +375,8 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--depending-version-number", type=int, default=0)
     command.add_argument("--profile", help="profile image, usually profile.png")
     command.add_argument("--background", help="background image, usually background.png")
+    command.add_argument("--background-entry", choices=("background.png", "backgrond.png"), default="background.png",
+                         help="exact archive entry name for the supplied background image")
     command.add_argument("--license-file", help="license text file")
     command.set_defaults(handler=package_svpk_command)
 
