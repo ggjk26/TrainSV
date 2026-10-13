@@ -937,7 +937,7 @@ function suggest(){
     setAuto("t_run",join(ENV.root,"runs",sl));
     setAuto("e_out",join(ENV.root,"runs",sl,"eval"));
     const src=val("i_src");
-    let from=src==="manifest"?dirname(val("i_manifest")||""):src==="split"?val("i_wavs"):val("i_corpus");
+    let from=src==="manifest"?dirname(val("i_manifest")||""):src==="split"?val("i_wavs"):src==="filenames"?val("i_wavs_names"):val("i_corpus");
     if(/^(wav|wavs)$/i.test(basename(from||"")))from=dirname(from);
     setAuto("i_output",join(ENV.root,"data",from?slug(basename(from)):"dataset"));
     setAuto("s_output",join(ENV.root,"data","practice"));
@@ -1068,9 +1068,14 @@ function checkSource(){
     const src=val("i_src");if(src==="manifest"){say("i_src_st","","");return}
     const dir=src==="folder"?val("i_corpus"):"";
     if(src==="folder"&&!dir){say("i_src_st","","");return}
+    if(src==="filenames"&&!val("i_wavs_names")){say("i_src_st","","");return}
     try{
       if(src==="folder"){const f=await api("folder-info?path="+enc(dir));
         say("i_src_st",f.exists&&f.wav&&f.lab?"ok":"warn",!f.exists?"Folder not found.":`Found ${f.wav} .wav and ${f.lab} .lab files.`+(f.wav&&f.lab?"":" Each recording needs both."))}
+      else if(src==="filenames"){
+        const f=await api("folder-info?path="+enc(val("i_wavs_names")));
+        say("i_src_st",f.exists&&f.wav?"ok":"warn",!f.exists?"Folder not found.":`Found ${f.wav||0} WAV files. Labels will be estimated from filenames and equal-duration timing.`)
+      }
       else{const w=val("i_wavs"),l=val("i_labs");if(!w||!l){say("i_src_st","","");return}
         const [a,b]=await Promise.all([api("folder-info?path="+enc(w)),api("folder-info?path="+enc(l))]);
         say("i_src_st",a.wav&&b.lab?"ok":"warn",`Found ${a.wav||0} .wav and ${b.lab||0} .lab files.`)}
@@ -1264,9 +1269,9 @@ async function init(){
     if(AUTO.includes(t.id))EXTRA.manual[t.id]=t.value.trim()!=="";
     if(t.id==="voice")checkVoice();
     if(t.id==="dataset")checkDataset();
-    if(["i_corpus","i_wavs","i_labs"].includes(t.id))checkSource();
+    if(["i_corpus","i_wavs","i_labs","i_wavs_names"].includes(t.id))checkSource();
     if(t.id==="t_steps")$$("input[name=preset]").forEach(r=>r.checked=false);
-    if(["v_name","i_corpus","i_wavs","i_manifest"].includes(t.id))suggest();
+    if(["v_name","i_corpus","i_wavs","i_wavs_names","i_manifest"].includes(t.id))suggest();
     persist();refresh();
   });
   document.addEventListener("change",e=>{
