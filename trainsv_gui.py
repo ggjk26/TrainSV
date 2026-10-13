@@ -647,7 +647,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div class="field" data-id="t_history" data-kind="path" data-mode="save" data-ext="json" data-label="Save test scores to a file (JSON)"></div>
   </details>
 
-  <div class="actions"><button class="primary" data-run="finetune">Train</button></div>
+  <div class="actions"><button class="primary" data-run="finetune">Train</button><button class="ghost" id="quickTrain">Run a quick test (200 steps)</button></div>
+  <p class="hint">Quick test uses the current voice and dataset, trains Sound only for 200 steps, and starts a fresh run rather than resuming an old checkpoint. Review the output path before starting.</p>
 </section>
 
 <section class="page" id="page-results">
@@ -1293,6 +1294,7 @@ async function init(){
   $("#quitBtn").onclick=async()=>{if(!confirm("Stop the TrainSV GUI? Anything running will be stopped."))return;try{await api("quit",{})}catch(e){}document.body.innerHTML='<p style="padding:30px">The TrainSV GUI has stopped. You can close this tab.</p>'};
   $("#useTrained").onclick=async()=>{try{const r=await api("resolve-voice?path="+enc(val("t_output")));if(r.path)setVal("e_new",r.path);else alert(r.error)}catch(e){alert(e.message)}};
   $("#showResults").onclick=loadResults;
+  $("#quickTrain").onclick=()=>{if(JOB&&JOB.status==="running")return;MODELS.forEach(m=>{const e=$("#m_"+m);if(e)e.checked=m==="acoustic"});$("#p_quick").checked=true;Object.entries(PRESETS.p_quick).forEach(([k,v])=>{const e=$("#"+k);if(e)e.value=v});$("#t_resume").checked=false;persist();refresh();startJob("finetune")};
   $("#diagnoseVoice").onclick=async()=>{const path=val("voice");const out=$("#voiceDiagnostic");if(!path){out.textContent="Choose a .nofs file first.";return}out.textContent="Diagnosing container and model architecture…";try{const r=await api("diagnose-voice?path="+enc(path));out.textContent=[`Voice: ${r.path}`,`Container parsed: ${r.container_parsed}`,`Voice kind: ${r.voice_kind}`,`Preliminary status: ${r.trainability}`,"",...Object.entries(r.architecture_identifiers||{}).map(([k,v])=>`Architecture ${k}: ${v}`),...Object.entries(r.models||{}).map(([k,v])=>v.parsed?`${k}: DNNI v${v.dnni_version}, ${v.node_count} nodes; types: ${(v.node_types||[]).join(", ")}`:`${k}: NOT PARSED — ${v.error||"unknown error"}`),"",...(r.warnings||[]).map(x=>"WARNING: "+x),"",r.note].join("\n")}catch(e){out.textContent="Diagnosis failed: "+e.message}};
   $("#inspectSfpk").onclick=async()=>{const path=val("sfpk_path");const out=$("#sfpkReport");if(!path){out.textContent="Choose a .sfpk file or extracted directory first.";return}out.textContent="Inspecting…";try{const r=await api("inspect-sfpk?path="+enc(path));out.textContent=[`Input: ${r.input}`,`Container: ${r.container_type}`,`Entries: ${r.entry_count}${r.truncated?" (truncated)":""}`,`Model/package candidates: ${(r.model_candidates||[]).length}`,`Image candidates: ${(r.image_candidates||[]).length}`,`JSON configuration candidates: ${(r.configuration_candidates||[]).length}`,"",...(r.entries||[]).map(x=>`${x.kind} | ${x.size} bytes | ${x.path}`),"",...(r.configuration_candidates||[]).map(x=>`JSON ${x.path}: ${x.parsed?(x.top_level_keys||[]).join(", "):(x.note||"not parsed")}`),"",...(r.warnings||[]).map(x=>"WARNING: "+x),"",r.packaging_note].join("\n")}catch(e){out.textContent="Inspection failed: "+e.message}};
   // resume hint
