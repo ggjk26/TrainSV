@@ -77,3 +77,17 @@ def test_wav_duration_and_lab_output(tmp_path):
 def test_unknown_phone_fails_loudly():
     with pytest.raises(ValueError, match="unknown phone"):
         parse_filename_phones("definitely_unknown_0.wav", PHONES)
+
+
+def test_rhoticized_vowel_uses_complete_symbol_when_available():
+    assert parse_filename_phones("7 @`_0.wav", PHONES | {"@`"}) == ["sil", "7", "@`", "sil"]
+
+
+def test_rhoticized_vowel_falls_back_to_available_rhotic_phone():
+    assert parse_filename_phones("7 @`_0.wav", PHONES | {"r\\"}) == ["sil", "7", "@", "r\\", "sil"]
+    assert parse_filename_phones("7 @`_0.wav", PHONES | {"r"}) == ["sil", "7", "@", "r", "sil"]
+
+
+def test_rhoticized_vowel_explains_missing_fallback():
+    with pytest.raises(ValueError, match="rhoticized vowel"):
+        parse_filename_phones("7 @`_0.wav", PHONES)
