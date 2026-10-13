@@ -72,8 +72,8 @@ def test_inspects_json_info_nofs_model_references_without_assuming_payloads(tmp_
     config = {
         "name": "Sample AI",
         "version": "1.0",
-        "profile": False,
-        "background": False,
+        "profile": True,
+        "background": True,
         "models": [],
         "model_types": [],
         "phonesets": [],
@@ -87,6 +87,11 @@ def test_inspects_json_info_nofs_model_references_without_assuming_payloads(tmp_
     summary = report["info_nofs_candidates"][0]
     assert summary["voice_metadata"]["name"] == "Sample AI"
     assert summary["style_names"] == ["(base)"]
+    config_check = report["config_asset_checks"][0]
+    assert config_check["asset_checks"]["profile"]["present_in_container"] is False
+    assert config_check["asset_checks"]["background"]["present_in_container"] is False
+    assert any("profile=true" in warning for warning in report["warnings"])
+    assert any("background=true" in warning for warning in report["warnings"])
     assert summary["model_references"]["acoustic"] == acoustic_id
     assert summary["model_payload_found_in_container"]["acoustic"] is True
     assert summary["model_payload_found_in_container"]["vocoder"] is False
