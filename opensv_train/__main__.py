@@ -228,7 +228,7 @@ def inspect(arguments) -> None:
 
 def inspect_sfpk_command(arguments) -> None:
     """Inspect a Flat package or extracted package directory without changing it."""
-    report = inspect_sfpk_path(arguments.path)
+    report = inspect_sfpk_path(arguments.path, models_root=arguments.models_root)
     print(format_report(report))
     if arguments.json_output:
         destination = Path(arguments.json_output).expanduser()
@@ -358,6 +358,7 @@ def parser() -> argparse.ArgumentParser:
     command = commands.add_parser("inspect-sfpk", help="inspect an SFPK candidate or extracted directory (read-only)")
     command.add_argument("--path", required=True, help=".sfpk candidate or extracted directory")
     command.add_argument("--json-output", help="optional path to save the diagnostic report as JSON")
+    command.add_argument("--models-root", help="optional local Synthesizer V Studio models directory to inventory .dnni candidates")
     command.set_defaults(handler=inspect_sfpk_command)
 
     command = commands.add_parser("diagnose-nofs", help="diagnose NOFS/DNNI architecture support without training")
