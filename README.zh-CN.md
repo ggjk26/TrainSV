@@ -225,11 +225,13 @@ SFPK 打包器会保留你提供的 `info.nofs` 和 `config.json` 内容，并�
 
 ```bash
 trainsv inspect-sfpk --path /path/to/sample.sfpk --json-output /path/to/sfpk-report.json
+# 同时检查本机的 DNNI 模型目录（Windows 示例）
+trainsv inspect-sfpk --path /path/to/sample.sfpk --models-root "C:\\Users\\admin\\Documents\\OPSV\\Dreamtonics\\Synthesizer V Studio\\models" --json-output /path/to/sfpk-report.json
 # 或者直接检查已解包的目录
 trainsv inspect-sfpk --path /path/to/extracted-sfpk
 ```
 
-`diagnose-nofs` 会分别报告 NOFS 容器解析、各角色 DNNI 图解析和当前架构标识限制；这是初步诊断，不等于完整训练兼容保证。`inspect-sfpk` 只读检查容器或解包目录，不会提取或修改输入；如果发现 JSON 格式的 `info.nofs`，还会列出音源元数据、风格名称、`acoustic` / `vocoder` / `duration` / `f0` 模型 ID，并按 TrainSV 共享声库的路径约定检查容器内是否存在对应 `.dnni` 文件；如果发现 `config.json`，也会检查 `profile` / `background` 标志与根目录 `profile.png` / `background.png` 是否对应。上述检查仅描述当前容器中的文件清单，不代表全局模型库中一定缺失或存在，也不等于正式宿主兼容性验证。ZIP 可读不代表它一定能被目标宿主加载。当前打包命令依据已观察到的文件名和配置字段实现，但仍需在 Synthesizer V Studio / Flat 中做实际加载验证。WebUI 的 “More tools” 页面也提供结构检查功能。
+`diagnose-nofs` 会分别报告 NOFS 容器解析、各角色 DNNI 图解析和当前架构标识限制；这是初步诊断，不等于完整训练兼容保证。`inspect-sfpk` 只读检查容器或解包目录，不会提取或修改输入；如果发现 JSON 格式的 `info.nofs`，还会列出音源元数据、风格名称、`acoustic` / `vocoder` / `duration` / `f0` 模型 ID，并按 TrainSV 共享声库的路径约定检查容器内是否存在对应 `.dnni` 文件；如果发现 `config.json`，也会检查 `profile` / `background` 标志与根目录 `profile.png` / `background.png` 是否对应。使用 `--models-root` 可以额外扫描本机 `models` 目录：按 `acoustic` / `vocoder` / `duration` / `f0` 目录列出 `.dnni` 文件，并对大小不超过 128 MiB 的候选输出 DNNI 版本、根节点类型、节点数和节点类型计数。检查器会核对精确模型 ID 是否存在，但不会因为某个候选文件“也是 DNNI”或节点类型相似，就擅自替换模型引用。结构摘要不是语义、张量形状或宿主兼容性保证。上述检查仅描述当前容器与本机文件清单，不等于正式宿主兼容性验证。ZIP 可读不代表它一定能被目标宿主加载。当前打包命令依据已观察到的文件名和配置字段实现，但仍需在 Synthesizer V Studio / Flat 中做实际加载验证。WebUI 的 “More tools” 页面也提供结构检查功能。
 
 ### 导入并生成 CSV
 
