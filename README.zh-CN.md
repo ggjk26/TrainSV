@@ -99,7 +99,15 @@ my-corpus/
 └── song_002.lab
 ```
 
-也支持 `wav/` 与 `lab/` 两个子目录。每个 WAV 必须有同名 LAB。
+也支持 `wav/` 与 `lab/` 两个子目录。每个 WAV 必须有同名 LAB.
+
+如果 WAV 文件名本身包含空格分隔的音素，也可以让 TrainSV **按文件名生成近似 LAB**，不必先手工制作标签。在 WebUI 的“录音”页面选择“Generate .lab from phonemes in WAV filenames”，指定 WAV 目录；可选指定 `phone_table.json`，或选择一个包含对应音素的声库作为备用音素表。生成的标签会保存在输出数据集的 `lab/` 子目录中。
+
+```powershell
+trainsv import-lab --from-filenames --wavs C:\\my-wavs --phone-table C:\\phone_table.json --output C:\\my-dataset --language mandarin
+```
+
+此模式按文件名从左到右排列音素，只删除末尾的 `_0` / `_1` 重录编号，保留音素内部下划线；按音素表优先匹配完整符号，再处理已知复合音素及特殊替换；首尾固定添加 `sil`，不会合并文件名中原有的静音。首尾静音各占音频时长的 10%，中间音素平均分配剩余 80%。**这是按规则均分的近似标注，不是声学强制对齐**；实际音素边界可能不同，建议先检查生成的 LAB。若未指定 `--phone-table`，则必须指定 `--voice` 以使用声库音素表。
 
 LAB 使用 HTS / vLabeler 对齐格式，每行包含开始时间、结束时间、音素，时间单位为 **100 纳秒**：
 
