@@ -229,7 +229,7 @@ trainsv inspect-sfpk --path /path/to/sample.sfpk --json-output /path/to/sfpk-rep
 trainsv inspect-sfpk --path /path/to/extracted-sfpk
 ```
 
-`diagnose-nofs` 会分别报告 NOFS 容器解析、各角色 DNNI 图解析和当前架构标识限制；这是初步诊断，不等于完整训练兼容保证。`inspect-sfpk` 只读检查容器或解包目录，不会提取或修改输入；如果发现 JSON 格式的 `info.nofs`，还会列出音源元数据、风格名称、`acoustic` / `vocoder` / `duration` / `f0` 模型 ID，并按 TrainSV 共享声库的路径约定检查容器内是否存在对应 `.dnni` 文件。这个检查只说明当前容器里是否找到文件，不代表全局模型库中一定缺失或存在。ZIP 可读不代表它一定能被目标宿主加载。当前打包命令依据已观察到的文件名和配置字段实现，但仍需在 Synthesizer V Studio / Flat 中做实际加载验证。WebUI 的 “More tools” 页面也提供结构检查功能。
+`diagnose-nofs` 会分别报告 NOFS 容器解析、各角色 DNNI 图解析和当前架构标识限制；这是初步诊断，不等于完整训练兼容保证。`inspect-sfpk` 只读检查容器或解包目录，不会提取或修改输入；如果发现 JSON 格式的 `info.nofs`，还会列出音源元数据、风格名称、`acoustic` / `vocoder` / `duration` / `f0` 模型 ID，并按 TrainSV 共享声库的路径约定检查容器内是否存在对应 `.dnni` 文件；如果发现 `config.json`，也会检查 `profile` / `background` 标志与根目录 `profile.png` / `background.png` 是否对应。上述检查仅描述当前容器中的文件清单，不代表全局模型库中一定缺失或存在，也不等于正式宿主兼容性验证。ZIP 可读不代表它一定能被目标宿主加载。当前打包命令依据已观察到的文件名和配置字段实现，但仍需在 Synthesizer V Studio / Flat 中做实际加载验证。WebUI 的 “More tools” 页面也提供结构检查功能。
 
 ### 导入并生成 CSV
 
