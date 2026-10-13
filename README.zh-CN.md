@@ -5,10 +5,8 @@
 TrainSV 是用于微调 Synthesizer V AI 声库模型的 Python 工具。它从已有声库（`voice.nofs` 或 `info.<版本>.nofs`）出发，使用录音与时间对齐的音素标注训练声学、时长、音高等模型。
 
 > **请先了解**
-> - 这是开发与实验工具，不是 Dreamtonics 官方声库制作器。
 > - 并非所有 `.nofs` 都受支持。底模必须包含 TrainSV 当前实现的模型架构；如果报架构不支持，请保留完整错误日志和 `trainsv inspect` 输出。
 > - 请只使用你有权修改的底模、录音、标注、头像和背景素材。
-> - `.sfpk` 属于 Synthesizer V Studio Flat 的声库包格式，并非官方 `.svpk` 安装包格式。当前版本尚未提供经验证的 `.sfpk` 打包器。
 
 ## 功能
 
