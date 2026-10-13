@@ -99,7 +99,7 @@ my-corpus/
 └── song_002.lab
 ```
 
-也支持 `wav/` 与 `lab/` 两个子目录。每个 WAV 必须有同名 LAB.
+也支持 `wav/` 与 `lab/` 两个子目录。每个 WAV 必须有同名 LAB。
 
 如果 WAV 文件名本身包含空格分隔的音素，也可以让 TrainSV **按文件名生成近似 LAB**，不必先手工制作标签。在 WebUI 的“录音”页面选择“Generate .lab from phonemes in WAV filenames”，指定 WAV 目录；可选指定 `phone_table.json`，或选择一个包含对应音素的声库作为备用音素表。生成的标签会保存在输出数据集的 `lab/` 子目录中。
 
