@@ -115,6 +115,47 @@ def _info_nofs_summary(name: str, data: bytes, available_paths: list[str]) -> di
     ]
     return result
 
+
+def _config_asset_summary(name: str, data: bytes, available_paths: list[str]) -> dict[str, Any]:
+    """Check config.json asset flags against the exact root filenames in the sample layout."""
+    result: dict[str, Any] = {
+        "path": name, "parsed": False, "asset_checks": {}, "warnings": []
+    }
+    if len(data) > MAX_CONFIG_BYTES:
+        result["note"] = f"Skipped: larger than {MAX_CONFIG_BYTES} bytes"
+        return result
+    try:
+        value = json.loads(data.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        result["note"] = "Not valid UTF-8 JSON"
+        return result
+    if not isinstance(value, dict):
+        result["note"] = "config.json must contain a JSON object"
+        return result
+    result["parsed"] = True
+    paths = {PurePosixPath(path).as_posix().casefold() for path in available_paths}
+    for field, asset_name in (("profile", "profile.png"), ("background", "background.png")):
+        if field not in value:
+            result["warnings"].append(f"required field {field!r} is missing")
+            continue
+        enabled = value[field]
+        present = asset_name.casefold() in paths
+        result["asset_checks"][field] = {
+            "enabled": enabled if isinstance(enabled, bool) else None,
+            "asset": asset_name,
+            "present_in_container": present,
+        }
+        if not isinstance(enabled, bool):
+            result["warnings"].append(f"field {field!r} is not a boolean")
+        elif enabled and not present:
+            result["warnings"].append(
+                f"{field}=true but root asset {asset_name!r} was not found in this container"
+            )
+    for field in ("models", "model_types", "phonesets"):
+        if field in value and not isinstance(value[field], list):
+            result["warnings"].append(f"field {field!r} is not an array")
+    return result
+
 def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, Any]:
     """Summarize an .sfpk file or extracted directory without modifying it."""
     target = Path(path).expanduser()
@@ -126,6 +167,8 @@ def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, 
         "truncated": False,
         "entries": [],
         "configuration_candidates": [],
+        "info_nofs_candidates": [],
+        "config_asset_checks": [],
         "warnings": [],
         "packaging_supported": False,
         "packaging_note": (
@@ -139,6 +182,8 @@ def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, 
 
     entries: list[dict[str, Any]] = []
     configs: list[dict[str, Any]] = []
+    raw_info_nofs: list[tuple[str, bytes]] = []
+    raw_config_json: list[tuple[str, bytes]] = []
     if target.is_dir():
         report["container_type"] = "extracted-directory"
         for item in sorted(target.rglob("*"), key=lambda p: str(p).lower()):
@@ -161,7 +206,10 @@ def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, 
                             report["warnings"].append(f"Could not read {rel}: {error}")
                 elif item.suffix.lower() == ".json":
                     try:
-                        configs.append(_json_summary(rel, item.read_bytes()))
+                        raw = item.read_bytes()
+                        configs.append(_json_summary(rel, raw))
+                        if item.name.casefold() == "config.json":
+                            raw_config_json.append((rel, raw))
                     except OSError as error:
                         configs.append({"path": rel, "parsed": False, "note": str(error)})
             except OSError as error:
@@ -193,7 +241,10 @@ def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, 
                                 report["warnings"].append(f"Could not read {name}: {error}")
                     elif Path(name).suffix.lower() == ".json" and info.file_size <= MAX_CONFIG_BYTES:
                         try:
-                            configs.append(_json_summary(name, archive.read(info)))
+                            raw = archive.read(info)
+                            configs.append(_json_summary(name, raw))
+                            if Path(name).name.casefold() == "config.json":
+                                raw_config_json.append((name, raw))
                         except (OSError, RuntimeError, zipfile.BadZipFile) as error:
                             configs.append({"path": name, "parsed": False, "note": str(error)})
         except (OSError, zipfile.BadZipFile) as error:
@@ -214,6 +265,14 @@ def inspect_sfpk(path: str | Path, max_entries: int = MAX_ENTRIES) -> dict[str, 
         for name, data in raw_info_nofs
     ]
     report["info_nofs_candidates"] = info_summaries
+    config_checks = [
+        _config_asset_summary(name, data, available_paths)
+        for name, data in raw_config_json
+    ]
+    report["config_asset_checks"] = config_checks
+    for check in config_checks:
+        for warning in check.get("warnings", []):
+            report["warnings"].append(f"{check['path']}: {warning}")
     configs.extend(info_summaries)
     report["configuration_candidates"] = configs
     for summary in info_summaries:
@@ -264,6 +323,13 @@ def format_report(report: dict[str, Any]) -> str:
             lines.append(f"  model {role}: {identifier} (payload found in container: {presence})")
         if info.get("metadata_schema_fields_missing"):
             lines.append("  metadata fields missing: " + ", ".join(info["metadata_schema_fields_missing"]))
+    for check in report.get("config_asset_checks", []):
+        summaries = [
+            f"{field}={item.get('enabled')} ({'found' if item.get('present_in_container') else 'not found'}: {item.get('asset')})"
+            for field, item in check.get("asset_checks", {}).items()
+        ]
+        if summaries:
+            lines.append(f"Config assets {check['path']}: " + ", ".join(summaries))
     for warning in report.get("warnings", []):
         lines.append("WARNING: " + warning)
     lines.append(report["packaging_note"])
