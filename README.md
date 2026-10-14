@@ -160,6 +160,8 @@ cmake --build build --target OpenSVParity
 
 The tests use installed voices (`OPENSV_TEST_VOICES`, separated by `:`, overrides the defaults in `tests/conftest.py`).
 
+Now supported Vocaloid-styled X-SAMPA dict. But something wrong with F0.
+
 ## Layout
 
 - `opensv_train/`: the CLI, dataset, model, training and export code
