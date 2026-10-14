@@ -74,6 +74,40 @@ def test_wav_duration_and_lab_output(tmp_path):
     ]
 
 
+def test_vocaloid_mandarin_maps_to_synthv_simplified_inventory():
+    target = {
+        "sil", "a", "aa", "o/", "o", "e/", "ee", "e", "u", "i", "v",
+        "ao", "ou", "ia", "iaa", "iao", "iae", "io", "iu", "z", "c",
+        "b", "p", "d", "t", "g", "k", "gw", "kw", "-n", "ng", "r", "er",
+    }
+    assert parse_filename_phones("@_n 7_0.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "e/", "-n", "e", "sil"
+    ]
+    assert parse_filename_phones("p ph t th k kh ts tsh_0.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "b", "p", "d", "t", "g", "k", "z", "c", "sil"
+    ]
+    assert parse_filename_phones("iE_n iE_r_1.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "iae", "-n", "iae", "sil"
+    ]
+
+def test_vocaloid_mapping_preserves_legacy_xsampa_inventory():
+    legacy = {"sil", "a", "e", "7", "@", "A", "N", "p", "ph", "t", "th", "k", "kh", "ts", "tsh", ":n"}
+    assert parse_filename_phones("7 p ts a_n @N_0.wav", legacy, source_system="vocaloid-mandarin") == [
+        "sil", "7", "p", "ts", "a", ":n", "@", "N", "sil"
+    ]
+
+def test_unmatched_wav_files_are_reported_without_aborting_other_files(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(str(wav_dir / "@_n 7_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "badphone_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    unmatched = []
+    recordings = filename_recordings(wav_dir, {"sil", "e/", "-n", "e"}, source_system="vocaloid-mandarin", unmatched=unmatched)
+    assert [recording[0] for recording in recordings] == ["@_n 7_0"]
+    assert len(unmatched) == 1
+    assert unmatched[0]["filename"] == "badphone_0.wav"
+    assert "unknown phone" in unmatched[0]["error"]
+
 def test_unknown_phone_fails_loudly():
     with pytest.raises(ValueError, match="unknown phone"):
         parse_filename_phones("definitely_unknown_0.wav", PHONES)
