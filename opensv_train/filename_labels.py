@@ -181,6 +181,11 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             continue
         replacement = PHONE_REPLACEMENTS.get(token)
         if replacement is not None:
+            if replacement not in valid and source_system == "vocaloid-mandarin":
+                converted = _map_vocaloid_mandarin(replacement, valid)
+                if converted is not None:
+                    phones.extend(converted)
+                    continue
             if replacement not in valid:
                 raise ValueError(
                     f"{Path(filename).name}: {token!r} maps to {replacement!r}, "
