@@ -99,6 +99,23 @@ def test_vocaloid_mandarin_maps_to_synthv_simplified_inventory():
         "sil", "e", "e/", "r", "sil"
     ]
 
+def test_user_vocaloid_mandarin_filename_tokens_are_convertible():
+    target = {
+        "sil", "a", "aa", "o/", "e/", "ee", "e", "o", "u", "i", "iz", "ir", "v",
+        "aI", "ei", "ao", "ou", "ia", "iaa", "iao", "ie", "iae", "io", "iu",
+        "ua", "uo", "yE_r", "uai", "uei", "f", "er", "-n", "ng",
+    }
+    source_tokens = (
+        "7", "@U", "@_n", "@`", "aI", "AN", "AU", "a", "a_n", "ei", "f",
+        "i@U", "iAN", "iAU", "ia", "iE_n", "iE_r", "iN", "iUN", "i",
+    )
+    for token in source_tokens:
+        parsed = parse_filename_phones(f"@_n {token}_0.wav", target, source_system="vocaloid-mandarin")
+        assert parsed[0] == parsed[-1] == "sil"
+        assert len(parsed) >= 3
+        assert set(parsed) <= target | {"sil"}
+
+
 def test_vocaloid6_underscored_aspirates_map_by_target_inventory():
     simplified = {"sil", "a", "p", "t", "k", "c", "q", "b", "d", "g", "z", "ng", "e/", "-n"}
     assert parse_filename_phones("p_h t_h k_h ts_h ts\\_h_0.wav", simplified, source_system="vocaloid-mandarin") == [
