@@ -121,7 +121,7 @@ def test_vocaloid6_underscored_aspirates_map_by_target_inventory():
     assert parse_filename_phones("p_h t_h k_h ts_h ts\\_h ts`_h_0.wav", simplified, source_system="vocaloid-mandarin") == [
         "sil", "p", "t", "k", "c", "q", "ch", "sil"
     ]
-    legacy = {"sil", "p", "ph", "t", "th", "k", "kh", "ts", "tsh", "ts\\h"}
+    legacy = {"sil", "p", "ph", "t", "th", "k", "kh", "ts", "tsh", "ts\\h", "ts`h"}
     assert parse_filename_phones("p_h t_h k_h ts_h ts\\_h ts`_h_0.wav", legacy, source_system="vocaloid-mandarin") == [
         "sil", "ph", "th", "kh", "tsh", "ts\\h", "ts`h", "sil"
     ]
