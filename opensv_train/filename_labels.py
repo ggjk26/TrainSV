@@ -95,9 +95,23 @@ VOCALOID_MANDARIN_COMPOSITES: dict[str, tuple[tuple[str, ...], ...]] = {
 
 def _map_vocaloid_mandarin(token: str, valid: set[str]) -> list[str] | None:
     """Map one VOCALOID Mandarin token to spellings present in the target inventory."""
+    # VOCALOID 6 uses underscore forms for aspirated consonants. Preserve the
+    # old X-SAMPA spellings for a legacy target, but use SynthV 2.3 labels for
+    # a simplified target inventory.
+    aspirated_aliases = {
+        "p_h": ("p", "ph"), "t_h": ("t", "th"), "k_h": ("k", "kh"),
+        "ts_h": ("c", "tsh"), "ts\\_h": ("q", "ts\\h"),
+    }
     # If this is an older/X-SAMPA-labelled voice, identical names are already
     # meaningful (e.g. 7 and e are different vowels). Prefer direct matches there.
     simplified = bool(valid & {"aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v", "b", "d", "g", "z", "c", "ng", "-n", "-r"})
+    if token in aspirated_aliases:
+        preferred = aspirated_aliases[token][0 if simplified else 1]
+        if preferred in valid:
+            return [preferred]
+        alternative = aspirated_aliases[token][1 if simplified else 0]
+        if alternative in valid:
+            return [alternative]
     if not simplified and token in valid:
         return [token]
     for candidate_group in (VOCALOID_MANDARIN_PHONE_CANDIDATES.get(token, ()), VOCALOID_MANDARIN_COMPOSITES.get(token, ())):
