@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import random
@@ -148,7 +149,23 @@ def import_lab(arguments) -> None:
             phone_set = phone_sets[find_language(phone_sets, arguments.language)]
             voice_symbols = phone_set.symbols
         phones = read_phone_table(arguments.phone_table, voice_symbols)
-        recordings = filename_recordings(arguments.wavs, phones)
+        source_system = arguments.source_phoneme_system
+        if source_system == "auto":
+            source_system = "vocaloid-mandarin" if arguments.language == "mandarin" else None
+        elif source_system == "none":
+            source_system = None
+        unmatched: list[dict[str, str]] = []
+        recordings = filename_recordings(arguments.wavs, phones, source_system=source_system, unmatched=unmatched)
+        report_path = Path(arguments.output).expanduser() / "unmatched_phones.csv"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        with report_path.open("w", newline="", encoding="utf-8-sig") as report_file:
+            writer = csv.DictWriter(report_file, fieldnames=("filename", "error"))
+            writer.writeheader()
+            writer.writerows(unmatched)
+        if unmatched:
+            print(f"skipped {len(unmatched)} WAV file(s) with unmapped phones; see {report_path}")
+        if not recordings:
+            raise SystemExit(f"no WAV files could be labelled; see {report_path} for unmapped phones")
     elif arguments.corpus:
         recordings = corpus_recordings(arguments.corpus)
     elif arguments.labs and arguments.wavs:
@@ -294,6 +311,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--language", default="japanese", type=language_name, help="language phone set for --voice")
     command.add_argument("--from-filenames", action="store_true", help="generate approximate LAB labels from space-separated phones in WAV filenames")
     command.add_argument("--phone-table", help="JSON phone table used to validate and split custom phoneme names")
+    command.add_argument("--source-phoneme-system", choices=("auto", "vocaloid-mandarin", "none"), default="auto", help="source filename phone convention; auto applies the VOCALOID Mandarin map for --language mandarin")
     command.set_defaults(handler=import_lab)
 
     command = commands.add_parser("convert-dict", help="re-spell a DiffSinger dataset with SV's dictionary for its language")
