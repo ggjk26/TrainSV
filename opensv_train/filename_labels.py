@@ -100,7 +100,7 @@ def _map_vocaloid_mandarin(token: str, valid: set[str]) -> list[str] | None:
     # a simplified target inventory.
     aspirated_aliases = {
         "p_h": ("p", "ph"), "t_h": ("t", "th"), "k_h": ("k", "kh"),
-        "ts_h": ("c", "tsh"), "ts\\_h": ("q", "ts\\h"),
+        "ts_h": ("c", "tsh"), "ts\\_h": ("q", "ts\\h"), "ts`_h": ("ch", "ts`h"),
     }
     # If this is an older/X-SAMPA-labelled voice, identical names are already
     # meaningful (e.g. 7 and e are different vowels). Prefer direct matches there.
