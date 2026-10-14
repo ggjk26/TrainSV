@@ -30,6 +30,78 @@ COMPOSITE_PHONES: dict[str, tuple[str, ...]] = {
 RHOTICIZED_VOWELS = {"@`": "@", "3`": "3"}
 RHOTIC_APPROXIMANTS = ("r\\", "ɹ", "ɻ", "r", "R", "R\\")
 PHONE_REPLACEMENTS = {"k_h": "kh", r"ts%5c": "ts\\"}
+# Candidate target spellings for VOCALOID Mandarin tokens. The first
+# available candidate is preferred; this supports simplified and X-SAMPA-style
+# SynthV phone inventories without a user-maintained phone_table.json.
+VOCALOID_MANDARIN_PHONE_CANDIDATES: dict[str, tuple[tuple[str, ...], ...]] = {
+    "a": (("a",),), "A": (("aa",), ("A",)),
+    "o": (("o/",), ("o",)), "@": (("e/",), ("e",), ("@",)),
+    "e": (("ee",), ("e",)), "7": (("e",), ("7",)),
+    "U": (("o",), ("U",)), "u": (("u",),), "i": (("i",),),
+    "i\\\\": (("iz",), ("r\\\\",), ("i\\\\",)),
+    "i¥": (("iz",), ("r\\\\",), ("i\\\\",), ("i¥",)),
+    "i`": (("ir",), (":r\\\\`",), ("i`",)),
+    "y": (("v",), ("y",)), "aI": (("aI",), ("ai",)),
+    "ei": (("ei",), ("eI",)), "AU": (("ao",), ("au",), ("AU",)),
+    "@U": (("ou",), ("@U",)), "ia": (("ia",),),
+    "iA": (("iaa",), ("iA",)), "iAU": (("iao",), ("iau",), ("iAU",)),
+    "ie": (("ie",),), "iE": (("iae",), ("iE",)),
+    "iU": (("io",), ("iU",)), "i@U": (("iu",), ("jou",), ("i@U",)),
+    "ua": (("ua",),), "uo": (("uo",),), "ue": (("ue",),),
+    "uA": (("uA",), ("ua",)), "u@": (("u@",), ("ua",)),
+    "y{": (("ve",), ("vE",), ("y{",), ("v", "e")),
+    "yE": (("ve",), ("vE",), ("yE",), ("v", "e")),
+    "iE_r": (("iae",), ("iE",), ("ie",)),
+    "yE_r": (("ve",), ("vE",), ("yE",), ("y{",), ("v", "e")),
+    "uaI": (("uai",), ("uaI",)), "uei": (("uei",), ("ueI",)),
+    "@`": (("er",), ("e/", "-r"), ("e/", ":r\\\\`"), ("@", ":r\\\\`"), ("@`",)),
+    "p": (("b",), ("p",)), "ph": (("p",), ("ph",)),
+    "t": (("d",), ("t",)), "th": (("t",), ("th",)),
+    "k": (("g",), ("k",)), "kh": (("k",), ("kh",)),
+    "kw": (("gw",), ("kw",)), "kwh": (("kw",), ("kwh",)),
+    "ts": (("z",), ("ts",)), "tsh": (("c",), ("tsh",)),
+    "ts\\\\": (("j",), ("ts\\\\",)), "ts`": (("zh",), ("ts`",)),
+    "ts`h": (("ch",), ("ts`h",)), "ts\\\\h": (("q",), ("ts\\\\h",)),
+    "x": (("h",), ("x",)), "s`": (("sh",), ("s`",)),
+    "s\\\\": (("x",), ("s\\\\",)), "z`": (("r",), ("z`",)),
+    "N": (("ng",), ("N",)), ":\\\\i": (("-i",), (":i",), (":\\\\i",)),
+    ":n": (("-n",), (":n",), ("n",)),
+    "r\\\\`": (("rr",), (":r\\\\`",), ("r\\\\`",)),
+    "b": (("b",),), "c": (("c",),), "d": (("d",),), "f": (("f",),),
+    "g": (("g",),), "h": (("h",),), "j": (("j",),), "l": (("l",),),
+    "m": (("m",),), "n": (("n",),), "s": (("s",),), "w": (("w",),),
+}
+
+# These VOCALOID tokens combine a vowel and a syllable coda. They are expanded
+# only when the chosen target inventory contains every symbol in a candidate.
+VOCALOID_MANDARIN_COMPOSITES: dict[str, tuple[tuple[str, ...], ...]] = {
+    "@_n": (("e/", "-n"), ("e/", ":n"), ("e/", "n"), ("@", ":n"), ("@", "n")),
+    "a_n": (("a", "-n"), ("a", ":n"), ("a", "n")),
+    "i_n": (("i", "-n"), ("i", ":n"), ("i", "n")),
+    "iE_n": (("iae", "-n"), ("iae", ":n"), ("iE", ":n"), ("iE", "-n"), ("iE", "n")),
+    "ua_n": (("ua", "-n"), ("ua", ":n"), ("u", "a", "-n"), ("u", "a", ":n")),
+    "u@_n": (("u@", "-n"), ("u@", ":n"), ("ua", "-n"), ("u", "e/", "-n"), ("u", "@", ":n")),
+    "y_n": (("v", "-n"), ("v", ":n"), ("y", ":n"), ("y", "n")),
+    "y{_n": (("ve", "-n"), ("vE", "-n"), ("v", "e", "-n"), ("y{", ":n"), ("y{", "n")),
+    "AN": (("aa", "ng"), ("aa", "N"), ("A", "N")),
+    "@N": (("e/", "ng"), ("e/", "N"), ("@", "N")),
+    "iN": (("i", "ng"), ("i", "N")),
+    "iAN": (("iaa", "ng"), ("iaa", "N"), ("iA", "N"), ("i", "aa", "ng")),
+    "uAN": (("uA", "N"), ("uA", "ng"), ("ua", "ng"), ("u", "aa", "ng"), ("u", "A", "N")),
+    "u@N": (("u@", "N"), ("u@", "ng"), ("u", "e/", "ng"), ("u", "@", "N")),
+    "UN": (("o", "ng"), ("o", "N"), ("U", "N")),
+    "iUN": (("io", "ng"), ("io", "N"), ("iU", "N")),
+}
+
+def _map_vocaloid_mandarin(token: str, valid: set[str]) -> list[str] | None:
+    """Map one VOCALOID Mandarin token to spellings present in the target inventory."""
+    for candidate_group in (VOCALOID_MANDARIN_PHONE_CANDIDATES.get(token, ()), VOCALOID_MANDARIN_COMPOSITES.get(token, ())):
+        for candidate in candidate_group:
+            if candidate and all(phone in valid for phone in candidate):
+                return list(candidate)
+    return None
+
+
 _TABLE_KEYS = ("phones", "phonemes", "symbols", "phone_table", "phoneTable", "inventory")
 _SYMBOL_KEYS = ("symbol", "phone", "phoneme", "xsampa", "x_sampa", "name")
 
@@ -86,7 +158,7 @@ def _extract_symbols(document: object) -> set[str]:
     return set()
 
 
-def parse_filename_phones(filename: str | Path, phone_table: Iterable[str]) -> list[str]:
+def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], source_system: str | None = None) -> list[str]:
     """Parse ordered phones and add fixed boundary sils without deduplication."""
     valid = set(phone_table)
     valid.add("sil")
@@ -111,6 +183,11 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str]) -> l
                 )
             phones.append(replacement)
             continue
+        if source_system == "vocaloid-mandarin":
+            converted = _map_vocaloid_mandarin(token, valid)
+            if converted is not None and (converted != [token] or token not in valid):
+                phones.extend(converted)
+                continue
         if token in valid:
             phones.append(token)
             continue
@@ -205,7 +282,10 @@ def labels_from_phones(
 
 
 def filename_recordings(
-    wav_directory: str | Path, phone_table: Iterable[str]
+    wav_directory: str | Path,
+    phone_table: Iterable[str],
+    source_system: str | None = None,
+    unmatched: list[dict[str, str]] | None = None,
 ) -> list[tuple[str, Path, list[tuple[int, int, str]]]]:
     """Build standard recording tuples from WAV names and actual WAV durations."""
     directory = Path(wav_directory).expanduser()
@@ -216,7 +296,13 @@ def filename_recordings(
         raise ValueError(f"no .wav files found in {directory}")
     recordings = []
     for wav in wavs:
-        phones = parse_filename_phones(wav.name, phone_table)
+        try:
+            phones = parse_filename_phones(wav.name, phone_table, source_system=source_system)
+        except ValueError as error:
+            if unmatched is None:
+                raise
+            unmatched.append({"filename": wav.name, "error": str(error)})
+            continue
         try:
             info = soundfile.info(str(wav))
         except (OSError, RuntimeError) as error:
