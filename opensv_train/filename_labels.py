@@ -54,7 +54,7 @@ VOCALOID_MANDARIN_PHONE_CANDIDATES: dict[str, tuple[tuple[str, ...], ...]] = {
     "iE_r": (("iae",), ("iE",), ("ie",)),
     "yE_r": (("ve",), ("vE",), ("yE",), ("y{",), ("v", "e")),
     "uaI": (("uai",), ("uaI",)), "uei": (("uei",), ("ueI",)),
-    "@`": (("er",), ("e/", "-r"), ("e/", ":r\\`"), ("@", ":r\\`"), ("@`",)),
+    "@`": (("er",), ("e/", "-r"), ("e/", "r"), ("e/", "rr"), ("e/", ":r\\`"), ("@", ":r\\`"), ("@`",)),
     "p": (("b",), ("p",)), "ph": (("p",), ("ph",)),
     "t": (("d",), ("t",)), "th": (("t",), ("th",)),
     "k": (("g",), ("k",)), "kh": (("k",), ("kh",)),
@@ -95,6 +95,11 @@ VOCALOID_MANDARIN_COMPOSITES: dict[str, tuple[tuple[str, ...], ...]] = {
 
 def _map_vocaloid_mandarin(token: str, valid: set[str]) -> list[str] | None:
     """Map one VOCALOID Mandarin token to spellings present in the target inventory."""
+    # If this is an older/X-SAMPA-labelled voice, identical names are already
+    # meaningful (e.g. 7 and e are different vowels). Prefer direct matches there.
+    simplified = bool(valid & {"aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v", "b", "d", "g", "z", "c", "ng", "-n", "-r"})
+    if not simplified and token in valid:
+        return [token]
     for candidate_group in (VOCALOID_MANDARIN_PHONE_CANDIDATES.get(token, ()), VOCALOID_MANDARIN_COMPOSITES.get(token, ())):
         for candidate in candidate_group:
             if candidate and all(phone in valid for phone in candidate):
