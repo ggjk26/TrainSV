@@ -162,3 +162,39 @@ def test_rhoticized_vowel_falls_back_to_available_rhotic_phone():
 def test_rhoticized_vowel_explains_missing_fallback():
     with pytest.raises(ValueError, match="rhoticized vowel"):
         parse_filename_phones("7 @`_0.wav", PHONES)
+
+
+def test_f0_at_handles_utterance_with_no_voiced_frames():
+    from opensv_train.data import Utterance
+
+    utterance = Utterance(
+        name="Sil k_0",
+        audio=np.zeros(4800, dtype=np.float32),
+        phones=[],
+        notes=None,
+        f0_times=np.array([0.0, 0.005, 0.01]),
+        f0_values=np.zeros(3, dtype=np.float32),
+    )
+
+    hz, voiced = utterance.f0_at(np.array([0.0025, 0.0075]))
+
+    assert np.allclose(hz, [150.0, 150.0])
+    assert not voiced.any()
+
+
+def test_f0_at_keeps_voicing_mask_for_utterance_with_voiced_frames():
+    from opensv_train.data import Utterance
+
+    utterance = Utterance(
+        name="vowel_0",
+        audio=np.zeros(4800, dtype=np.float32),
+        phones=[],
+        notes=None,
+        f0_times=np.array([0.0, 0.005, 0.01]),
+        f0_values=np.array([0.0, 220.0, 220.0], dtype=np.float32),
+    )
+
+    hz, voiced = utterance.f0_at(np.array([0.005, 0.01]))
+
+    assert np.allclose(hz, [220.0, 220.0])
+    assert voiced.all()
