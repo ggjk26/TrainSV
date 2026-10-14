@@ -75,7 +75,7 @@ Every command takes `--config file.json` (repeatable). A config is a JSON object
 If your WAV filenames already contain space-separated phones, you can generate approximate labels directly:
 
 ```bash
-trainsv import-lab --from-filenames --wavs /path/to/wavs --phone-table /path/to/phone_table.json --output /path/to/dataset --language mandarin
+trainsv import-lab --from-filenames --wavs /path/to/wavs --voice /path/to/voice.nofs --output /path/to/dataset --language mandarin
 ```
 
 The generator preserves left-to-right order, strips only a terminal `_0` or `_1` retake suffix, and always adds leading and trailing `sil` without deduplicating an internal silence. Each boundary silence receives 10% of the WAV duration; middle phones share the remaining 80% equally. Generated LAB files are saved under the output dataset's `lab/` directory. This is a filename-driven equal-duration approximation, **not acoustic forced alignment**; inspect the boundaries before training.
