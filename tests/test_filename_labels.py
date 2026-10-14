@@ -95,7 +95,7 @@ def test_vocaloid_mandarin_maps_to_synthv_simplified_inventory():
     assert parse_filename_phones("AN @N iAN iN iUN_0.wav", target, source_system="vocaloid-mandarin") == [
         "sil", "aa", "ng", "e/", "ng", "iaa", "ng", "i", "ng", "io", "ng", "sil"
     ]
-    assert parse_filename_phones("7 @`_0.wav", {"sil", "e/", "r"}, source_system="vocaloid-mandarin") == [
+    assert parse_filename_phones("7 @`_0.wav", {"sil", "e", "e/", "r"}, source_system="vocaloid-mandarin") == [
         "sil", "e", "e/", "r", "sil"
     ]
 
