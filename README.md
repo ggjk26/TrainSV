@@ -20,7 +20,26 @@ uv venv --python 3.11 .venv
 uv pip install --python .venv/bin/python -e '.[test]'
 ```
 
-This installs the `trainsv` command (`python -m opensv_train` is the same).
+This installs the `trainsv` command (`python -m opensv_train` is the same). The generic install uses the PyTorch build available from your configured package index; it does not automatically detect whether your computer has an NVIDIA GPU.
+
+### NVIDIA GPU (CUDA)
+
+If `torch.__version__` shows a `+cpu` suffix, that PyTorch build cannot use CUDA. On Windows with an NVIDIA GPU, first install TrainSV as above, then replace PyTorch with the official CUDA wheel in the *same* virtual environment. This example uses the official CUDA 13.0 wheel index for PyTorch 2.14.1:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip uninstall -y torch
+.\.venv\Scripts\python.exe -m pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu130
+```
+
+On Linux, use `.venv/bin/python` in place of `.venv\Scripts\python.exe`. Choose a CUDA wheel compatible with your NVIDIA driver from the [official PyTorch installer](https://pytorch.org/get-started/locally/) if CUDA 13.0 is not supported by your system. Installing the CUDA-enabled PyTorch wheel normally does not require installing the full CUDA Toolkit separately; the NVIDIA driver must still be installed and compatible.
+
+Verify the build:
+
+```sh
+python -c "import torch; print(torch.__version__); print('CUDA build:', torch.version.cuda); print('CUDA available:', torch.cuda.is_available())"
+```
+
+A version containing `+cu...` and a non-`None` CUDA build identify a CUDA-enabled PyTorch package. `torch.cuda.is_available()` must return `True` for training to use the GPU.
 
 ## Usage
 
