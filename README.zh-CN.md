@@ -35,6 +35,27 @@ uv venv --python 3.11 .venv
 uv pip install --python .venv/bin/python -e ".[test]"
 ```
 
+以上是通用安装方式，不会根据电脑是否有 NVIDIA 显卡自动选择 CUDA 版 PyTorch。
+
+#### NVIDIA 显卡（CUDA）
+
+如果 `torch.__version__` 显示 `+cpu`，这个 PyTorch 版本无法使用 CUDA。在 Windows 上先完成上面的安装，然后在同一个虚拟环境里替换 PyTorch：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip uninstall -y torch
+.\.venv\Scripts\python.exe -m pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cu130
+```
+
+Linux 请将解释器路径改为 `.venv/bin/python`。示例使用 PyTorch 2.14.1 官方 CUDA 13.0 安装源；若你的 NVIDIA 驱动不支持该版本，请在[官方安装配置页面](https://pytorch.org/get-started/locally/)选择兼容的 CUDA 版本。通常不需要另外安装完整 CUDA Toolkit，但必须安装兼容的 NVIDIA 驱动。
+
+验证安装：
+
+```powershell
+.\.venv\Scripts\python.exe -c "import torch; print('PyTorch:',torch.__version__); print('CUDA build:',torch.version.cuda); print('CUDA available:',torch.cuda.is_available()); print('GPU:',torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A')"
+```
+
+版本带有 `+cu...` 且 `torch.version.cuda` 不是 `None`，说明安装的是 CUDA 版；最终还需要 `torch.cuda.is_available()` 返回 `True`，TrainSV 才能用 GPU 训练。
+
 Windows PowerShell 也可以使用虚拟环境内的 Python 安装：
 
 ```powershell
