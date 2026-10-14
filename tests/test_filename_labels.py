@@ -99,6 +99,17 @@ def test_vocaloid_mandarin_maps_to_synthv_simplified_inventory():
         "sil", "e", "e/", "r", "sil"
     ]
 
+def test_vocaloid6_underscored_aspirates_map_by_target_inventory():
+    simplified = {"sil", "a", "p", "t", "k", "c", "q", "b", "d", "g", "z", "ng", "e/", "-n"}
+    assert parse_filename_phones("p_h t_h k_h ts_h ts\\_h_0.wav", simplified, source_system="vocaloid-mandarin") == [
+        "sil", "p", "t", "k", "c", "q", "sil"
+    ]
+    legacy = {"sil", "p", "ph", "t", "th", "k", "kh", "ts", "tsh", "ts\\h"}
+    assert parse_filename_phones("p_h t_h k_h ts_h ts\\_h_0.wav", legacy, source_system="vocaloid-mandarin") == [
+        "sil", "ph", "th", "kh", "tsh", "ts\\h", "sil"
+    ]
+
+
 def test_vocaloid_mapping_preserves_legacy_xsampa_inventory():
     legacy = {"sil", "a", "e", "7", "@", "A", "N", "p", "ph", "t", "th", "k", "kh", "ts", "tsh", ":n"}
     assert parse_filename_phones("7 p ts a_n @N_0.wav", legacy, source_system="vocaloid-mandarin") == [
