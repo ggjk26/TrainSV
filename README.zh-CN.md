@@ -104,10 +104,12 @@ my-corpus/
 如果 WAV 文件名本身包含空格分隔的音素，也可以让 TrainSV **按文件名生成近似 LAB**，不必先手工制作标签。在 WebUI 的“录音”页面选择“Generate .lab from phonemes in WAV filenames”，指定 WAV 目录；可选指定 `phone_table.json`，或选择一个包含对应音素的声库作为备用音素表。生成的标签会保存在输出数据集的 `lab/` 子目录中。
 
 ```powershell
-trainsv import-lab --from-filenames --wavs C:\\my-wavs --phone-table C:\\phone_table.json --output C:\\my-dataset --language mandarin
+trainsv import-lab --from-filenames --wavs C:\\my-wavs --voice C:\\path\\to\\voice.nofs --output C:\\my-dataset --language mandarin
 ```
 
-此模式按文件名从左到右排列音素，只删除末尾的 `_0` / `_1` 重录编号，保留音素内部下划线；按音素表优先匹配完整符号，再处理已知复合音素及特殊替换；首尾固定添加 `sil`，不会合并文件名中原有的静音。首尾静音各占音频时长的 10%，中间音素平均分配剩余 80%。**这是按规则均分的近似标注，不是声学强制对齐**；实际音素边界可能不同，建议先检查生成的 LAB。若未指定 `--phone-table`，则必须指定 `--voice` 以使用声库音素表。
+此模式按文件名从左到右排列音素，只删除末尾的 `_0` / `_1` 重录编号，保留音素内部下划线；首尾固定添加 `sil`，不会合并文件名中原有的静音。首尾静音各占音频时长的 10%，中间音素平均分配剩余 80%。**这是按规则均分的近似标注，不是声学强制对齐**；实际音素边界可能不同，建议先检查生成的 LAB。
+
+如果 `--language mandarin`，`--source-phoneme-system` 默认是 `auto`，会将常见 VOCALOID 中文音素转成目标 SynthV 普通话音素（兼容 SynthV 简化音素名与旧式 X-SAMPA 音素名），并优先匹配目标声库实际包含的符号。通常只需指定 `--voice` 来读取目标音素表，不必准备 `phone_table.json`。对于不能转换的文件，程序会跳过该 WAV 并将文件名和错误原因写入输出目录的 `unmatched_phones.csv`；其余可处理的样本会继续生成标签。可用 `--source-phoneme-system none` 关闭转换，或显式指定 `vocaloid-mandarin`。
 
 X-SAMPA 的 `@\``、`3\`` 表示卷舌化元音：若目标音素表中有完整符号则原样保留；若没有，程序会尝试用对应元音加音素表中已有的卷舌音近似拆分（优先 `r\\`，其次 `ɹ`、`ɻ`、`r` 等）。若表内既没有完整符号，也没有可用近似音，会报出更具体的错误，不会直接丢掉卷舌特征。
 

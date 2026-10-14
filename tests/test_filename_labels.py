@@ -74,6 +74,77 @@ def test_wav_duration_and_lab_output(tmp_path):
     ]
 
 
+def test_vocaloid_mandarin_maps_to_synthv_simplified_inventory():
+    target = {
+        "sil", "a", "aa", "o/", "o", "e/", "ee", "e", "u", "i", "v",
+        "ao", "ou", "ia", "iaa", "iao", "iae", "io", "iu", "z", "c",
+        "b", "p", "d", "t", "g", "k", "gw", "kw", "-n", "ng", "r", "er",
+    }
+    assert parse_filename_phones("@_n 7_0.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "e/", "-n", "e", "sil"
+    ]
+    assert parse_filename_phones("p ph t th k kh ts tsh_0.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "b", "p", "d", "t", "g", "k", "z", "c", "sil"
+    ]
+    assert parse_filename_phones("iE_n iE_r_1.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "iae", "-n", "iae", "sil"
+    ]
+    assert parse_filename_phones("aI ei_0.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "a", "i", "ee", "i", "sil"
+    ]
+    assert parse_filename_phones("AN @N iAN iN iUN_0.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "aa", "ng", "e/", "ng", "iaa", "ng", "i", "ng", "io", "ng", "sil"
+    ]
+    assert parse_filename_phones("7 @`_0.wav", {"sil", "e", "e/", "r"}, source_system="vocaloid-mandarin") == [
+        "sil", "e", "e/", "r", "sil"
+    ]
+
+def test_user_vocaloid_mandarin_filename_tokens_are_convertible():
+    target = {
+        "sil", "a", "aa", "o/", "e/", "ee", "e", "o", "u", "i", "iz", "ir", "v",
+        "aI", "ei", "ao", "ou", "ia", "iaa", "iao", "ie", "iae", "io", "iu",
+        "ua", "uo", "yE_r", "uai", "uei", "f", "er", "-n", "ng",
+    }
+    source_tokens = (
+        "7", "@U", "@_n", "@`", "aI", "AN", "AU", "a", "a_n", "ei", "f",
+        "i@U", "iAN", "iAU", "ia", "iE_n", "iE_r", "iN", "iUN", "i",
+    )
+    for token in source_tokens:
+        parsed = parse_filename_phones(f"@_n {token}_0.wav", target, source_system="vocaloid-mandarin")
+        assert parsed[0] == parsed[-1] == "sil"
+        assert len(parsed) >= 3
+        assert set(parsed) <= target | {"sil"}
+
+
+def test_vocaloid6_underscored_aspirates_map_by_target_inventory():
+    simplified = {"sil", "a", "p", "t", "k", "c", "q", "b", "d", "g", "z", "ng", "e/", "-n"}
+    assert parse_filename_phones("p_h t_h k_h ts_h ts\\_h ts`_h_0.wav", simplified, source_system="vocaloid-mandarin") == [
+        "sil", "p", "t", "k", "c", "q", "ch", "sil"
+    ]
+    legacy = {"sil", "p", "ph", "t", "th", "k", "kh", "ts", "tsh", "ts\\h", "ts`h"}
+    assert parse_filename_phones("p_h t_h k_h ts_h ts\\_h ts`_h_0.wav", legacy, source_system="vocaloid-mandarin") == [
+        "sil", "ph", "th", "kh", "tsh", "ts\\h", "ts`h", "sil"
+    ]
+
+
+def test_vocaloid_mapping_preserves_legacy_xsampa_inventory():
+    legacy = {"sil", "a", "e", "7", "@", "A", "N", "p", "ph", "t", "th", "k", "kh", "ts", "tsh", ":n"}
+    assert parse_filename_phones("7 p ts a_n @N_0.wav", legacy, source_system="vocaloid-mandarin") == [
+        "sil", "7", "p", "ts", "a", ":n", "@", "N", "sil"
+    ]
+
+def test_unmatched_wav_files_are_reported_without_aborting_other_files(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(str(wav_dir / "@_n 7_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "badphone_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    unmatched = []
+    recordings = filename_recordings(wav_dir, {"sil", "e/", "-n", "e"}, source_system="vocaloid-mandarin", unmatched=unmatched)
+    assert [recording[0] for recording in recordings] == ["@_n 7_0"]
+    assert len(unmatched) == 1
+    assert unmatched[0]["filename"] == "badphone_0.wav"
+    assert "unknown phone" in unmatched[0]["error"]
+
 def test_unknown_phone_fails_loudly():
     with pytest.raises(ValueError, match="unknown phone"):
         parse_filename_phones("definitely_unknown_0.wav", PHONES)

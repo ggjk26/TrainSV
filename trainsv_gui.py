@@ -574,8 +574,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <div class="field" data-id="i_labs" data-kind="path" data-mode="dir" data-label="Folder of .lab files"></div>
     </div>
     <div data-src="filenames" hidden>
-      <div class="field" data-id="i_wavs_names" data-kind="path" data-mode="dir" data-label="Folder of WAV files" data-hint="Filenames must use spaces between phones, e.g. <code>@_n @_n_0.wav</code>. Only the final _0/_1 retake suffix is removed."></div>
-      <div class="field" data-id="i_phone_table" data-kind="path" data-mode="file" data-ext="json" data-label="phone_table.json (optional)" data-hint="If omitted, TrainSV uses the selected voice's phone set. The table must include the target symbols for composite splitting."></div>
+      <div class="field" data-id="i_wavs_names" data-kind="path" data-mode="dir" data-label="Folder of WAV files" data-hint="Use spaces between phones, e.g. <code>@_n 7_0.wav</code>. For Mandarin VOCALOID labels, TrainSV converts source phones to the selected voice inventory automatically. Only the final _0/_1 retake suffix is removed."></div>
+      <div class="field" data-id="i_phone_table" data-kind="path" data-mode="file" data-ext="json" data-label="phone_table.json (optional)" data-hint="Usually not needed when a voice is selected above. If omitted, keep “Mark word boundaries using my voice” enabled so TrainSV can read the selected voice phone set."></div>
       <p class="note">Approximation: the first and last <code>sil</code> each take 10% of the audio; all middle phones share the remaining 80% equally. This creates labels from filename order, not acoustic forced alignment.</p>
     </div>
     <div data-src="manifest" hidden><div class="field" data-id="i_manifest" data-kind="path" data-mode="file" data-ext="json" data-label="manifest.json"></div></div>
