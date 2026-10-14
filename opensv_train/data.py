@@ -63,7 +63,10 @@ class Utterance:
     def f0_at(self, times: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         voiced = self.f0_values > 0
         if not voiced.any():
-            raise ValueError(f"{self.name} has no voiced frames")
+            # Valid consonant-only and silence recordings can have no measurable
+            # F0 at all. Keep a neutral conditioning pitch for the acoustic model,
+            # while marking every frame unvoiced so the voicing target stays zero.
+            return np.full(times.shape, 150.0, dtype=np.float32), np.zeros(times.shape, dtype=bool)
         log_f0 = np.interp(times, self.f0_times[voiced], np.log(self.f0_values[voiced]))
         nearest = np.clip(np.searchsorted(self.f0_times, times), 0, len(self.f0_times) - 1)
         return np.exp(log_f0), voiced[nearest] & (np.abs(self.f0_times[nearest] - times) < 2 * FRAME_SECONDS)
