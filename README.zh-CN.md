@@ -337,3 +337,4 @@ cmake --build build --target OpenSVParity
 ## 许可
 
 项目采用 GPL-3.0。感谢 [OpenSV](https://github.com/cubeww/OpenSV) 项目提供的参考实现。请通过当前仓库的 [Issues](https://github.com/ggjk26/TrainSV/issues) 提交复现步骤、底模类型和完整日志。
+现在支持输入Vocaloid音频样本的X-SAMPA音素，不会因为不匹配Synthesizer V的而报错退出。目前F0预测器的清浊音部分处理有问题（如“Sil k_01.wav”会识别损坏的wav从而终止训练）
