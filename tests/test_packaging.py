@@ -104,6 +104,9 @@ def test_build_svpk_allows_omitting_license_text(tmp_path):
 
     with zipfile.ZipFile(output) as archive:
         assert archive.namelist() == [
-            "voice.nofs", "backgrond.png", "profile.png", "package-profile"
+            "voice.nofs", "backgrond.png", "license.txt", "profile.png", "package-profile"
         ]
         assert archive.testzip() is None
+        license_text = archive.read("license.txt").decode("utf-8")
+        assert "License terms have not been specified" in license_text
+        assert "Test Voice" in license_text
