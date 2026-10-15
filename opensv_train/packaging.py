@@ -2,11 +2,13 @@
 
 The inspected Teto package and the user-provided Hanakuma Chifuyu header both
 have an eight-byte magic/version prefix, 256 bytes of high-entropy, package-
-specific data, then a ZIP archive at offset 264. The field's format is not
-publicly established here; a 256-byte per-package field is consistent with an
-RSA-2048-sized signature, but that hypothesis is unverified. This prototype
-zero-fills the field and the user confirmed Sharp ignores such packages, so
-outputs are diagnostic only and are not installable SVPKs.
+specific data, then a ZIP archive at offset 264. The user reports that a
+zero-filled field makes Sharp ignore the package; transplanting Chifuyu's field
+onto the modified custom package makes Sharp recognize it but report corrupted
+data. This strongly suggests package-bound integrity/authentication data. A
+256-byte field is consistent with an RSA-2048-sized signature, but the
+algorithm and signed payload are unverified. Outputs are diagnostic only and
+are not installable SVPKs.
 """
 from __future__ import annotations
 
@@ -38,8 +40,9 @@ def build_svpk(
     """Build a diagnostic archive with an SVPK-like prefix, not an installable package.
 
     The 256-byte package-specific outer field is zero-filled because its
-    official encoding/signing process is unknown. Sharp was observed to ignore
-    this output, so do not distribute it as a working voicebank installer.
+    official encoding/signing process is unknown. Sharp ignores this package;
+    transplanting Chifuyu's field onto modified content triggers a corruption
+    error. Do not distribute this as a working voicebank installer.
     """
     voice = Path(voice).expanduser()
     license_file = Path(license_file).expanduser() if license_file is not None else None
