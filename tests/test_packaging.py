@@ -84,3 +84,26 @@ def test_build_svpk_requires_svpk_extension(tmp_path):
             product_name="Test Voice",
             vendor_name="TrainSV test",
         )
+
+
+
+def test_build_svpk_allows_omitting_license_text(tmp_path):
+    voice, _license_file, profile, background = _assets(tmp_path)
+    output = tmp_path / "voice.svpk"
+
+    build_svpk(
+        voice=voice,
+        profile=profile,
+        background=background,
+        output=output,
+        product_name="Test Voice",
+        vendor_name="TrainSV test",
+        version_string="101",
+        version_number=101,
+    )
+
+    with zipfile.ZipFile(output) as archive:
+        assert archive.namelist() == [
+            "voice.nofs", "backgrond.png", "profile.png", "package-profile"
+        ]
+        assert archive.testzip() is None
