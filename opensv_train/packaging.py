@@ -16,7 +16,7 @@ from pathlib import Path
 SVPK_PREFIX = b"SVPK\x00\x01\x00\x00"
 SVPK_OPAQUE_FIELD_SIZE = 256
 SVPK_HEADER_SIZE = len(SVPK_PREFIX) + SVPK_OPAQUE_FIELD_SIZE
-_ARCHIVE_MEMBERS = ("voice.nofs", "backgrond.png", "license.txt", "profile.png", "package-profile")
+_ARCHIVE_MEMBERS = ("voice.nofs", "license.txt", "profile.png", "background.png", "package-config")
 
 
 def build_svpk(
@@ -105,16 +105,16 @@ def build_svpk(
             inner_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
         ) as archive:
             # Match the entry order of the official sample supplied for comparison.
-            entries = [("voice.nofs", voice), ("backgrond.png", background)]
+            entries = [("voice.nofs", voice)]
             if license_file is not None:
                 entries.append(("license.txt", license_file))
             else:
                 entries.append(("license.txt", generated_license))
-            entries.append(("profile.png", profile))
+            entries.extend((("profile.png", profile), ("background.png", background)))
             for archive_name, source in entries:
                 archive.write(source, arcname=archive_name)
             archive.writestr(
-                "package-profile",
+                "package-config",
                 json.dumps(config, ensure_ascii=False, indent=2).replace("\n", "\r\n"),
                 compress_type=zipfile.ZIP_DEFLATED,
                 compresslevel=9,
@@ -135,7 +135,7 @@ def build_svpk(
                 bad_member = archive.testzip()
                 if bad_member is not None:
                     raise ValueError(f"corrupt ZIP member: {bad_member}")
-                if json.loads(archive.read("package-profile")) != config:
+                if json.loads(archive.read("package-config")) != config:
                     raise ValueError("package-profile failed validation")
 
             os.replace(temp_output, output)
