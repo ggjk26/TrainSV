@@ -168,7 +168,7 @@ trainsv package-svpk `
   --version-number 101
 ```
 
-**Experimental:** the writer follows the observed SVPK v1 outer layout (eight-byte magic/version prefix, a 256-byte opaque field, then ZIP data). The opaque field is zero-filled because its official semantics are not established; runtime acceptance must be tested in Synthesizer V Sharp. This is not a Dreamtonics-signed official installer. The CLI `--license` argument is optional.
+**Experimental:** the writer follows the observed SVPK v1 outer layout (eight-byte magic/version prefix, a 256-byte opaque field, then ZIP data). The opaque field is zero-filled because its official semantics are not established; runtime acceptance must be tested in Synthesizer V Sharp. This is not a Dreamtonics-signed official installer. The CLI `--license` argument is optional. If omitted, the packager includes a clearly marked placeholder `license.txt` without inventing license terms; replace it with actual terms before distribution.
 
 This command only makes SVPK. SFPK is a separate Flat Manager format and is not produced by renaming the SVPK file.
 
