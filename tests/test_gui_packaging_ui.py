@@ -71,3 +71,9 @@ def test_svpk_output_suggestion_preserves_unicode_name_and_manual_paths():
     assert 'packageFileStem(val("svpk_name"))+".svpk"' in PAGE
     assert 'if(t.id==="svpk_name")suggestSvpkOutput()' in PAGE
     assert 'if(t.id==="svpk_output"&&SVPK_AUTO_OUTPUT' in PAGE
+
+
+
+def test_successful_comparison_opens_the_package_format_chooser():
+    assert 'if(JOB.kind==="evaluate"){go("results");showPackageFormatDialog()}' in PAGE
+    assert 'if(target.isfile&&!confirm("输出文件已存在：\\n"+val("svpk_output")+"\\n\\n是否覆盖它？"))return;' in PAGE
