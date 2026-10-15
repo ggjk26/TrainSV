@@ -25,12 +25,14 @@ trainsv package-svpk `
 ## 包含的内容
 
 - `voice.nofs`：训练后的模型
-- `backgrond.png`：背景图片（这是目前所检查样例中的实际拼写）
 - `license.txt`：如果提供 `--license` 就使用该文件；否则自动生成“尚未指定许可条款”的占位文本。发布前应换成真实许可条款。
 - `profile.png`：头像
-- `package-profile`：`productName`、`vendorName`、`versionString`、`versionNumber`、`dependingVersionNumber`
+- `background.png`：背景图片
+- `package-config`：`productName`、`vendorName`、`versionString`、`versionNumber`、`dependingVersionNumber`
 
-输出完成后，程序会检查 SVPK 头、ZIP 成员、CRC 和 `package-profile` JSON。但 256 字节不透明字段当前置零，其含义尚未验证；必须在 Sharp 中实际安装并选择歌手测试。
+条目名称和顺序与已检查的 `KASANE_TETO_AI_104.svpk` 样例一致：`voice.nofs`、`license.txt`、`profile.png`、`background.png`、`package-config`。
+
+输出完成后，程序会检查 SVPK 头、ZIP 成员、CRC 和 `package-config` JSON。但 256 字节不透明字段当前置零，其含义尚未验证；必须在 Sharp 中实际安装并选择歌手测试。
 
 ## SFPK
 
