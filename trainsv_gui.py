@@ -1032,7 +1032,7 @@ const B={
     else if(!/\.nofs$/i.test(voicePath))p.push("请选择训练后的 .nofs 文件，而不是目录或其他文件。");
     if(!val("svpk_name"))p.push("请填写声库名称。");
     if(!val("svpk_vendor"))p.push("请填写声库供应商 / 作者。");
-    if(!/^\d+$/.test(version))p.push("声库版本必须是整数，例如 101。");
+    if(!/^\d+$/.test(version)||!Number.isSafeInteger(Number(version)))p.push("声库版本必须是安全范围内的非负整数，例如 101。");
     if(!val("svpk_profile"))p.push("请选择 profile.png 头像图片。");
     if(!val("svpk_background"))p.push("请选择背景 PNG 图片。");
     let output=val("svpk_output");
@@ -1147,7 +1147,7 @@ let PK=null;
 async function openPicker(id,mode,ext){
   if(mode==="dynamic")mode=isInfo(val("voice"))?"dir":"save";
   const cur=val(id);
-  PK={id,mode,ext,dir:"",name:mode==="save"?(cur&&/\.\w+$/.test(basename(cur))?basename(cur):(ext==="json"?"history.json":"voice.nofs")):""};
+  PK={id,mode,ext,dir:"",name:mode==="save"?(cur&&/\.\w+$/.test(basename(cur))?basename(cur):(ext==="json"?"history.json":ext==="svpk"?"voice.svpk":"voice.nofs")):""};
   $("#pkTitle").textContent=mode==="dir"?"Choose a folder":mode==="save"?"Choose a folder and file name":"Choose a file";
   await pkLoad(cur&&mode!=="dir"&&/\.\w+$/.test(basename(cur))?dirname(cur):cur);
   $("#picker").showModal();
