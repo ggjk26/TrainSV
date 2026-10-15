@@ -154,11 +154,11 @@ After finetuning a `voice.nofs`, you can package it with your own license text a
 
 ```powershell
 trainsv package-svpk `
-  --voice "out\\voice.nofs" `
-  --license "assets\\license.txt" `
-  --profile "assets\\profile.png" `
-  --background "assets\\background.png" `
-  --output "out\\MySinger.svpk" `
+  --voice "out\voice.nofs" `
+  --license "assets\license.txt" `
+  --profile "assets\profile.png" `
+  --background "assets\background.png" `
+  --output "out\MySinger.svpk" `
   --name "My Singer" `
   --vendor "Your name or studio" `
   --version-string 101 `
