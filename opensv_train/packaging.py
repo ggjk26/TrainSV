@@ -1,9 +1,12 @@
-"""Build experimental SVPK v1 packages for TrainSV-finetuned voice banks.
+"""Build diagnostic SVPK-layout archives for TrainSV-finetuned voice banks.
 
-The SVPK samples inspected so far have an eight-byte magic/version prefix,
-a 256-byte opaque field, then a ZIP archive. The field's official semantics
-are unknown; for the custom-bank/Sharp test workflow we write zeroes there.
-This does not produce a Dreamtonics-signed official installer.
+The inspected Teto package and the user-provided Hanakuma Chifuyu header both
+have an eight-byte magic/version prefix, 256 bytes of high-entropy, package-
+specific data, then a ZIP archive at offset 264. The field's format is not
+publicly established here; a 256-byte per-package field is consistent with an
+RSA-2048-sized signature, but that hypothesis is unverified. This prototype
+zero-fills the field and the user confirmed Sharp ignores such packages, so
+outputs are diagnostic only and are not installable SVPKs.
 """
 from __future__ import annotations
 
@@ -32,10 +35,11 @@ def build_svpk(
     version_number: int = 101,
     depending_version_number: int = 0,
 ) -> Path:
-    """Build a custom-bank SVPK container for testing in Synthesizer V Sharp.
+    """Build a diagnostic archive with an SVPK-like prefix, not an installable package.
 
-    This writes the observed SVPK v1 outer layout, but zero-fills the
-    256-byte opaque header field. Runtime acceptance must be tested in Sharp.
+    The 256-byte package-specific outer field is zero-filled because its
+    official encoding/signing process is unknown. Sharp was observed to ignore
+    this output, so do not distribute it as a working voicebank installer.
     """
     voice = Path(voice).expanduser()
     license_file = Path(license_file).expanduser() if license_file is not None else None
