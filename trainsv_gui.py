@@ -1405,12 +1405,18 @@ async function init(){
   $("#chooseSvpk").onclick=()=>{$("#packageFormatDialog").close();openSvpkDialog()};
   $("#chooseSfpk").onclick=showSfpkPlaceholder;
   $("#cancelSvpk").onclick=()=>$("#svpkDialog").close();
-  $("#buildSvpk").onclick=()=>{
-    const r=B.svpk();
+  $("#buildSvpk").onclick=async()=>{
+    const button=$("#buildSvpk"),r=B.svpk();
     if(r.p.length){$("#packageFormError").textContent=r.p.join("\n");return;}
     $("#packageFormError").textContent="";
-    $("#svpkDialog").close();
-    startJob("svpk");
+    button.disabled=true;
+    try{
+      const target=await api("stat?path="+enc(val("svpk_output")));
+      if(target.isfile&&!confirm("输出文件已存在：\\n"+val("svpk_output")+"\\n\\n是否覆盖它？"))return;
+      $("#svpkDialog").close();
+      startJob("svpk");
+    }catch(e){alert("无法检查输出路径："+e.message)}
+    finally{button.disabled=false}
   };
   // resume hint
   const rh=()=>{const r=val("t_run");if(!r)return;api("stat?path="+enc(join(r,"state.pt"))).then(s=>{$("#resumeHint").textContent=s.exists?"A saved run was found here. Set “Steps” higher than what it already did to train further.":"No saved run here yet, so this would start fresh."}).catch(()=>{})};
