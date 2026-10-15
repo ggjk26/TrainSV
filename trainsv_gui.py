@@ -669,7 +669,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <div id="results"></div>
   <div class="pkg-section">
     <h3>导出训练后的声库</h3>
-    <p class="hint">SVPK 当前仅为格式研究实验包。已实测：外层 256 字节字段全零时，Sharp 导入后没有反应；在该字段的用途确认前，生成文件不可视为可安装声库。SFPK 当前只提供占位提示。</p>
+    <p class="hint">SVPK 当前仅为格式研究诊断包。Teto 与 Hanakuma Chifuyu 官方样本的 256 字节外层字段内容不同；它可能是包专属签名（256 字节长度与 RSA-2048 签名相符，但尚未证实）。全零版本已实测在 Sharp 中无反应，故生成结果不可安装或发布。SFPK 当前只提供占位提示。</p>
     <div class="actions"><button class="primary" type="button" id="openPackageFormat">导出声库 / 选择打包格式</button></div>
     <p class="status" id="packageStatus" role="status"></p>
   </div>
@@ -716,7 +716,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 </div>
 
 <dialog id="packageFormatDialog">
-  <div class="pk-head"><b>选择声库打包格式</b><div class="hint">SVPK 目前生成的是诊断用实验包；已知全零外层字段的包在 Sharp 中无响应。SFPK 目前是占位入口。</div></div>
+  <div class="pk-head"><b>选择声库打包格式</b><div class="hint">SVPK 目前只生成诊断包。Teto 与 Chifuyu 的 256 字节字段彼此不同，可能是包专属签名（RSA-2048 假设未证实）；全零字段的包在 Sharp 中无响应。SFPK 目前是占位入口。</div></div>
   <div class="pkg-choice-body">
     <div><button class="primary" type="button" id="chooseSvpk">使用 SVPK 格式打包</button><p class="hint">设置声库名称、供应商、版本、头像和背景后自动开始打包。</p></div>
     <div><button type="button" id="chooseSfpk">使用 SFPK 格式打包（占位）</button><p class="hint">若输出是普通 voice.nofs，会说明当前结构不支持 SFPK，并列出缺少的共享模型文件。</p></div>
@@ -725,7 +725,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 </dialog>
 
 <dialog id="svpkDialog">
-  <div class="pk-head"><b>使用 SVPK 格式打包</b><div class="hint">无需手动编辑 JSON。图片请选择 PNG 文件。注意：当前实现将 256 字节外层字段置零，而这种包已实测在 Sharp 中无响应；此功能目前仅用于诊断包结构，不会生成可安装包。</div></div>
+  <div class="pk-head"><b>使用 SVPK 格式打包</b><div class="hint">无需手动编辑 JSON。图片请选择 PNG 文件。注意：Teto 与 Chifuyu 官方样本的 256 字节字段内容各不相同，可能涉及包专属签名；当前实现将该字段置零，而这种包已实测在 Sharp 中无响应。此功能仅用于诊断包结构，不会生成可安装包。</div></div>
   <div class="pkg-form">
     <div class="field" data-id="svpk_name" data-label="声库名称" data-ph="例如：Luo Tianyi"></div>
     <div class="field" data-id="svpk_vendor" data-label="声库供应商 / 作者" data-ph="例如：个人或工作室"></div>
