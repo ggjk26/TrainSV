@@ -32,7 +32,7 @@ def test_svpk_dialog_collects_required_metadata_and_assets():
     ):
         assert f'data-id="{field}"' in PAGE
     assert "JSON" in PAGE
-    assert "全零字段的包在 Sharp 中无响应" in PAGE
+    assert "全零字段版本在 Sharp 中无反应" in PAGE
     assert "Teto 与 Chifuyu" in PAGE
     assert "复制 Chifuyu 字段后提示数据损坏" in PAGE
     assert "完整性/认证校验" in PAGE
