@@ -369,7 +369,7 @@ def parser() -> argparse.ArgumentParser:
     command.set_defaults(handler=inspect)
     command = commands.add_parser("package-svpk", help="package a custom voice.nofs into an experimental SVPK test container for Sharp")
     command.add_argument("--voice", required=True, help="trained voice.nofs file")
-    command.add_argument("--license", dest="license_file", required=True, help="license text file to include")
+    command.add_argument("--license", dest="license_file", help="optional license text file to include")
     command.add_argument("--profile", required=True, help="voicebank avatar PNG")
     command.add_argument("--background", required=True, help="voicebank background PNG")
     command.add_argument("--output", required=True, help="output .svpk path")
