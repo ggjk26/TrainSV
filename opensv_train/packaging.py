@@ -62,6 +62,15 @@ def build_svpk(
         raise ValueError("product name must not be empty")
     if not vendor_name.strip():
         raise ValueError("vendor name must not be empty")
+    if not str(version_string).strip():
+        raise ValueError("version string must not be empty")
+    if (
+        not isinstance(version_number, int)
+        or isinstance(version_number, bool)
+        or not isinstance(depending_version_number, int)
+        or isinstance(depending_version_number, bool)
+    ):
+        raise ValueError("version numbers must be integers")
     if version_number < 0 or depending_version_number < 0:
         raise ValueError("version numbers must be non-negative integers")
     if output.suffix.lower() != ".svpk":
