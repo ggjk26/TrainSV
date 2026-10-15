@@ -1,6 +1,6 @@
 # 自制声库打包：SVPK（Sharp 测试版）
 
-本流程用于把 TrainSV 训练得到的 `voice.nofs`、自备的头像/背景、许可证文本和元数据封装成供 Synthesizer V Sharp 测试的 `.svpk`。
+在 WebUI 的 Results 阶段，完成 Compare voices 后选择“使用 SVPK 格式打包”，填写声库名称、供应商/作者、整数版本，并选择头像与背景 PNG，即可自动启动打包。不需要手动编辑 JSON。命令行也可使用 `trainsv package-svpk`。`license.txt` 是可选项。
 
 > **实验性功能：** 样本对比确认，官方 SVPK 的前 8 字节是 `SVPK 00 01 00 00`，后面有 256 字节不透明字段，ZIP 数据从偏移 264 开始。本实现将这 256 字节写为零；它没有生成官方签名，是否被 Sharp 接受仍须在目标软件里实测。不要把它描述成 Dreamtonics 官方签名安装包。
 
@@ -21,17 +21,17 @@ trainsv package-svpk `
   --version-number 101
 ```
 
-也可以直接运行 `python -m opensv_train package-svpk --help` 查看参数。图片必须是 PNG；`license.txt` 应当使用你有权随自制声库分发的许可文本，而不是默认复制商业声库的授权文件。
+也可以直接运行 `python -m opensv_train package-svpk --help` 查看参数。图片必须是 PNG。如果提供 `--license`，应当使用你有权随自制声库分发的许可文本，而不是复制商业声库的授权文件。
 
 ## 包含的内容
 
 - `voice.nofs`：训练后的模型
-- `license.txt`：你提供的许可文本
+- `backgrond.png`：背景图片（这是目前所检查样例中的实际拼写）
+- `license.txt`：可选的自定义许可文本
 - `profile.png`：头像
-- `background.png`：背景
-- `package-config`：`productName`、`vendorName`、`versionString`、`versionNumber`、`dependingVersionNumber`
+- `package-profile`：`productName`、`vendorName`、`versionString`、`versionNumber`、`dependingVersionNumber`
 
-输出完成后，程序会检查 ZIP 成员、CRC 和配置 JSON，但这不能代替在 Sharp 中实际安装并选择歌手的测试。
+输出完成后，程序会检查 SVPK 头、ZIP 成员、CRC 和 `package-profile` JSON。但 256 字节不透明字段当前置零，其含义尚未验证；必须在 Sharp 中实际安装并选择歌手测试。
 
 ## SFPK
 
