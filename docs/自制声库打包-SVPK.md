@@ -11,7 +11,6 @@
 ```powershell
 trainsv package-svpk `
   --voice "D:\TrainSV\out\voice.nofs" `
-  --license "D:\Voicebank\license.txt" `
   --profile "D:\Voicebank\profile.png" `
   --background "D:\Voicebank\background.png" `
   --output "D:\Voicebank\Luo_Tianyi.svpk" `
