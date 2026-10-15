@@ -326,7 +326,7 @@ trainsv package-svpk `
   --version-number 101
 ```
 
-**注意：这是实验性封装。** 已观察到的 SVPK 样本由 8 字节格式头、256 字节不透明字段和 ZIP 数据组成；当前工具将这 256 字节置零，因为它的正式含义尚未确认。生成后必须在 Sharp 中实测，不能将其称为 Dreamtonics 官方签名的安装包。命令行的 `--license` 参数可选；若未提供，打包器会生成明确标注“尚未指定许可条款”的 `license.txt` 占位文本，并不会替你声明授权。实际发布前应填写真实许可条款。
+**注意：这是实验性封装。** 已观察到的 SVPK 样本由 8 字节格式头、256 字节不透明字段和 ZIP 数据组成；当前工具将这 256 字节置零，因为它的正式含义尚未确认。生成后必须在 Sharp 中实测，不能将其称为 Dreamtonics 官方签名的安装包。命令行的 `--license` 参数可选；若未提供，打包器会生成包含 `!language en-us` 与 `!language zh-cn` 区块的 `license.txt` 占位文本（按样本中观察到的语言标记格式）。它只说明尚未指定正式许可条款，并不会替你声明授权；实际发布前应填写你有权发布的真实许可条款。
 
 包内文件名与顺序按已检查的 `KASANE_TETO_AI_104.svpk` 样例设置：`voice.nofs`、`license.txt`、`profile.png`、`background.png`、`package-config`。
 
