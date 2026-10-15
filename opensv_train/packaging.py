@@ -74,6 +74,16 @@ def build_svpk(
         "versionNumber": int(version_number),
         "dependingVersionNumber": int(depending_version_number),
     }
+    # The UI intentionally doesn't ask users to import a license file. Keep the
+    # sample's license.txt entry in every package, while clearly marking the
+    # generated text as a placeholder rather than inventing license terms.
+    generated_license = (
+        f"Voicebank: {product_name}\\r\\n"
+        f"Vendor: {vendor_name}\\r\\n"
+        f"Version: {version_string}\\r\\n\\r\\n"
+        "License terms have not been specified in this package.\\r\\n"
+        "Please contact the vendor for permissions before redistribution or commercial use.\\r\\n"
+    ).encode("utf-8")
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -89,6 +99,8 @@ def build_svpk(
             entries = [("voice.nofs", voice), ("backgrond.png", background)]
             if license_file is not None:
                 entries.append(("license.txt", license_file))
+            else:
+                entries.append(("license.txt", generated_license))
             entries.append(("profile.png", profile))
             for archive_name, source in entries:
                 archive.write(source, arcname=archive_name)
@@ -108,10 +120,7 @@ def build_svpk(
 
             # Validate the inner ZIP and metadata round-trip before publishing.
             with zipfile.ZipFile(temp_output) as archive:
-                expected_members = ["voice.nofs", "backgrond.png"]
-                if license_file is not None:
-                    expected_members.append("license.txt")
-                expected_members.extend(("profile.png", "package-profile"))
+                expected_members = list(_ARCHIVE_MEMBERS)
                 if archive.namelist() != expected_members:
                     raise ValueError(f"unexpected SVPK members: {archive.namelist()}")
                 bad_member = archive.testzip()
