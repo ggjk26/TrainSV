@@ -62,3 +62,12 @@ def test_embedded_webui_javascript_has_valid_syntax():
             check=False,
         )
         assert result.returncode == 0, result.stderr or result.stdout
+
+
+
+def test_svpk_output_suggestion_preserves_unicode_name_and_manual_paths():
+    assert "function packageFileStem(name)" in PAGE
+    assert "function suggestSvpkOutput()" in PAGE
+    assert 'packageFileStem(val("svpk_name"))+".svpk"' in PAGE
+    assert 'if(t.id==="svpk_name")suggestSvpkOutput()' in PAGE
+    assert 'if(t.id==="svpk_output"&&SVPK_AUTO_OUTPUT' in PAGE
