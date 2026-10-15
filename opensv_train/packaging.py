@@ -13,7 +13,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-SVPK_PREFIX = b"SVPK\\x00\\x01\\x00\\x00"
+SVPK_PREFIX = b"SVPK\x00\x01\x00\x00"
 SVPK_OPAQUE_FIELD_SIZE = 256
 SVPK_HEADER_SIZE = len(SVPK_PREFIX) + SVPK_OPAQUE_FIELD_SIZE
 _ARCHIVE_MEMBERS = ("voice.nofs", "license.txt", "profile.png", "background.png", "package-config")
@@ -54,7 +54,7 @@ def build_svpk(
 
     for label, path in (("profile.png", profile), ("background.png", background)):
         with path.open("rb") as stream:
-            if stream.read(8) != b"\\x89PNG\\r\\n\\x1a\\n":
+            if stream.read(8) != b"\x89PNG\r\n\x1a\n":
                 raise ValueError(f"{label} must be a PNG file: {path}")
 
     if not product_name.strip():
@@ -94,7 +94,7 @@ def build_svpk(
                 archive.write(source, arcname=archive_name)
             archive.writestr(
                 "package-config",
-                json.dumps(config, ensure_ascii=False, indent=2).replace("\\n", "\\r\\n"),
+                json.dumps(config, ensure_ascii=False, indent=2).replace("\n", "\r\n"),
                 compress_type=zipfile.ZIP_DEFLATED,
                 compresslevel=9,
             )
