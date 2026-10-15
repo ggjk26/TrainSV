@@ -12,7 +12,6 @@ on:
   push:
     branches:
       - main
-      - feature/svpk-custom-bank-packager
 
 jobs:
   packaging-ui:
