@@ -754,7 +754,7 @@ const METRIC={mel:["Sound match","lower is closer"],voicing:["Voiced/unvoiced ma
 const PRESETS={p_quick:{t_steps:"200",t_evalevery:"100",t_logevery:"10",t_warmup:"",t_lrend:""},
  p_std:{t_steps:"2000",t_evalevery:"",t_logevery:"",t_warmup:"",t_lrend:""},
  p_long:{t_steps:"6000",t_evalevery:"",t_logevery:"",t_warmup:"100",t_lrend:"2e-6"}};
-let ENV={root:"",sep:"/"},EXTRA={manual:{},trained:false,evaluated:false},DS=null,VOICE_OK=false,JOB=null,polling=false;
+let ENV={root:"",sep:"/"},EXTRA={manual:{},trained:false,evaluated:false},DS=null,VOICE_OK=false,JOB=null,polling=false,SVPK_AUTO_OUTPUT="";
 
 const val=id=>{const e=document.getElementById(id);return e?String(e.value||"").trim():""};
 const chk=id=>!!document.getElementById(id)?.checked;
@@ -1288,6 +1288,23 @@ function showPackageFormatDialog(){
   go("results");
   $("#packageFormatDialog").showModal();
 }
+function packageFileStem(name){
+  return String(name||"").trim()
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g,"_")
+    .replace(/[. ]+$/g,"") || "voice";
+}
+function suggestSvpkOutput(){
+  const voicePath=val("e_new")||val("t_output"),target=$("#svpk_output");
+  if(!voicePath||!target)return;
+  const current=val("svpk_output");
+  const next=join(dirname(voicePath),packageFileStem(val("svpk_name"))+".svpk");
+  if(!current||(SVPK_AUTO_OUTPUT&&current===SVPK_AUTO_OUTPUT)){
+    target.value=next;
+    SVPK_AUTO_OUTPUT=next;
+  }else if(current!==SVPK_AUTO_OUTPUT){
+    SVPK_AUTO_OUTPUT="";
+  }
+}
 function openSvpkDialog(){
   const voicePath=val("e_new")||val("t_output");
   if(!voicePath){alert("请先选择训练后的声库文件。");return;}
@@ -1295,7 +1312,7 @@ function openSvpkDialog(){
   if(!/\.nofs$/i.test(voicePath)){alert("当前路径不是 .nofs 文件，请先在 Results 中选择训练后的 voice.nofs。");return;}
   if(!val("svpk_name"))document.getElementById("svpk_name").value=val("v_name")||"My Singer";
   if(!val("svpk_version"))document.getElementById("svpk_version").value="101";
-  if(!val("svpk_output"))document.getElementById("svpk_output").value=join(dirname(voicePath),slug(val("svpk_name"))+".svpk");
+  suggestSvpkOutput();
   $("#packageFormError").textContent="";
   $("#svpkDialog").showModal();
 }
@@ -1355,6 +1372,8 @@ async function init(){
   document.addEventListener("input",e=>{
     const t=e.target;if(!t.matches||!t.matches("[data-s]"))return;
     if(AUTO.includes(t.id))EXTRA.manual[t.id]=t.value.trim()!=="";
+    if(t.id==="svpk_name")suggestSvpkOutput();
+    if(t.id==="svpk_output"&&SVPK_AUTO_OUTPUT&&val("svpk_output")!==SVPK_AUTO_OUTPUT)SVPK_AUTO_OUTPUT="";
     if(t.id==="voice")checkVoice();
     if(t.id==="dataset")checkDataset();
     if(["i_corpus","i_wavs","i_labs","i_wavs_names"].includes(t.id))checkSource();
