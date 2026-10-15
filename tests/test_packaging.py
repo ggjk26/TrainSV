@@ -44,11 +44,11 @@ def test_build_svpk_has_expected_header_and_archive(tmp_path):
 
     with zipfile.ZipFile(result) as archive:
         assert archive.namelist() == [
-            "voice.nofs", "license.txt", "profile.png", "background.png", "package-config"
+            "voice.nofs", "backgrond.png", "license.txt", "profile.png", "package-profile"
         ]
         assert archive.testzip() is None
         assert archive.read("voice.nofs") == voice.read_bytes()
-        assert json.loads(archive.read("package-config")) == {
+        assert json.loads(archive.read("package-profile")) == {
             "productName": "Test Voice",
             "vendorName": "TrainSV test",
             "versionString": "101",
