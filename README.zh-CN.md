@@ -306,6 +306,27 @@ my-dataset/
 - `--history`：将验证指标保存为 JSON。
 - `--save-best`：验证结果改善时额外保存声库。
 
+## 自制声库打包（SVPK 实验版）
+
+训练得到 `voice.nofs` 后，可封装头像、背景、许可文本和元数据，生成用于 Synthesizer V Sharp 测试的 `.svpk`：
+
+```powershell
+trainsv package-svpk `
+  --voice "out\\voice.nofs" `
+  --license "assets\\license.txt" `
+  --profile "assets\\profile.png" `
+  --background "assets\\background.png" `
+  --output "out\\MySinger.svpk" `
+  --name "My Singer" `
+  --vendor "作者或工作室" `
+  --version-string 101 `
+  --version-number 101
+```
+
+**注意：这是实验性封装。** 已观察到的 SVPK 样本由 8 字节格式头、256 字节不透明字段和 ZIP 数据组成；当前工具将这 256 字节置零，因为它的正式含义尚未确认。生成后必须在 Sharp 中实测，不能将其称为 Dreamtonics 官方签名的安装包。请提供你有权随自制声库分发的许可文本。
+
+该命令只生成 SVPK。SFPK 是 Flat Manager 使用的另一种格式，不能仅通过更改扩展名生成。
+
 ## 常见问题
 
 **导入后没有生成 CSV？** 检查 LAB 是否存在、是否与 WAV 同名、标注区间是否连续，以及输出目录是否可写。
