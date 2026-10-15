@@ -108,7 +108,11 @@ def build_svpk(
 
             # Validate the inner ZIP and metadata round-trip before publishing.
             with zipfile.ZipFile(temp_output) as archive:
-                if archive.namelist() != list(_ARCHIVE_MEMBERS):
+                expected_members = ["voice.nofs", "backgrond.png"]
+                if license_file is not None:
+                    expected_members.append("license.txt")
+                expected_members.extend(("profile.png", "package-profile"))
+                if archive.namelist() != expected_members:
                     raise ValueError(f"unexpected SVPK members: {archive.namelist()}")
                 bad_member = archive.testzip()
                 if bad_member is not None:
