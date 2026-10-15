@@ -148,14 +148,17 @@ Other commands:
 
 A `voice.nofs` voice is written as a `voice.nofs` with its model entries patched in place. An `info.<version>.nofs` voice (shared models) is written to the `databases/<name>/` directory given by `--output`, with changed models added to the sibling `models/<kind>/<md5>.dnni` tree. `--name` sets the singer name and `--version` the info voice's version.
 
-## Custom SVPK packaging for Sharp (experimental)
+## WebUI packaging (experimental SVPK)
 
-After finetuning a `voice.nofs`, you can package it with your own license text and PNG artwork for a custom-bank installation test:
+After “Compare voices” finishes in the WebUI Results stage, a format-choice dialog appears. Choose “使用 SVPK 格式打包” to enter the singer name, vendor/author, integer version, avatar PNG and background PNG. The WebUI creates the metadata JSON internally; you do not need to author or import it. This SVPK packager currently accepts a regular single-file `voice.nofs`, not a shared-model `info.*.nofs`.
+
+The SFPK option is a placeholder. For a regular `voice.nofs`, it explains that SFPK requires a shared-model `info.nofs`, `config.json`, and the referenced `.dnni` model files/model-ID mapping; it will not create a speculative package.
+
+The CLI entry point is also available:
 
 ```powershell
 trainsv package-svpk `
   --voice "out\voice.nofs" `
-  --license "assets\license.txt" `
   --profile "assets\profile.png" `
   --background "assets\background.png" `
   --output "out\MySinger.svpk" `
@@ -165,7 +168,7 @@ trainsv package-svpk `
   --version-number 101
 ```
 
-**Experimental:** the writer follows the observed SVPK v1 layout (eight-byte magic/version prefix, a 256-byte opaque field, then a ZIP archive). The opaque field is zero-filled because its official semantics are not established; runtime acceptance must be tested in Synthesizer V Sharp. This is not a Dreamtonics-signed official installer. Supply a license text you have rights to distribute.
+**Experimental:** the writer follows the observed SVPK v1 outer layout (eight-byte magic/version prefix, a 256-byte opaque field, then ZIP data). The opaque field is zero-filled because its official semantics are not established; runtime acceptance must be tested in Synthesizer V Sharp. This is not a Dreamtonics-signed official installer. The CLI `--license` argument is optional.
 
 This command only makes SVPK. SFPK is a separate Flat Manager format and is not produced by renaming the SVPK file.
 
