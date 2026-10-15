@@ -669,7 +669,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <div id="results"></div>
   <div class="pkg-section">
     <h3>导出训练后的声库</h3>
-    <p class="hint">SVPK 当前仅为格式研究诊断包。Teto 与 Hanakuma Chifuyu 官方样本的 256 字节外层字段内容不同；它可能是包专属签名（256 字节长度与 RSA-2048 签名相符，但尚未证实）。全零版本已实测在 Sharp 中无反应，故生成结果不可安装或发布。SFPK 当前只提供占位提示。</p>
+    <p class="hint">SVPK 当前仅为格式研究诊断包。全零字段版本在 Sharp 中无反应；把 Hanakuma Chifuyu 的 256 字节字段复制到自制包后，Sharp 能识别包但提示数据损坏。这强烈暗示该字段参与包专属完整性/认证校验（RSA-2048 签名只是未证实的假设）。当前生成结果不可安装或发布。SFPK 当前只提供占位提示。</p>
     <div class="actions"><button class="primary" type="button" id="openPackageFormat">导出声库 / 选择打包格式</button></div>
     <p class="status" id="packageStatus" role="status"></p>
   </div>
@@ -716,7 +716,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 </div>
 
 <dialog id="packageFormatDialog">
-  <div class="pk-head"><b>选择声库打包格式</b><div class="hint">SVPK 目前只生成诊断包。Teto 与 Chifuyu 的 256 字节字段彼此不同，可能是包专属签名（RSA-2048 假设未证实）；全零字段的包在 Sharp 中无响应。SFPK 目前是占位入口。</div></div>
+  <div class="pk-head"><b>选择声库打包格式</b><div class="hint">SVPK 目前只生成诊断包：全零字段时 Sharp 无响应；复制 Chifuyu 字段后则提示数据损坏。这说明该字段很可能与包内容的完整性/认证校验有关，具体算法仍未知。SFPK 目前是占位入口。</div></div>
   <div class="pkg-choice-body">
     <div><button class="primary" type="button" id="chooseSvpk">使用 SVPK 格式打包</button><p class="hint">设置声库名称、供应商、版本、头像和背景后自动开始打包。</p></div>
     <div><button type="button" id="chooseSfpk">使用 SFPK 格式打包（占位）</button><p class="hint">若输出是普通 voice.nofs，会说明当前结构不支持 SFPK，并列出缺少的共享模型文件。</p></div>
@@ -725,7 +725,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 </dialog>
 
 <dialog id="svpkDialog">
-  <div class="pk-head"><b>使用 SVPK 格式打包</b><div class="hint">无需手动编辑 JSON。图片请选择 PNG 文件。注意：Teto 与 Chifuyu 官方样本的 256 字节字段内容各不相同，可能涉及包专属签名；当前实现将该字段置零，而这种包已实测在 Sharp 中无响应。此功能仅用于诊断包结构，不会生成可安装包。</div></div>
+  <div class="pk-head"><b>使用 SVPK 格式打包</b><div class="hint">无需手动编辑 JSON。图片请选择 PNG 文件。当前仅生成诊断包：全零字段会被 Sharp 忽略；复制 Chifuyu 字段会触发“数据损坏”。这表明字段可能参与包专属完整性/认证校验，算法和签署流程尚未确认，因此此功能不会生成可安装包。</div></div>
   <div class="pkg-form">
     <div class="field" data-id="svpk_name" data-label="声库名称" data-ph="例如：Luo Tianyi"></div>
     <div class="field" data-id="svpk_vendor" data-label="声库供应商 / 作者" data-ph="例如：个人或工作室"></div>
@@ -1192,7 +1192,7 @@ const DONE={
   convert(ok){if(ok){setVal("dataset",val("c_output"));JOB.next={text:"Use it: go to Train",go:"train"}}},
   async finetune(ok){if(ok){EXTRA.trained=true;persist();try{const r=await api("resolve-voice?path="+enc(val("t_output")));if(r.path)setVal("e_new",r.path)}catch(e){}JOB.next={text:"Next: check the result",go:"results"};renderJob()}},
   evaluate(ok){if(ok){EXTRA.evaluated=true;persist();loadResults();JOB.next={text:"See the comparison",go:"results",to:"#results"};renderJob();if(JOB.kind==="evaluate"){go("results");showPackageFormatDialog()}}},
-  svpk(ok){const el=$("#packageStatus");if(el){el.className="status "+(ok?"warn":"bad");el.textContent=ok?"SVPK 诊断包已生成："+val("svpk_output")+"。已确认：当前 256 字节全零字段的包在 Sharp 中无响应，不能用于安装或发布。":"SVPK 诊断包生成失败；请查看下方任务日志中的具体错误。"}}
+  svpk(ok){const el=$("#packageStatus");if(el){el.className="status "+(ok?"warn":"bad");el.textContent=ok?"SVPK 诊断包已生成："+val("svpk_output")+"。全零字段版本在 Sharp 中无响应；复制 Chifuyu 字段后提示数据损坏。该包不可安装或发布。":"SVPK 诊断包生成失败；请查看下方任务日志中的具体错误。"}}
 };
 async function startJob(kind){
   const r=B[kind]();if(r.p.length)return;
@@ -1258,7 +1258,7 @@ function renderJob(){
     if(JOB.total)now=`Step ${JOB.step} of ${JOB.total} (${Math.round(pct*100)}%). About ${fmtTime((JOB.total-JOB.step)*JOB.sps)} left. Elapsed ${fmtTime(JOB.elapsed)}.`;
     else if(JOB.kind==="finetune")now=(JOB.dataLine?JOB.dataLine+". ":"")+"Getting ready: loading the voice and your data. This can take a minute the first time.";
     else now="Working… "+fmtTime(JOB.elapsed)+" so far.";
-  }else if(st==="done"){now=JOB.kind==="svpk"?"SVPK 诊断包已生成："+val("svpk_output")+"。当前全零外层字段已实测在 Sharp 中无响应；文件不可安装。":JOB.kind==="finetune"&&JOB.saved?"Finished. Your new voice is saved at "+JOB.saved:"Finished in "+fmtTime(JOB.elapsed)+".";if(JOB.kind==="finetune"&&JOB.saved)now+=" ("+fmtTime(JOB.elapsed)+")"}
+  }else if(st==="done"){now=JOB.kind==="svpk"?"SVPK 诊断包已生成："+val("svpk_output")+"。全零字段无响应、移植 Chifuyu 字段则提示数据损坏；文件不可安装。":JOB.kind==="finetune"&&JOB.saved?"Finished. Your new voice is saved at "+JOB.saved:"Finished in "+fmtTime(JOB.elapsed)+".";if(JOB.kind==="finetune"&&JOB.saved)now+=" ("+fmtTime(JOB.elapsed)+")"}
   else if(st==="stopped")now="You stopped this."+(JOB.kind==="finetune"?" Training progress is kept in the run folder. Tick “Continue the previous run” in Advanced settings to carry on.":"");
   $("#actNow").textContent=now;
   $("#actSummary").textContent=st==="running"&&JOB.total?`step ${JOB.step}/${JOB.total}`:"";
