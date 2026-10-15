@@ -87,11 +87,11 @@ def build_svpk(
     # sample's license.txt entry in every package, while clearly marking the
     # generated text as a placeholder rather than inventing license terms.
     generated_license = (
-        f"Voicebank: {product_name}\\r\\n"
-        f"Vendor: {vendor_name}\\r\\n"
-        f"Version: {version_string}\\r\\n\\r\\n"
-        "License terms have not been specified in this package.\\r\\n"
-        "Please contact the vendor for permissions before redistribution or commercial use.\\r\\n"
+        f"Voicebank: {product_name}\r\n"
+        f"Vendor: {vendor_name}\r\n"
+        f"Version: {version_string}\r\n\r\n"
+        "License terms have not been specified in this package.\r\n"
+        "Please contact the vendor for permissions before redistribution or commercial use.\r\n"
     ).encode("utf-8")
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +112,10 @@ def build_svpk(
                 entries.append(("license.txt", generated_license))
             entries.extend((("profile.png", profile), ("background.png", background)))
             for archive_name, source in entries:
-                archive.write(source, arcname=archive_name)
+                if isinstance(source, Path):
+                    archive.write(source, arcname=archive_name)
+                else:
+                    archive.writestr(archive_name, source)
             archive.writestr(
                 "package-config",
                 json.dumps(config, ensure_ascii=False, indent=2).replace("\n", "\r\n"),
