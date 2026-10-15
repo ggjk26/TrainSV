@@ -148,6 +148,27 @@ Other commands:
 
 A `voice.nofs` voice is written as a `voice.nofs` with its model entries patched in place. An `info.<version>.nofs` voice (shared models) is written to the `databases/<name>/` directory given by `--output`, with changed models added to the sibling `models/<kind>/<md5>.dnni` tree. `--name` sets the singer name and `--version` the info voice's version.
 
+## Custom SVPK packaging for Sharp (experimental)
+
+After finetuning a `voice.nofs`, you can package it with your own license text and PNG artwork for a custom-bank installation test:
+
+```powershell
+trainsv package-svpk `
+  --voice "out\\voice.nofs" `
+  --license "assets\\license.txt" `
+  --profile "assets\\profile.png" `
+  --background "assets\\background.png" `
+  --output "out\\MySinger.svpk" `
+  --name "My Singer" `
+  --vendor "Your name or studio" `
+  --version-string 101 `
+  --version-number 101
+```
+
+**Experimental:** the writer follows the observed SVPK v1 layout (eight-byte magic/version prefix, a 256-byte opaque field, then a ZIP archive). The opaque field is zero-filled because its official semantics are not established; runtime acceptance must be tested in Synthesizer V Sharp. This is not a Dreamtonics-signed official installer. Supply a license text you have rights to distribute.
+
+This command only makes SVPK. SFPK is a separate Flat Manager format and is not produced by renaming the SVPK file.
+
 Each 16-bit weight matrix stores a word that OpenSV reads as the original engine's input-quantization setting. Every stock matrix's inputs fit `|x| < 2^(15 - word)`, so before saving, the toolkit measures inputs on the training data and widens that range where finetuning outgrew it.
 
 ## Verification
