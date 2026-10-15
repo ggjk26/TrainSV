@@ -139,7 +139,7 @@ def build_svpk(
                 if bad_member is not None:
                     raise ValueError(f"corrupt ZIP member: {bad_member}")
                 if json.loads(archive.read("package-config")) != config:
-                    raise ValueError("package-profile failed validation")
+                    raise ValueError("package-config failed validation")
 
             os.replace(temp_output, output)
         finally:
