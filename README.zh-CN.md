@@ -312,11 +312,11 @@ my-dataset/
 
 ```powershell
 trainsv package-svpk `
-  --voice "out\\voice.nofs" `
-  --license "assets\\license.txt" `
-  --profile "assets\\profile.png" `
-  --background "assets\\background.png" `
-  --output "out\\MySinger.svpk" `
+  --voice "out\voice.nofs" `
+  --license "assets\license.txt" `
+  --profile "assets\profile.png" `
+  --background "assets\background.png" `
+  --output "out\MySinger.svpk" `
   --name "My Singer" `
   --vendor "作者或工作室" `
   --version-string 101 `
