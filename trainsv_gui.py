@@ -729,9 +729,9 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <div class="pkg-form">
     <div class="field" data-id="svpk_name" data-label="声库名称" data-ph="例如：Luo Tianyi"></div>
     <div class="field" data-id="svpk_vendor" data-label="声库供应商 / 作者" data-ph="例如：个人或工作室"></div>
-    <div class="field" data-id="svpk_version" data-label="声库版本（整数）" data-value="101" data-ph="101" data-hint="该数值会同时写入 package-profile 的 versionString 和 versionNumber；当前版本使用整数版本号，例如 101。"></div>
+    <div class="field" data-id="svpk_version" data-label="声库版本（整数）" data-value="101" data-ph="101" data-hint="该数值会同时写入 package-config 的 versionString 和 versionNumber；当前版本使用整数版本号，例如 101。"></div>
     <div class="field" data-id="svpk_profile" data-kind="path" data-mode="file" data-ext="png" data-label="头像图片（profile.png）" data-hint="选择声库头像 PNG 文件；打包后将按样例名称存放在 profile.png。"></div>
-    <div class="field" data-id="svpk_background" data-kind="path" data-mode="file" data-ext="png" data-label="背景图片（background.png）" data-hint="选择声库背景 PNG 文件；当前会按提供的样例，将文件条目命名为 backgrond.png。"></div>
+    <div class="field" data-id="svpk_background" data-kind="path" data-mode="file" data-ext="png" data-label="背景图片（background.png）" data-hint="选择声库背景 PNG 文件；当前会按样例将文件条目命名为 background.png。"></div>
     <div class="field" data-id="svpk_output" data-kind="path" data-mode="save" data-ext="svpk" data-label="SVPK 保存位置" data-hint="输出的 .svpk 文件路径。默认与训练后的 voice.nofs 放在同一目录。"></div>
     <p class="status bad" id="packageFormError" role="alert"></p>
   </div>
@@ -823,11 +823,11 @@ const FIELD_HELP = {
   "c_src": "选择源数据集使用的字典文本文件，用于解释原有音素拼写。请确保它与源数据集的标注体系相匹配。",
   "c_tgt": "选择目标 Synthesizer V 声库对应的字典文本文件。目标字典需要与所选声库及语言相匹配。",
   "c_coda": "控制一个音节中分配给韵尾的时长比例。只在特定字典转换场景中需要调整；不确定时建议先使用默认值。",
-  "svpk_name": "声库对外显示的名称，会写入 SVPK 的 package-profile 元数据。",
-  "svpk_vendor": "声库供应商、作者或工作室名称，会写入 package-profile 的 vendorName。",
+  "svpk_name": "声库对外显示的名称，会写入 SVPK 的 package-config 元数据。",
+  "svpk_vendor": "声库供应商、作者或工作室名称，会写入 package-config 的 vendorName。",
   "svpk_version": "SVPK 元数据要求 versionString（文本）和 versionNumber（整数）。这个输入使用整数版本，例如 101，并将同一版本写入两个字段。",
   "svpk_profile": "选择声库头像 PNG。打包器会将其作为根目录 profile.png 写入包内。",
-  "svpk_background": "选择声库背景 PNG。为匹配目前检查过的样例，包内文件条目使用其样例拼写 backgrond.png。",
+  "svpk_background": "选择声库背景 PNG。为匹配目前检查过的样例，包内文件条目使用其样例拼写 background.png。",
   "svpk_output": "生成的 SVPK 文件完整路径。推荐保存在训练结果附近，并使用 .svpk 扩展名。"
 };
 const STATIC_HELP = {
