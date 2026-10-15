@@ -170,6 +170,8 @@ trainsv package-svpk `
 
 **Experimental:** the writer follows the observed SVPK v1 outer layout (eight-byte magic/version prefix, a 256-byte opaque field, then ZIP data). The opaque field is zero-filled because its official semantics are not established; runtime acceptance must be tested in Synthesizer V Sharp. This is not a Dreamtonics-signed official installer. The CLI `--license` argument is optional. If omitted, the packager includes a clearly marked placeholder `license.txt` without inventing license terms; replace it with actual terms before distribution.
 
+The archive entries and order match the inspected `KASANE_TETO_AI_104.svpk` sample: `voice.nofs`, `license.txt`, `profile.png`, `background.png`, `package-config`.
+
 This command only makes SVPK. SFPK is a separate Flat Manager format and is not produced by renaming the SVPK file.
 
 Each 16-bit weight matrix stores a word that OpenSV reads as the original engine's input-quantization setting. Every stock matrix's inputs fit `|x| < 2^(15 - word)`, so before saving, the toolkit measures inputs on the training data and widens that range where finetuning outgrew it.
