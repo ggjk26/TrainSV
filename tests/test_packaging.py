@@ -109,6 +109,8 @@ def test_build_svpk_allows_omitting_license_text(tmp_path):
         ]
         assert archive.testzip() is None
         license_text = archive.read("license.txt").decode("utf-8")
+        assert license_text.startswith("!language en-us\n")
+        assert "!language zh-cn\n" in license_text
         assert "License terms have not been specified" in license_text
         assert "Test Voice" in license_text
 
