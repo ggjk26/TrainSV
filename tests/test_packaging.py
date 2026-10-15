@@ -7,7 +7,7 @@ from opensv_train.packaging import SVPK_HEADER_SIZE, SVPK_PREFIX, build_svpk
 
 
 def _png(path):
-    path.write_bytes(b"\\x89PNG\\r\\n\\x1a\\n" + b"test image payload")
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + b"test image payload")
     return path
 
 
@@ -40,7 +40,7 @@ def test_build_svpk_has_expected_header_and_archive(tmp_path):
     raw = result.read_bytes()
     assert raw[:8] == SVPK_PREFIX
     assert raw[8:SVPK_HEADER_SIZE] == bytes(256)
-    assert raw.find(b"PK\\x03\\x04") == SVPK_HEADER_SIZE
+    assert raw.find(b"PK\x03\x04") == SVPK_HEADER_SIZE
 
     with zipfile.ZipFile(result) as archive:
         assert archive.namelist() == [
