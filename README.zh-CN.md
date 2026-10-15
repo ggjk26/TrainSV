@@ -216,7 +216,55 @@ CSV 必需列：
 
 ```bash
 trainsv inspect --voice /path/to/voice.nofs
+# 先诊断架构限制；不执行训练
+trainsv diagnose-nofs --path /path/to/voice.nofs --json-output /path/to/architecture-report.json
 ```
+
+### 导出 SVPK 安装包
+
+训练完成后，将输出的模型文件和资源打成 `.svpk`。当前命令依据你提供的样例结构，生成根目录中的 `voice.nofs`、可选的 `background.png` / `license.txt` / `profile.png`，以及无扩展名的 `package-profile` JSON 文件。
+
+```bash
+trainsv package-svpk \
+  --voice ./output/voice.nofs \
+  --output ./dist/kasane-teto-ai-100.svpk \
+  --product-name "Kasane Teto" \
+  --vendor-name "AHS Co., Ltd." \
+  --version-string "104" \
+  --version-number 104 \
+  --depending-version-number 0 \
+  --profile ./assets/profile.png \
+  --background ./assets/background.png \
+  --license-file ./assets/license.txt
+```
+
+头像、背景和许可证是可选参数；图片必须是 PNG。默认背景条目名为 `background.png`；如果要逐字复现你提供的样本拼写 `backgrond.png`，可加 `--background-entry backgrond.png`。生成器会检查 ZIP CRC，但这不等同于在 Synthesizer V Studio 中验证安装成功。
+
+### 打包共享声库 SFPK
+
+```bash
+trainsv package-sfpk \
+  --info ./shared/info.nofs \
+  --config-json ./shared/config.json \
+  --output ./dist/hanakuma-chifuyu.sfpk \
+  --profile ./shared/profile.png \
+  --background ./shared/background.png
+```
+
+SFPK 打包器会保留你提供的 `info.nofs` 和 `config.json` 内容，并按样例根目录名添加资源。配置中的 `profile` / `background` 布尔值必须与是否提供对应图片一致；`models`、`model_types`、`phonesets` 必须为数组。请不要为了让命令通过而随意将这些数组填空：模型引用及共享声库的实际语义仍需从完整样例核实。
+
+**重要限制：** 这条命令只负责封装已经准备好的 `info.nofs` 和配置文件，不会自动把普通 `voice.nofs` 转换成 Flat 所需的共享模型描述，也不会凭空生成 `.dnni` 模型文件。生成后必须在 Synthesizer V Flat 中验证加载和渲染结果。
+### 检查 Flat 声库包或解包目录（只读）
+
+```bash
+trainsv inspect-sfpk --path /path/to/sample.sfpk --json-output /path/to/sfpk-report.json
+# 同时检查本机的 DNNI 模型目录（Windows 示例）
+trainsv inspect-sfpk --path /path/to/sample.sfpk --models-root "C:\Users\admin\Documents\OPSV\Dreamtonics\Synthesizer V Studio\models" --json-output /path/to/sfpk-report.json
+# 或者直接检查已解包的目录
+trainsv inspect-sfpk --path /path/to/extracted-sfpk
+```
+
+`diagnose-nofs` 会分别报告 NOFS 容器解析、各角色 DNNI 图解析和当前架构标识限制；这是初步诊断，不等于完整训练兼容保证。`inspect-sfpk` 只读检查容器或解包目录，不会提取或修改输入；如果发现 JSON 格式的 `info.nofs`，还会列出音源元数据、风格名称、`acoustic` / `vocoder` / `duration` / `f0` 模型 ID，并按 TrainSV 共享声库的路径约定检查容器内是否存在对应 `.dnni` 文件；如果发现 `config.json`，也会检查 `profile` / `background` 标志与根目录 `profile.png` / `background.png` 是否对应。使用 `--models-root` 可以额外扫描本机 `models` 目录：按 `acoustic` / `vocoder` / `duration` / `f0` 目录列出 `.dnni` 文件，并对大小不超过 128 MiB 的候选输出 DNNI 版本、根节点类型、节点数和节点类型计数。检查器会核对精确模型 ID 是否存在，但不会因为某个候选文件“也是 DNNI”或节点类型相似，就擅自替换模型引用。结构摘要不是语义、张量形状或宿主兼容性保证。上述检查仅描述当前容器与本机文件清单，不等于正式宿主兼容性验证。ZIP 可读不代表它一定能被目标宿主加载。当前打包命令依据已观察到的文件名和配置字段实现，但仍需在 Synthesizer V Studio / Flat 中做实际加载验证。WebUI 的 “More tools” 页面也提供结构检查功能。
 
 ### 导入并生成 CSV
 
@@ -312,7 +360,7 @@ my-dataset/
 
 **为什么 Timing / Pitch 无法训练？** 它们需要音符时长与词边界等标注。只有音素对齐的 LAB 通常不足以训练它们。
 
-**为什么提示底模架构不支持？** TrainSV 只支持代码明确实现的模型架构。请提供 `trainsv inspect` 输出和完整错误日志，以便针对具体底模扩展。
+**为什么提示底模架构不支持？** 能解析 `.nofs` 容器并不代表它的所有 DNNI 网络架构都可训练。TrainSV 目前通过固定的 duration、pitch、acoustic、vocoder 模型实现加载网络；遇到未实现的层或张量布局时不能假定兼容。请提供 `trainsv inspect` 输出、完整错误日志和底模版本，以便先识别具体限制再开发适配。
 
 **训练慢或显存不足？** 减小 Batch、先只训练声学模型、缩短测试步数，或使用 GPU。CPU 可用但速度可能很慢。
 
