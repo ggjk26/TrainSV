@@ -168,7 +168,7 @@ trainsv package-svpk `
   --version-number 101
 ```
 
-**Experimental:** the writer follows the observed SVPK v1 outer layout (eight-byte magic/version prefix, a 256-byte opaque field, then ZIP data). The opaque field is zero-filled because its official semantics are not established; runtime acceptance must be tested in Synthesizer V Sharp. This is not a Dreamtonics-signed official installer. The CLI `--license` argument is optional. If omitted, the packager includes a clearly marked placeholder `license.txt` without inventing license terms; replace it with actual terms before distribution.
+**Experimental:** the writer follows the observed SVPK v1 outer layout (eight-byte magic/version prefix, a 256-byte opaque field, then ZIP data). The opaque field is zero-filled because its official semantics are not established; runtime acceptance must be tested in Synthesizer V Sharp. This is not a Dreamtonics-signed official installer. The CLI `--license` argument is optional. If omitted, the packager includes a clearly marked placeholder `license.txt` with `!language en-us` and `!language zh-cn` sections (matching the directive-based format observed in the sample). It does not invent license terms; replace it with actual terms you have the right to distribute before publication.
 
 The archive entries and order match the inspected `KASANE_TETO_AI_104.svpk` sample: `voice.nofs`, `license.txt`, `profile.png`, `background.png`, `package-config`.
 
