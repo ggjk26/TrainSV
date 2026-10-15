@@ -32,9 +32,9 @@ def test_svpk_dialog_collects_required_metadata_and_assets():
     ):
         assert f'data-id="{field}"' in PAGE
     assert "JSON" in PAGE
-    assert "全零外层字段的包在 Sharp 中无响应" in PAGE
+    assert "全零字段的包在 Sharp 中无响应" in PAGE
     assert "Teto 与 Chifuyu" in PAGE
-    assert "可能是包专属签名" in PAGE
+    assert "可能涉及包专属签名" in PAGE
     assert "生成诊断包（当前不可安装）" in PAGE
     assert "startJob(\"svpk\")" in PAGE
     assert '"--version-string",version' in PAGE
