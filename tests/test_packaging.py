@@ -44,12 +44,12 @@ def test_build_svpk_has_expected_header_and_archive(tmp_path):
 
     with zipfile.ZipFile(result) as archive:
         assert archive.namelist() == [
-            "voice.nofs", "backgrond.png", "license.txt", "profile.png", "package-profile"
+            "voice.nofs", "license.txt", "profile.png", "background.png", "package-config"
         ]
         assert archive.testzip() is None
         assert archive.read("voice.nofs") == voice.read_bytes()
         assert archive.read("license.txt") == license_file.read_bytes()
-        assert json.loads(archive.read("package-profile")) == {
+        assert json.loads(archive.read("package-config")) == {
             "productName": "Test Voice",
             "vendorName": "TrainSV test",
             "versionString": "101",
@@ -105,7 +105,7 @@ def test_build_svpk_allows_omitting_license_text(tmp_path):
 
     with zipfile.ZipFile(output) as archive:
         assert archive.namelist() == [
-            "voice.nofs", "backgrond.png", "license.txt", "profile.png", "package-profile"
+            "voice.nofs", "license.txt", "profile.png", "background.png", "package-config"
         ]
         assert archive.testzip() is None
         license_text = archive.read("license.txt").decode("utf-8")
