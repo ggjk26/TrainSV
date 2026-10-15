@@ -83,15 +83,22 @@ def build_svpk(
         "versionNumber": int(version_number),
         "dependingVersionNumber": int(depending_version_number),
     }
-    # The UI intentionally doesn't ask users to import a license file. Keep the
-    # sample's license.txt entry in every package, while clearly marking the
-    # generated text as a placeholder rather than inventing license terms.
+    # Observed SVPK licenses start with a !language directive. Keep generated
+    # text explicitly marked as a placeholder, while emitting English and
+    # Simplified Chinese sections in the same directive-based format.
     generated_license = (
-        f"Voicebank: {product_name}\r\n"
-        f"Vendor: {vendor_name}\r\n"
-        f"Version: {version_string}\r\n\r\n"
-        "License terms have not been specified in this package.\r\n"
-        "Please contact the vendor for permissions before redistribution or commercial use.\r\n"
+        "!language en-us\n"
+        f"Voicebank: {product_name}\n"
+        f"Vendor: {vendor_name}\n"
+        f"Version: {version_string}\n\n"
+        "License terms have not been specified in this package.\n"
+        "Please contact the rights holder before redistribution or commercial use.\n\n"
+        "!language zh-cn\n"
+        f"声库名称：{product_name}\n"
+        f"作者/供应商：{vendor_name}\n"
+        f"版本：{version_string}\n\n"
+        "此实验声库尚未指定正式许可条款。\n"
+        "重新分发或商业使用前，请先联系权利人确认授权。\n"
     ).encode("utf-8")
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
