@@ -48,6 +48,7 @@ def test_build_svpk_has_expected_header_and_archive(tmp_path):
         ]
         assert archive.testzip() is None
         assert archive.read("voice.nofs") == voice.read_bytes()
+        assert archive.read("license.txt") == license_file.read_bytes()
         assert json.loads(archive.read("package-profile")) == {
             "productName": "Test Voice",
             "vendorName": "TrainSV test",
@@ -110,3 +111,36 @@ def test_build_svpk_allows_omitting_license_text(tmp_path):
         license_text = archive.read("license.txt").decode("utf-8")
         assert "License terms have not been specified" in license_text
         assert "Test Voice" in license_text
+
+
+@pytest.mark.parametrize("invalid_version", ["101", 1.5, True, -1])
+def test_build_svpk_rejects_invalid_version_number(tmp_path, invalid_version):
+    voice, license_file, profile, background = _assets(tmp_path)
+    with pytest.raises(ValueError, match="version"):
+        build_svpk(
+            voice=voice,
+            license_file=license_file,
+            profile=profile,
+            background=background,
+            output=tmp_path / "voice.svpk",
+            product_name="Test Voice",
+            vendor_name="TrainSV test",
+            version_string="101",
+            version_number=invalid_version,
+        )
+
+
+def test_build_svpk_rejects_blank_version_string(tmp_path):
+    voice, license_file, profile, background = _assets(tmp_path)
+    with pytest.raises(ValueError, match="version string"):
+        build_svpk(
+            voice=voice,
+            license_file=license_file,
+            profile=profile,
+            background=background,
+            output=tmp_path / "voice.svpk",
+            product_name="Test Voice",
+            vendor_name="TrainSV test",
+            version_string=" ",
+            version_number=101,
+        )
