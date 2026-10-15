@@ -17,6 +17,7 @@ from .calibration import fit_input_ranges
 from .data import LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, split
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
 from .voice import ROLES, Voice
+from .packaging import build_svpk
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -263,6 +264,23 @@ def inspect(arguments) -> None:
         print(f"  {phone_set.name}: {' '.join(phone_set.symbols)}")
 
 
+def package_svpk_command(arguments) -> None:
+    output = build_svpk(
+        voice=arguments.voice,
+        license_file=arguments.license_file,
+        profile=arguments.profile,
+        background=arguments.background,
+        output=arguments.output,
+        product_name=arguments.name,
+        vendor_name=arguments.vendor,
+        version_string=arguments.version_string,
+        version_number=arguments.version_number,
+        depending_version_number=arguments.depending_version_number,
+    )
+    print(f"wrote {output} ({output.stat().st_size:,} bytes)")
+    print("Warning: the 256-byte SVPK header field is zero-filled; verify installation in Sharp.")
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trainsv")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -349,6 +367,19 @@ def parser() -> argparse.ArgumentParser:
     command = commands.add_parser("inspect", help="summarise a voice's models and phone sets")
     command.add_argument("--voice", required=True)
     command.set_defaults(handler=inspect)
+    command = commands.add_parser("package-svpk", help="package a custom voice.nofs into an experimental SVPK test container for Sharp")
+    command.add_argument("--voice", required=True, help="trained voice.nofs file")
+    command.add_argument("--license", dest="license_file", required=True, help="license text file to include")
+    command.add_argument("--profile", required=True, help="voicebank avatar PNG")
+    command.add_argument("--background", required=True, help="voicebank background PNG")
+    command.add_argument("--output", required=True, help="output .svpk path")
+    command.add_argument("--name", required=True, help="product / singer name")
+    command.add_argument("--vendor", required=True, help="publisher or author name")
+    command.add_argument("--version-string", default="101")
+    command.add_argument("--version-number", type=int, default=101)
+    command.add_argument("--depending-version-number", type=int, default=0)
+    command.set_defaults(handler=package_svpk_command)
+
     for command in commands.choices.values():
         command.add_argument("--config", action="append", default=[], metavar="FILE", help="JSON file of option values; repeat for several, later files win and command-line options override them")
     return parser
