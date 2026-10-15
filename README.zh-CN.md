@@ -306,14 +306,17 @@ my-dataset/
 - `--history`：将验证指标保存为 JSON。
 - `--save-best`：验证结果改善时额外保存声库。
 
-## 自制声库打包（SVPK 实验版）
+## WebUI 声库打包（SVPK 实验版）
 
-训练得到 `voice.nofs` 后，可封装头像、背景、许可文本和元数据，生成用于 Synthesizer V Sharp 测试的 `.svpk`：
+在 WebUI 的 Results 页面完成“Compare voices”后，会弹出格式选择窗口。选择“使用 SVPK 格式打包”，在弹窗中填写声库名称、供应商/作者、整数版本，选择 `profile.png` 头像与背景 PNG，然后点击“开始打包”。不需要手动创建或导入 JSON。当前 SVPK 打包仅支持普通单文件 `voice.nofs`，共享模型 `info.*.nofs` 暂不支持该流程。
+
+SFPK 按钮当前是占位提示。如果所选结果是普通 `voice.nofs`，程序会说明它缺少共享模型结构所需的 `info.nofs`、`config.json` 和相应的 `.dnni` 模型引用；不会生成一个未经验证的伪包。
+
+命令行也可使用 `trainsv package-svpk`：
 
 ```powershell
 trainsv package-svpk `
   --voice "out\voice.nofs" `
-  --license "assets\license.txt" `
   --profile "assets\profile.png" `
   --background "assets\background.png" `
   --output "out\MySinger.svpk" `
@@ -323,7 +326,7 @@ trainsv package-svpk `
   --version-number 101
 ```
 
-**注意：这是实验性封装。** 已观察到的 SVPK 样本由 8 字节格式头、256 字节不透明字段和 ZIP 数据组成；当前工具将这 256 字节置零，因为它的正式含义尚未确认。生成后必须在 Sharp 中实测，不能将其称为 Dreamtonics 官方签名的安装包。请提供你有权随自制声库分发的许可文本。
+**注意：这是实验性封装。** 已观察到的 SVPK 样本由 8 字节格式头、256 字节不透明字段和 ZIP 数据组成；当前工具将这 256 字节置零，因为它的正式含义尚未确认。生成后必须在 Sharp 中实测，不能将其称为 Dreamtonics 官方签名的安装包。命令行的 `--license` 参数可选；若使用，应填写你有权分发的许可文本。
 
 该命令只生成 SVPK。SFPK 是 Flat Manager 使用的另一种格式，不能仅通过更改扩展名生成。
 
