@@ -1290,7 +1290,7 @@ function showPackageFormatDialog(){
 }
 function packageFileStem(name){
   return String(name||"").trim()
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g,"_")
+    .replace(/[<>:"\/\\|?*\x00-\x1f]/g,"_")
     .replace(/[. ]+$/g,"") || "voice";
 }
 function suggestSvpkOutput(){
