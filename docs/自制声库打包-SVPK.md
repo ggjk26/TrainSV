@@ -1,6 +1,6 @@
 # 自制声库打包：SVPK（Sharp 测试版）
 
-在 WebUI 的 Results 阶段，完成 Compare voices 后选择“使用 SVPK 格式打包”，填写声库名称、供应商/作者、整数版本，并选择头像与背景 PNG，即可自动启动打包。不需要手动编辑 JSON。命令行也可使用 `trainsv package-svpk`。`license.txt` 参数是可选项；未提供时会生成明确标记为占位文本的 `license.txt`，其中不会擅自声明具体授权条款。
+在 WebUI 的 Results 阶段，完成 Compare voices 后选择“使用 SVPK 格式打包”，填写声库名称、供应商/作者、整数版本，并选择头像与背景 PNG，即可自动启动打包。不需要手动编辑 JSON。命令行也可使用 `trainsv package-svpk`。`license.txt` 参数是可选项；未提供时会生成带有 `!language en-us` 与 `!language zh-cn` 语言区块的占位文本。它只提示尚未指定正式许可条款，并不会擅自声明授权；实际发布前应填入你有权发布的真实条款。
 
 > **实验性功能：** 样本对比确认，官方 SVPK 的前 8 字节是 `SVPK 00 01 00 00`，后面有 256 字节不透明字段，ZIP 数据从偏移 264 开始。本实现将这 256 字节写为零；它没有生成官方签名，是否被 Sharp 接受仍须在目标软件里实测。不要把它描述成 Dreamtonics 官方签名安装包。
 
@@ -25,7 +25,7 @@ trainsv package-svpk `
 ## 包含的内容
 
 - `voice.nofs`：训练后的模型
-- `license.txt`：如果提供 `--license` 就使用该文件；否则自动生成“尚未指定许可条款”的占位文本。发布前应换成真实许可条款。
+- `license.txt`：如果提供 `--license` 就使用该文件；否则自动生成包含 `!language en-us` 和 `!language zh-cn` 区块的占位文本。它会明确提示尚未指定正式许可条款；发布前应换成你有权分发的真实许可条款。
 - `profile.png`：头像
 - `background.png`：背景图片
 - `package-config`：`productName`、`vendorName`、`versionString`、`versionNumber`、`dependingVersionNumber`
