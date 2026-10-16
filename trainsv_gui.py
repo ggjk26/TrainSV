@@ -781,7 +781,7 @@ function join(a,...b){return [trimEnd(a),...b].join(sepOf(a))}
 function dirname(p){p=trimEnd(p);const i=Math.max(p.lastIndexOf("/"),p.lastIndexOf("\\"));return i>0?p.slice(0,i):p}
 function basename(p){return trimEnd(p).split(/[\\\/]/).pop()}
 function slug(s){return (s||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"my-voice"}
-function isInfo(p){return /^info\..*\.nofs$/i.test(basename(p||""))}
+function isInfo(p){return /^info(?:\..*)?\.nofs$/i.test(basename(p||""))}
 function fmtTime(s){s=Math.max(0,Math.round(s));if(s<60)return s+" s";if(s<3600)return Math.round(s/60)+" min";return Math.floor(s/3600)+" h "+Math.round(s%3600/60)+" min"}
 function fmtNum(x){return Number.isFinite(x)?x.toFixed(4):"n/a"}
 
