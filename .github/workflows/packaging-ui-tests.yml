@@ -6,10 +6,13 @@ on:
       - "opensv_train/packaging.py"
       - "opensv_train/sfpk.py"
       - "opensv_train/__main__.py"
+      - "opensv_train/data.py"
+      - "opensv_train/f0.py"
       - "trainsv_gui.py"
       - "tests/test_packaging.py"
       - "tests/test_sfpk_packaging.py"
       - "tests/test_gui_packaging_ui.py"
+      - "tests/test_f0_profile.py"
       - ".github/workflows/packaging-ui-tests.yml"
   push:
     branches:
@@ -29,4 +32,4 @@ jobs:
       - name: Install test dependency
         run: python -m pip install pytest cryptography
       - name: Run SVPK and WebUI regression tests
-        run: python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py
+        run: python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py tests/test_f0_profile.py
