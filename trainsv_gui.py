@@ -741,7 +741,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 
 
 <dialog id="sfpkDialog">
-  <div class="pk-head"><b>使用 SFPK 格式打包（实验版）</b><div class="hint">普通 voice.nofs 将转换为 Flat 使用的 info.nofs 描述，并把 acoustic / vocoder / duration / f0 的 .dnni 文件写入你选定的本机 models 目录。SFPK 内只放 config.json 与 info.nofs，不包含模型二进制；这是本机依赖版，暂未验证 Flat 安装和渲染。</div></div>
+  <div class="pk-head"><b>使用 SFPK 格式打包（实验版）</b><div class="hint">普通 voice.nofs 将转换为 Flat 使用的 info.nofs 描述，并把 acoustic / vocoder / duration / f0 的 .dnni 文件写入你选定的本机 models 目录。SFPK 内包含 config.json 与 info.nofs；选填的 profile.png / background.png 会一起放入包内，但模型二进制仍在本机 models 目录。当前尚未验证 Flat 安装和渲染。</div></div>
   <div class="pkg-form">
     <div class="field" data-id="sfpk_name" data-label="声库名称（可留空）" data-ph="例如：Luo Tianyi" data-hint="留空时尽量保留来源声库名称；填写后覆盖。"></div>
     <div class="field" data-id="sfpk_vendor" data-label="作者 / 供应商（可留空）" data-ph="例如：个人或工作室" data-hint="留空时保留来源声库的作者信息；普通 voice.nofs 未提供时会使用 TrainSV。"></div>
@@ -749,7 +749,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div class="field" data-id="sfpk_profile" data-kind="path" data-mode="file" data-ext="png" data-label="头像图片 profile.png（可留空）" data-hint="选择 PNG 头像后，会作为 profile.png 放入 SFPK 根目录。不选择则不额外打包头像。"></div>
     <div class="field" data-id="sfpk_background" data-kind="path" data-mode="file" data-ext="png" data-label="背景图片 background.png（可留空）" data-hint="选择 PNG 背景后，会作为 background.png 放入 SFPK 根目录。不选择则不额外打包背景。"></div>
     <div class="field" data-id="sfpk_models_root" data-kind="path" data-mode="dir" data-label="Synthesizer V 的 models 目录" data-hint="选择包含 acoustic、vocoder、duration、f0 等子目录的现有 models 文件夹。新模型会按内容 MD5 命名写入相应子目录，已有同名但内容不同的文件不会被覆盖。"></div>
-    <div class="field" data-id="sfpk_output" data-kind="path" data-mode="save" data-ext="sfpk" data-label="SFPK 保存位置" data-hint="生成的 SFPK 仅包含 config.json 与 info.nofs，所引用的模型仍在上方选定的本机 models 目录。"></div>
+    <div class="field" data-id="sfpk_output" data-kind="path" data-mode="save" data-ext="sfpk" data-label="SFPK 保存位置" data-hint="生成的 SFPK 包含 config.json 与 info.nofs，并可包含已选择的头像/背景 PNG；所引用的模型仍在上方选定的本机 models 目录。"></div>
     <p class="status bad" id="sfpkFormError" role="alert"></p>
   </div>
   <div class="pk-foot"><button type="button" class="ghost" id="cancelSfpk">取消</button><button type="button" class="primary" id="buildSfpk">生成 SFPK 测试包</button></div>
