@@ -64,19 +64,23 @@ def _write_model_if_missing(target: Path, data: bytes) -> None:
         temp.unlink(missing_ok=True)
 
 
-def _tensor_vector_hex(value, label: str) -> str:
+def _tensor_vector_hex(value, label: str, *, expected_values: int = 32) -> str:
     from .nofs import vector_hex
 
     if hasattr(value, "detach"):
         value = value.detach().cpu().numpy()
     flattened = value.reshape(-1)
-    if flattened.size != 32:
+    if flattened.size != expected_values:
         raise ValueError(
-            f"{label} has {flattened.size} values; the observed Flat embedding format expects 32 float32 values"
+            f"{label} has {flattened.size} values; the observed Flat format expects "
+            f"{expected_values} float32 values"
         )
     encoded = vector_hex(flattened)
-    if len(encoded) != 256:
-        raise ValueError(f"{label} did not serialize to a 256-character embedding")
+    expected_hex_chars = expected_values * 8
+    if len(encoded) != expected_hex_chars:
+        raise ValueError(
+            f"{label} serialized to {len(encoded)} hex characters; expected {expected_hex_chars}"
+        )
     return encoded
 
 
@@ -145,7 +149,7 @@ def _build_info_from_binary_voice(
         "duration": model_ids["duration"],
         "f0": model_ids["f0"],
         "styles": styles,
-        "duration_style": _tensor_vector_hex(source_voice.duration.voice_vector(), "duration style"),
+        "duration_style": _tensor_vector_hex(source_voice.duration.voice_vector(), "duration style", expected_values=128),
         "f0_style": _tensor_vector_hex(source_voice.pitch.speaker(), "F0 style"),
     }
 
@@ -173,10 +177,15 @@ def _validate_info_document(info: dict, models_root: Path) -> dict:
                 "Choose the correct Synthesizer V models directory or install the referenced model first."
             )
 
-    for field in ("duration_style", "f0_style"):
+    embedding_lengths = {"duration_style": 128 * 8, "f0_style": 32 * 8}
+    for field, expected_hex_chars in embedding_lengths.items():
         value = info.get(field)
-        if not isinstance(value, str) or re.fullmatch(r"[0-9a-fA-F]{256}", value) is None:
-            raise ValueError(f"info.nofs field {field!r} must be a 256-character float32 embedding")
+        if not isinstance(value, str) or re.fullmatch(rf"[0-9a-fA-F]{{{expected_hex_chars}}}", value) is None:
+            expected_values = expected_hex_chars // 8
+            raise ValueError(
+                f"info.nofs field {field!r} must be a {expected_hex_chars}-character "
+                f"hex string ({expected_values} float32 values)"
+            )
 
     styles = info.get("styles")
     if not isinstance(styles, list) or not styles:
