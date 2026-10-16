@@ -51,6 +51,8 @@ def test_sfpk_dialog_collects_local_model_dependencies_and_starts_job():
         "sfpk_name",
         "sfpk_vendor",
         "sfpk_version",
+        "sfpk_profile",
+        "sfpk_background",
         "sfpk_models_root",
         "sfpk_output",
     ):
@@ -60,6 +62,10 @@ def test_sfpk_dialog_collects_local_model_dependencies_and_starts_job():
     assert "info(?:\\..*)?" in PAGE
     assert 'cmd:"package-sfpk"' in PAGE
     assert '"--models-root",val("sfpk_models_root")' in PAGE
+    assert 'data-ext="png" data-label="头像图片 profile.png（可留空）"' in PAGE
+    assert 'data-ext="png" data-label="背景图片 background.png（可留空）"' in PAGE
+    assert 'if(val("sfpk_profile"))a.push("--profile",val("sfpk_profile"))' in PAGE
+    assert 'if(val("sfpk_background"))a.push("--background",val("sfpk_background"))' in PAGE
     assert 'startJob("sfpk")' in PAGE
     assert "SFPK 打包尚未实现" not in PAGE
 
