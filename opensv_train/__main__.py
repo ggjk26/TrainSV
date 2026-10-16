@@ -14,7 +14,7 @@ import torch
 
 from .acoustic import TimedPhoneme
 from .calibration import fit_input_ranges
-from .data import LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, split
+from .data import F0_PROFILES, LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, resolve_f0_profile, split
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
 from .voice import ROLES, Voice
 from .packaging import build_svpk
@@ -28,10 +28,33 @@ def finetune(arguments) -> None:
     models = tuple(arguments.models.split(","))
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
-    utterances = load_dataset(arguments.data, arguments.language, read_phoneme_map(arguments.phoneme_map))
+    f0_floor, f0_ceiling, f0_threshold = resolve_f0_profile(
+        arguments.f0_profile,
+        floor=arguments.f0_floor,
+        ceiling=arguments.f0_ceiling,
+        voicing_threshold=arguments.f0_voicing_threshold,
+    )
+    utterances = load_dataset(
+        arguments.data,
+        arguments.language,
+        read_phoneme_map(arguments.phoneme_map),
+        f0_range=(f0_floor, f0_ceiling),
+        f0_voicing_threshold=f0_threshold,
+    )
     phrases = [phrase for utterance in utterances for phrase in make_phrases(utterance)]
     problems = [phrase.problem for phrase in phrases if phrase.problem]
     print(f"{len(utterances)} utterances, {len(phrases)} phrases, {sum(p.frames for p in phrases) * 0.005 / 60:.1f} min")
+    total_f0_frames = sum(len(utterance.f0_values) for utterance in utterances)
+    voiced_f0 = np.concatenate(
+        [utterance.f0_values[utterance.f0_values > 0] for utterance in utterances if np.any(utterance.f0_values > 0)]
+    ) if any(np.any(utterance.f0_values > 0) for utterance in utterances) else np.empty(0, dtype=np.float32)
+    voiced_percent = 100.0 * sum(int(np.count_nonzero(utterance.f0_values > 0)) for utterance in utterances) / max(total_f0_frames, 1)
+    median_f0 = float(np.median(voiced_f0)) if voiced_f0.size else 0.0
+    print(
+        f"F0 tracking: {arguments.f0_profile} preset, {f0_floor:g}-{f0_ceiling:g} Hz, "
+        f"voicing threshold {f0_threshold:g}; voiced {voiced_percent:.1f}% of frames"
+        + (f", median voiced F0 {median_f0:.1f} Hz" if median_f0 else ", no voiced F0 frames detected")
+    )
     if problems and set(models) & {"duration", "pitch"}:
         print(f"{len(problems)} phrases lack usable notes and train the acoustic model only; first: {problems[0]}")
     _check_phonemes(voice, phrases)
@@ -216,9 +239,25 @@ def evaluate(arguments) -> None:
     device = torch.device(arguments.device)
     output = Path(arguments.out) if arguments.out else None
     report = {}
+    f0_floor, f0_ceiling, f0_threshold = resolve_f0_profile(
+        arguments.f0_profile,
+        floor=arguments.f0_floor,
+        ceiling=arguments.f0_ceiling,
+        voicing_threshold=arguments.f0_voicing_threshold,
+    )
     for index, path in enumerate(arguments.voice):
         voice = Voice.load(path).to(device)
-        phrases = [phrase for utterance in load_dataset(arguments.data, arguments.language, read_phoneme_map(arguments.phoneme_map)) for phrase in make_phrases(utterance)]
+        phrases = [
+            phrase
+            for utterance in load_dataset(
+                arguments.data,
+                arguments.language,
+                read_phoneme_map(arguments.phoneme_map),
+                f0_range=(f0_floor, f0_ceiling),
+                f0_voicing_threshold=f0_threshold,
+            )
+            for phrase in make_phrases(utterance)
+        ]
         _, validation = split(phrases, arguments.validation, arguments.seed)
         gain = level_gain(voice, phrases, device)
         apply_gain(phrases, gain)
@@ -312,6 +351,15 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--params", choices=("all", "embeddings"), default="all", help="train every weight, or only the per-voice speaker/style/vocal-mode vectors")
     command.add_argument("--vocal-modes", help="comma-separated vocal modes of the finetuned voice (info voices): existing ones are kept, new ones start from the default style, others are dropped")
     command.add_argument("--steps", type=int, default=2000)
+    command.add_argument(
+        "--f0-profile",
+        choices=tuple(F0_PROFILES),
+        default="standard",
+        help="WAV pitch tracking preset: standard (65-1100 Hz, threshold 0.60) or vocaloid (45-1400 Hz, threshold 0.45)",
+    )
+    command.add_argument("--f0-floor", type=float, help="override the selected F0 preset's minimum frequency in Hz")
+    command.add_argument("--f0-ceiling", type=float, help="override the selected F0 preset's maximum frequency in Hz")
+    command.add_argument("--f0-voicing-threshold", type=float, help="override the selected F0 preset's voicing threshold (0, 1]")
     command.add_argument("--lr", type=float, help="learning rate (default 2e-5 for all, 3e-3 for embeddings)")
     command.add_argument("--warmup", type=int, default=0, help="steps of linear learning-rate warmup")
     command.add_argument("--lr-end", type=float, help="cosine-decay the learning rate to this by the last step; constant without it")
@@ -365,6 +413,15 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--data", required=True)
     command.add_argument("--language", required=True, type=language_name)
     command.add_argument("--models", default="acoustic")
+    command.add_argument(
+        "--f0-profile",
+        choices=tuple(F0_PROFILES),
+        default="standard",
+        help="WAV pitch tracking preset; should match the profile used during finetuning",
+    )
+    command.add_argument("--f0-floor", type=float, help="override the selected F0 preset's minimum frequency in Hz")
+    command.add_argument("--f0-ceiling", type=float, help="override the selected F0 preset's maximum frequency in Hz")
+    command.add_argument("--f0-voicing-threshold", type=float, help="override the selected F0 preset's voicing threshold (0, 1]")
     command.add_argument("--validation", type=float, default=0.1)
     command.add_argument("--phoneme-map")
     command.add_argument("--seed", type=int, default=0)
