@@ -718,14 +718,14 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 <dialog id="packageFormatDialog">
   <div class="pk-head"><b>选择声库打包格式</b><div class="hint">SVPK 目前只生成诊断包，不能安装。SFPK 提供实验性导出：生成 config.json + info.nofs，并将四类 .dnni 依赖写入所选本机 models 目录；不会把模型二进制嵌入 SFPK，迁移到其他电脑时需另行安装对应模型。</div></div>
   <div class="pkg-choice-body">
-    <div><button class="primary" type="button" id="chooseSvpk">使用 SVPK 格式打包</button><p class="hint">设置声库名称、供应商、版本、头像和背景后自动开始打包。</p></div>
+    <div><button class="primary" type="button" id="chooseSvpk">生成 SVPK 诊断包（当前不可安装）</button><p class="hint">仅用于检查内部 ZIP 与元数据结构，不能导入或发布为可用声库。</p></div>
     <div><button type="button" id="chooseSfpk">使用 SFPK 格式打包（实验）</button><p class="hint">可输入训练后的 voice.nofs 或已有 info.*.nofs；需选择 Synthesizer V 的 models 目录。</p></div>
   </div>
   <div class="pk-foot"><button type="button" class="ghost" id="closePackageFormat">取消</button></div>
 </dialog>
 
 <dialog id="svpkDialog">
-  <div class="pk-head"><b>使用 SVPK 格式打包</b><div class="hint">无需手动编辑 JSON。图片请选择 PNG 文件。当前仅生成诊断包：全零字段会被 Sharp 忽略；复制 Chifuyu 字段会触发“数据损坏”。这表明字段可能参与包专属完整性/认证校验，算法和签署流程尚未确认，因此此功能不会生成可安装包。</div></div>
+  <div class="pk-head"><b>SVPK 诊断包（当前不可安装）</b><div class="hint">无需手动编辑 JSON。图片请选择 PNG 文件。当前仅生成诊断包：全零字段会被 Sharp 忽略；复制 Chifuyu 字段会触发“数据损坏”。这表明字段可能参与包专属完整性/认证校验，算法和签署流程尚未确认，因此此功能不会生成可安装包。</div></div>
   <div class="pkg-form">
     <div class="field" data-id="svpk_name" data-label="声库名称" data-ph="例如：Luo Tianyi"></div>
     <div class="field" data-id="svpk_vendor" data-label="声库供应商 / 作者" data-ph="例如：个人或工作室"></div>
