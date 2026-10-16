@@ -730,6 +730,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div class="field" data-id="svpk_name" data-label="声库名称" data-ph="例如：Luo Tianyi"></div>
     <div class="field" data-id="svpk_vendor" data-label="声库供应商 / 作者" data-ph="例如：个人或工作室"></div>
     <div class="field" data-id="svpk_version" data-label="声库版本（整数）" data-value="101" data-ph="101" data-hint="该数值会同时写入 package-config 的 versionString 和 versionNumber；当前版本使用整数版本号，例如 101。"></div>
+    <div class="field" data-id="svpk_header_preset" data-kind="select" data-options="zero|全零（基线）;random|随机字节测试;sha256-chain|SHA-256 链式扩展（合成）;aes256-cbc-test|AES-256-CBC 合成测试（非官方）" data-value="zero" data-label="256 字节字段诊断预设" data-hint="这些选项仅用于比较 Sharp 对不同字段字节的反应，不是官方签名或密钥，也不能生成可安装包。AES 选项使用从包内容派生的公开测试密钥和 IV。"></div>
     <div class="field" data-id="svpk_profile" data-kind="path" data-mode="file" data-ext="png" data-label="头像图片（profile.png）" data-hint="选择声库头像 PNG 文件；打包后将按样例名称存放在 profile.png。"></div>
     <div class="field" data-id="svpk_background" data-kind="path" data-mode="file" data-ext="png" data-label="背景图片（background.png）" data-hint="选择声库背景 PNG 文件；当前会按样例将文件条目命名为 background.png。"></div>
     <div class="field" data-id="svpk_output" data-kind="path" data-mode="save" data-ext="svpk" data-label="SVPK 保存位置" data-hint="输出的 .svpk 文件路径。默认与训练后的 voice.nofs 放在同一目录。"></div>
@@ -840,6 +841,7 @@ const FIELD_HELP = {
   "svpk_name": "声库对外显示的名称，会写入 SVPK 的 package-config 元数据。",
   "svpk_vendor": "声库供应商、作者或工作室名称，会写入 package-config 的 vendorName。",
   "svpk_version": "SVPK 元数据要求 versionString（文本）和 versionNumber（整数）。这个输入使用整数版本，例如 101，并将同一版本写入两个字段。",
+  "svpk_header_preset": "选择要写入外层 256 字节字段的诊断数据：全零、随机字节、SHA-256 链式扩展或合成 AES-256-CBC。非零模式只是测试数据，不是 Synthesizer V 官方签名/密钥；所有模式生成的文件仍不可安装。",
   "svpk_profile": "选择声库头像 PNG。打包器会将其作为根目录 profile.png 写入包内。",
   "svpk_background": "选择声库背景 PNG。为匹配目前检查过的样例，包内文件条目使用其样例拼写 background.png。",
   "svpk_output": "生成的 SVPK 文件完整路径。推荐保存在训练结果附近，并使用 .svpk 扩展名。"
@@ -951,6 +953,10 @@ function buildFields(){
     const description = FIELD_HELP[id] || (d.hint ? d.hint.replace(/<[^>]*>/g, "") : "此设置会影响当前操作，请结合训练目标选择。");
     let h='<div class="field-label-row"><label for="' + id + '">' + esc(d.label) + '</label>' + helpMarkup(d.label, description) + '</div>';
     if(d.kind==="path")h+=`<div class="path"><input type="text" id="${id}" data-s placeholder="${esc(d.ph||"")}" spellcheck="false" autocomplete="off"><button type="button" class="ghost" data-browse="${id}" data-mode="${d.mode}" data-ext="${d.ext||""}">Browse…</button></div>`;
+    else if(d.kind==="select"){
+      const options=(d.options||"").split(";").filter(Boolean).map(item=>{const pair=item.split("|");return `<option value="${esc(pair[0])}">${esc(pair.slice(1).join("|"))}</option>`;}).join("");
+      h+=`<select id="${id}" data-s>${options}</select>`;
+    }
     else h+=`<input type="text" id="${id}" data-s placeholder="${esc(d.ph||"")}" spellcheck="false" autocomplete="off">`;
     f.innerHTML=h;
     if(d.value)document.getElementById(id).value=d.value;
@@ -1054,7 +1060,8 @@ const B={
     else if(!/\.svpk$/i.test(output)){output += ".svpk";const el=document.getElementById("svpk_output");if(el)el.value=output;}
     a.push("--voice",voicePath,"--profile",val("svpk_profile"),"--background",val("svpk_background"),
       "--output",output,"--name",val("svpk_name"),"--vendor",val("svpk_vendor"),
-      "--version-string",version,"--version-number",String(Number(version)));
+      "--version-string",version,"--version-number",String(Number(version)),
+      "--header-preset",val("svpk_header_preset")||"zero");
     return{cmd:"package-svpk",label:"打包 SVPK 声库",args:a,p}
   },
   sfpk(){const p=[],a=[],voicePath=val("e_new")||val("t_output"),version=val("sfpk_version");
