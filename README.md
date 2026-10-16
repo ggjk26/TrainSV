@@ -131,6 +131,8 @@ Held-out phrases (`--validation`: a fraction, or a count when 1 or more) are sco
 
 `--run <directory>` keeps a run directory: `log.jsonl` holds every logged step (`--log-every`, default 25) with its seconds per step and learning rate, and every validation, and `state.pt` is saved at each validation. `--resume` continues from `state.pt` with the same `--models` and `--params`; raise `--steps` to train further. `--history` writes the validation metrics alone as one JSON file.
 
+The F0 options are also available in the WebUI's Advanced settings. Compare the startup summary (voiced-frame percentage and median detected F0) and held-out `pitch_semitones` / `pitch_melody` metrics rather than assuming the wider preset is better. If the dataset has only phoneme LABs without `note_seq` and note durations, the Pitch model cannot be trained; a tracking preset alone will not fix a uniform pitch offset in Synthesizer V.
+
 The audio loss ignores everything 50 dB below each target's peak, so a recording's noise floor is not learned. The pitch loss matches the melody (below 3 Hz) frame by frame but vibrato only by its spectrum, so the model keeps its expression; `pitch_motion` reports its fast motion relative to the singer's (1.0 matches). `--consonant-weight` scales consonant frames in the training audio loss (held-out scores stay unweighted). 
 
 Recordings are scaled to the starting voice's output level, measured from total energy. When continuing from a finetune, pass the stock base as `--level-reference` (or pin `--gain`) so the level cannot ratchet up across runs. `--keep-level` leaves them as recorded.
