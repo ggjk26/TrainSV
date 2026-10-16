@@ -624,6 +624,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div class="grid2">
       <div class="field"><label for="t_params">What to adjust</label><select id="t_params" data-s><option value="all">Everything (default)</option><option value="embeddings">Only the voice's identity vectors</option></select><small>The second option is quicker and gentler; used first when adding vocal modes.</small></div>
       <div class="field"><label for="t_device">Computer part to use</label><select id="t_device" data-s><option value="">Automatic (default)</option><option value="cuda">GPU (NVIDIA)</option><option value="mps">GPU (Apple)</option><option value="cpu">CPU (slow)</option></select></div>
+      <div class="field"><label for="t_f0_profile">F0 tracking preset</label><select id="t_f0_profile" data-s><option value="standard">Standard (65–1100 Hz, threshold 0.60)</option><option value="vocaloid">VOCALOID / synthetic singing (45–1400 Hz, threshold 0.45)</option></select><small>Controls how F0 is extracted from input WAVs. It does not train the Pitch model by itself; Pitch training requires note labels.</small></div>
       <div class="field" data-id="t_lr" data-label="Learning rate" data-ph="2e-5 (3e-3 for identity only)" data-hint="How big each adjustment is."></div>
       <div class="field" data-id="t_warmup" data-label="Warm-up steps" data-ph="0" data-hint="Start gently over this many steps."></div>
       <div class="field" data-id="t_lrend" data-label="Final learning rate" data-ph="constant" data-hint="Slowly lower the learning rate to this."></div>
@@ -812,6 +813,7 @@ const FIELD_HELP = {
   "v_name": "为输出声库设置显示名称。建议使用容易识别的名称；该名称也会用于自动生成部分输出路径。",
   "t_output": "指定训练后声库的保存位置。普通 voice.nofs 声库保存为文件；info.*.nofs 类型的共享模型声库会按工具规则保存到目录中。",
   "t_lr": "学习率，控制每次更新模型参数时的调整幅度。默认值取决于“调整内容”：全部权重通常为 2e-5，仅训练身份向量时通常为 3e-3。过高可能不稳定，过低可能进展缓慢。",
+  "t_f0_profile": "F0 追踪预设只影响训练/评估时从 WAV 提取基频的方式。Standard 沿用旧默认值；VOCALOID / synthetic singing 会扩大检测范围到 45–1400 Hz，并采用 0.45 的清浊音门槛，可能帮助漏检低音或高音，也可能引入错误候选。它不会单独校正合成时的音高。若数据只有按文件名生成的音素 LAB、没有 note_seq/音符标注，Pitch 模型无法训练；这种数据请先训练 Sound/Acoustic。",
   "t_warmup": "预热步数。大于 0 时，学习率会在指定步数内逐渐升高；留空或为 0 时不启用预热。",
   "t_lrend": "最终学习率。填写后，训练会按余弦衰减逐步降至该值；留空时学习率保持不变（除非设置了预热）。",
   "t_anchor": "控制微调权重向原始声库权重靠拢的强度。值越大，约束通常越强、越能保留原声库特征；具体效果仍取决于数据和训练设置。",
@@ -1034,6 +1036,7 @@ const B={
     if(!val("v_name"))p.push("Name your new voice.");if(!val("t_output"))p.push("Choose where to save the new voice.");
     const models=MODELS.filter(x=>chk("m_"+x));if(!models.length)p.push("Tick at least one thing to learn.");
     a.push("--voice",val("voice"),"--data",val("dataset"),"--output",val("t_output"),"--language",lang(),"--models",models.join(","),"--name",val("v_name"));
+    a.push("--f0-profile",val("t_f0_profile")||"standard");
     addOpt(a,p,"--steps","t_steps",true);
     if(val("t_params")&&val("t_params")!=="all")a.push("--params",val("t_params"));
     [["--lr","t_lr"],["--warmup","t_warmup"],["--lr-end","t_lrend"],["--anchor","t_anchor"],["--batch","t_batch"],["--consonant-weight","t_cons"],["--validation","t_val"],["--evaluate-every","t_evalevery"],["--log-every","t_logevery"],["--seed","t_seed"],["--gain","t_gain"]].forEach(([f,i])=>addOpt(a,p,f,i));
@@ -1044,6 +1047,7 @@ const B={
     if(!val("voice"))p.push("Choose the original voice (step 1).");if(!val("e_new"))p.push("Choose your new voice.");
     dsNeed(p,"Choose a dataset (step 2).");if(!val("e_out"))p.push("Choose where to save the comparison.");
     a.push("--voice",val("voice"),"--voice",val("e_new"),"--data",val("dataset"),"--language",lang(),"--models",trainedModels().join(","));
+    a.push("--f0-profile",val("t_f0_profile")||"standard");
     addOpt(a,p,"--validation","t_val");addOpt(a,p,"--seed","t_seed");
     if(val("t_pmap"))a.push("--phoneme-map",val("t_pmap"));
     a.push("--out",val("e_out"));addOpt(a,p,"--max-phrases","e_max");
