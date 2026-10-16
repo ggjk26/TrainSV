@@ -4,9 +4,11 @@ on:
   pull_request:
     paths:
       - "opensv_train/packaging.py"
+      - "opensv_train/sfpk.py"
       - "opensv_train/__main__.py"
       - "trainsv_gui.py"
       - "tests/test_packaging.py"
+      - "tests/test_sfpk_packaging.py"
       - "tests/test_gui_packaging_ui.py"
       - ".github/workflows/packaging-ui-tests.yml"
   push:
@@ -27,4 +29,4 @@ jobs:
       - name: Install test dependency
         run: python -m pip install pytest
       - name: Run SVPK and WebUI regression tests
-        run: python -m pytest -q tests/test_packaging.py tests/test_gui_packaging_ui.py
+        run: python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py
