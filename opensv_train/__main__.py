@@ -18,6 +18,7 @@ from .data import LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
 from .voice import ROLES, Voice
 from .packaging import build_svpk
+from .sfpk import build_sfpk
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -280,6 +281,19 @@ def package_svpk_command(arguments) -> None:
     print(f"wrote {output} ({output.stat().st_size:,} bytes)")
     print("Warning: the 256-byte SVPK header field is zero-filled; verify installation in Sharp.")
 
+def package_sfpk_command(arguments) -> None:
+    output = build_sfpk(
+        voice=arguments.voice,
+        models_root=arguments.models_root,
+        output=arguments.output,
+        name=arguments.name,
+        vendor=arguments.vendor,
+        version=arguments.version,
+    )
+    print(f"wrote {output} ({output.stat().st_size:,} bytes)")
+    print("Warning: this SFPK references DNNI files in the selected local models directory; it does not embed model dependencies.")
+    print("Test importing, selecting, and rendering this voice in Synthesizer V Studio Flat before relying on it.")
+
 
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trainsv")
@@ -379,6 +393,15 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--version-number", type=int, default=101)
     command.add_argument("--depending-version-number", type=int, default=0)
     command.set_defaults(handler=package_svpk_command)
+
+    command = commands.add_parser("package-sfpk", help="build an experimental Flat SFPK that references local DNNI dependencies")
+    command.add_argument("--voice", required=True, help="trained binary voice.nofs or existing info.nofs JSON")
+    command.add_argument("--models-root", required=True, help="existing Synthesizer V models directory containing/written with <kind>/<model-id>.dnni")
+    command.add_argument("--output", required=True, help="output .sfpk path")
+    command.add_argument("--name", help="optional singer name override")
+    command.add_argument("--vendor", help="optional vendor override")
+    command.add_argument("--version", help="optional version override, for example 101 or 106b1")
+    command.set_defaults(handler=package_sfpk_command)
 
     for command in commands.choices.values():
         command.add_argument("--config", action="append", default=[], metavar="FILE", help="JSON file of option values; repeat for several, later files win and command-line options override them")
