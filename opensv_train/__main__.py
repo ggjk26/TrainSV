@@ -279,7 +279,7 @@ def package_svpk_command(arguments) -> None:
         depending_version_number=arguments.depending_version_number,
     )
     print(f"wrote {output} ({output.stat().st_size:,} bytes)")
-    print("Warning: the 256-byte SVPK header field is zero-filled; verify installation in Sharp.")
+    print("Warning: diagnostic-only output; Sharp ignores a zero-filled SVPK header field. This file is not installable or suitable for distribution.")
 
 def package_sfpk_command(arguments) -> None:
     output = build_sfpk(
@@ -381,7 +381,7 @@ def parser() -> argparse.ArgumentParser:
     command = commands.add_parser("inspect", help="summarise a voice's models and phone sets")
     command.add_argument("--voice", required=True)
     command.set_defaults(handler=inspect)
-    command = commands.add_parser("package-svpk", help="package a custom voice.nofs into an experimental SVPK test container for Sharp")
+    command = commands.add_parser("package-svpk", help="build a diagnostic-only SVPK-layout container (not installable in Sharp)")
     command.add_argument("--voice", required=True, help="trained voice.nofs file")
     command.add_argument("--license", dest="license_file", help="optional license text file to include")
     command.add_argument("--profile", required=True, help="voicebank avatar PNG")
