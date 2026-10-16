@@ -1059,14 +1059,14 @@ const B={
   },
   sfpk(){const p=[],a=[],voicePath=val("e_new")||val("t_output"),version=val("sfpk_version");
     if(!voicePath)p.push("先选择训练后的声库文件。");
-    else if(!/\\.nofs$/i.test(voicePath))p.push("请选择 .nofs 文件，而不是目录或其他文件。");
+    else if(!/\.nofs$/i.test(voicePath))p.push("请选择 .nofs 文件，而不是目录或其他文件。");
     if(!val("sfpk_name"))p.push("请填写声库名称。");
     if(!val("sfpk_vendor"))p.push("请填写作者 / 供应商。");
     if(!version)p.push("请填写声库版本，例如 101 或 106b1。");
     if(!val("sfpk_models_root"))p.push("请选择 Synthesizer V 的 models 目录。");
     let output=val("sfpk_output");
     if(!output)p.push("请指定 SFPK 保存位置。");
-    else if(!/\\.sfpk$/i.test(output)){output += ".sfpk";const el=document.getElementById("sfpk_output");if(el)el.value=output;}
+    else if(!/\.sfpk$/i.test(output)){output += ".sfpk";const el=document.getElementById("sfpk_output");if(el)el.value=output;}
     a.push("--voice",voicePath,"--models-root",val("sfpk_models_root"),"--output",output,
       "--name",val("sfpk_name"),"--vendor",val("sfpk_vendor"),"--version",version);
     return{cmd:"package-sfpk",label:"打包 SFPK 测试包",args:a,p}
@@ -1357,7 +1357,7 @@ function openSvpkDialog(){
   $("#packageFormError").textContent="";
   $("#svpkDialog").showModal();
 }
-function showSfpkPlaceholder(){
+function openSfpkDialog(){
   const voicePath=val("e_new")||val("t_output");
   $("#packageFormatDialog").close();
   $("#packageStatus").className="status warn";
@@ -1367,7 +1367,7 @@ function showSfpkPlaceholder(){
   if(!val("sfpk_name"))document.getElementById("sfpk_name").value=val("v_name")||"My Singer";
   if(!val("sfpk_vendor"))document.getElementById("sfpk_vendor").value="TrainSV user";
   if(!val("sfpk_version")){
-    const m=basename(voicePath).match(/^info\\.(.+)\\.nofs$/i);
+    const m=basename(voicePath).match(/^info\.(.+)\.nofs$/i);
     document.getElementById("sfpk_version").value=m?m[1]:"101";
   }
   suggestSfpkOutput();
@@ -1452,7 +1452,7 @@ async function init(){
   $("#openPackageFormat").onclick=showPackageFormatDialog;
   $("#closePackageFormat").onclick=()=>$("#packageFormatDialog").close();
   $("#chooseSvpk").onclick=()=>{$("#packageFormatDialog").close();openSvpkDialog()};
-  $("#chooseSfpk").onclick=showSfpkPlaceholder;
+  $("#chooseSfpk").onclick=openSfpkDialog;
   $("#cancelSvpk").onclick=()=>$("#svpkDialog").close();
   $("#cancelSfpk").onclick=()=>$("#sfpkDialog").close();
   $("#buildSfpk").onclick=async()=>{
