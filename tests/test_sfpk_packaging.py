@@ -83,9 +83,8 @@ def test_build_sfpk_from_existing_info_json(tmp_path):
     assert info["acoustic"] == MODEL_IDS["acoustic"]
     assert info["f0_style"] == VECTOR
     assert info["duration_style"] == DURATION_VECTOR
-    assert len(info["duration_style"]) == 1024
-    assert info["duration_style"] == DURATION_VECTOR
-    assert len(info["duration_style"]) == 1024
+    assert len(info["duration_style"]) == 128 * 8
+    assert len(info["f0_style"]) == 32 * 8
 
 
 def test_build_sfpk_rejects_missing_model_dependency(tmp_path):
@@ -200,4 +199,7 @@ def test_build_sfpk_exports_binary_voice_models_and_embedding_vectors(tmp_path, 
     assert info["version"] == "106"
     assert info["support_languages"] == ["mandarin", "english"]
     assert info["acoustic"] == hashlib.md5(model_bytes["acoustic"]).hexdigest()
+    assert len(info["duration_style"]) == 128 * 8
+    assert len(info["f0_style"]) == 32 * 8
+    assert len(info["styles"][0]["data"]) == 32 * 8
     assert config["name"] == info["name"]
