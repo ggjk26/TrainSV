@@ -18,7 +18,7 @@ def test_results_page_exposes_both_package_choices():
     assert 'id="chooseSvpk"' in PAGE
     assert "使用 SVPK 格式打包" in PAGE
     assert 'id="chooseSfpk"' in PAGE
-    assert "使用 SFPK 格式打包（占位）" in PAGE
+    assert "使用 SFPK 格式打包（实验）" in PAGE
 
 
 def test_svpk_dialog_collects_required_metadata_and_assets():
@@ -42,13 +42,21 @@ def test_svpk_dialog_collects_required_metadata_and_assets():
     assert '"--version-number",String(Number(version))' in PAGE
 
 
-def test_sfpkg_placeholder_does_not_launch_a_packaging_command():
-    helper = PAGE.split("function showSfpkPlaceholder()", 1)[1].split("async function loadResults()", 1)[0]
-    assert "info.nofs" in helper
-    assert "config.json" in helper
-    assert ".dnni" in helper
-    assert "SFPK 打包尚未实现" in helper
-    assert "startJob(" not in helper
+def test_sfpk_dialog_collects_local_model_dependencies_and_starts_job():
+    for field in (
+        "sfpk_name",
+        "sfpk_vendor",
+        "sfpk_version",
+        "sfpk_models_root",
+        "sfpk_output",
+    ):
+        assert f'data-id="{field}"' in PAGE
+    assert 'id="sfpkDialog"' in PAGE
+    assert "function openSfpkDialog()" in PAGE
+    assert 'cmd:"package-sfpk"' in PAGE
+    assert '"--models-root",val("sfpk_models_root")' in PAGE
+    assert 'startJob("sfpk")' in PAGE
+    assert "SFPK 打包尚未实现" not in PAGE
 
 
 def test_embedded_webui_javascript_has_valid_syntax():
