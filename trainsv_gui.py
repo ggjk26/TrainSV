@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent
 TOKEN = secrets.token_urlsafe(16)
-COMMANDS = {"import-lab", "convert-dict", "evaluate", "finetune", "synthesize-dataset", "inspect", "package-svpk"}
+COMMANDS = {"import-lab", "convert-dict", "evaluate", "finetune", "synthesize-dataset", "inspect", "package-svpk", "package-sfpk"}
 MAX_LOG_LINES = 40000
 
 
@@ -669,7 +669,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <div id="results"></div>
   <div class="pkg-section">
     <h3>导出训练后的声库</h3>
-    <p class="hint">SVPK 当前仅为格式研究诊断包。全零字段版本在 Sharp 中无反应；把 Hanakuma Chifuyu 的 256 字节字段复制到自制包后，Sharp 能识别包但提示数据损坏。这强烈暗示该字段参与包专属完整性/认证校验（RSA-2048 签名只是未证实的假设）。当前生成结果不可安装或发布。SFPK 当前只提供占位提示。</p>
+    <p class="hint">SVPK 当前仅为格式研究诊断包。全零字段版本在 Sharp 中无反应；把 Hanakuma Chifuyu 的 256 字节字段复制到自制包后，Sharp 能识别包但提示数据损坏。这强烈暗示该字段参与包专属完整性/认证校验（RSA-2048 签名只是未证实的假设）。当前生成结果不可安装或发布。SFPK 为实验性 Flat 格式导出：会将模型依赖写入所选本机 models 目录，包内仅含 config.json 与 info.nofs，暂非自包含包，必须在 Flat 中实际验证。</p>
     <div class="actions"><button class="primary" type="button" id="openPackageFormat">导出声库 / 选择打包格式</button></div>
     <p class="status" id="packageStatus" role="status"></p>
   </div>
@@ -716,10 +716,10 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 </div>
 
 <dialog id="packageFormatDialog">
-  <div class="pk-head"><b>选择声库打包格式</b><div class="hint">SVPK 目前只生成诊断包：全零字段时 Sharp 无响应；复制 Chifuyu 字段后则提示数据损坏。这说明该字段很可能与包内容的完整性/认证校验有关，具体算法仍未知。SFPK 目前是占位入口。</div></div>
+  <div class="pk-head"><b>选择声库打包格式</b><div class="hint">SVPK 目前只生成诊断包，不能安装。SFPK 提供实验性导出：生成 config.json + info.nofs，并将四类 .dnni 依赖写入所选本机 models 目录；不会把模型二进制嵌入 SFPK，迁移到其他电脑时需另行安装对应模型。</div></div>
   <div class="pkg-choice-body">
     <div><button class="primary" type="button" id="chooseSvpk">使用 SVPK 格式打包</button><p class="hint">设置声库名称、供应商、版本、头像和背景后自动开始打包。</p></div>
-    <div><button type="button" id="chooseSfpk">使用 SFPK 格式打包（占位）</button><p class="hint">若输出是普通 voice.nofs，会说明当前结构不支持 SFPK，并列出缺少的共享模型文件。</p></div>
+    <div><button type="button" id="chooseSfpk">使用 SFPK 格式打包（实验）</button><p class="hint">可输入训练后的 voice.nofs 或已有 info.*.nofs；需选择 Synthesizer V 的 models 目录。</p></div>
   </div>
   <div class="pk-foot"><button type="button" class="ghost" id="closePackageFormat">取消</button></div>
 </dialog>
@@ -738,6 +738,20 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <div class="pk-foot"><button type="button" class="ghost" id="cancelSvpk">取消</button><button type="button" class="primary" id="buildSvpk">生成诊断包（当前不可安装）</button></div>
 </dialog>
 
+
+<dialog id="sfpkDialog">
+  <div class="pk-head"><b>使用 SFPK 格式打包（实验版）</b><div class="hint">普通 voice.nofs 将转换为 Flat 使用的 info.nofs 描述，并把 acoustic / vocoder / duration / f0 的 .dnni 文件写入你选定的本机 models 目录。SFPK 内只放 config.json 与 info.nofs，不包含模型二进制；这是本机依赖版，暂未验证 Flat 安装和渲染。</div></div>
+  <div class="pkg-form">
+    <div class="field" data-id="sfpk_name" data-label="声库名称" data-ph="例如：Luo Tianyi"></div>
+    <div class="field" data-id="sfpk_vendor" data-label="作者 / 供应商" data-ph="例如：个人或工作室"></div>
+    <div class="field" data-id="sfpk_version" data-label="声库版本" data-value="101" data-ph="101" data-hint="可使用 101、106 或 106b1 等版本标识。"></div>
+    <div class="field" data-id="sfpk_models_root" data-kind="path" data-mode="dir" data-label="Synthesizer V 的 models 目录" data-hint="选择包含 acoustic、vocoder、duration、f0 等子目录的现有 models 文件夹。新模型会按内容 MD5 命名写入相应子目录，已有同名但内容不同的文件不会被覆盖。"></div>
+    <div class="field" data-id="sfpk_output" data-kind="path" data-mode="save" data-ext="sfpk" data-label="SFPK 保存位置" data-hint="生成的 SFPK 仅包含 config.json 与 info.nofs，所引用的模型仍在上方选定的本机 models 目录。"></div>
+    <p class="status bad" id="sfpkFormError" role="alert"></p>
+  </div>
+  <div class="pk-foot"><button type="button" class="ghost" id="cancelSfpk">取消</button><button type="button" class="primary" id="buildSfpk">生成 SFPK 测试包</button></div>
+</dialog>
+
 <dialog id="picker">
   <div class="pk-head"><b id="pkTitle">Choose</b><div id="pkPath"></div></div>
   <ul id="pkList"></ul>
@@ -754,7 +768,7 @@ const METRIC={mel:["Sound match","lower is closer"],voicing:["Voiced/unvoiced ma
 const PRESETS={p_quick:{t_steps:"200",t_evalevery:"100",t_logevery:"10",t_warmup:"",t_lrend:""},
  p_std:{t_steps:"2000",t_evalevery:"",t_logevery:"",t_warmup:"",t_lrend:""},
  p_long:{t_steps:"6000",t_evalevery:"",t_logevery:"",t_warmup:"100",t_lrend:"2e-6"}};
-let ENV={root:"",sep:"/"},EXTRA={manual:{},trained:false,evaluated:false},DS=null,VOICE_OK=false,JOB=null,polling=false,SVPK_AUTO_OUTPUT="";
+let ENV={root:"",sep:"/"},EXTRA={manual:{},trained:false,evaluated:false},DS=null,VOICE_OK=false,JOB=null,polling=false,SVPK_AUTO_OUTPUT="",SFPK_AUTO_OUTPUT="";
 
 const val=id=>{const e=document.getElementById(id);return e?String(e.value||"").trim():""};
 const chk=id=>!!document.getElementById(id)?.checked;
@@ -1043,6 +1057,20 @@ const B={
       "--version-string",version,"--version-number",String(Number(version)));
     return{cmd:"package-svpk",label:"打包 SVPK 声库",args:a,p}
   },
+  sfpk(){const p=[],a=[],voicePath=val("e_new")||val("t_output"),version=val("sfpk_version");
+    if(!voicePath)p.push("先选择训练后的声库文件。");
+    else if(!/\\.nofs$/i.test(voicePath))p.push("请选择 .nofs 文件，而不是目录或其他文件。");
+    if(!val("sfpk_name"))p.push("请填写声库名称。");
+    if(!val("sfpk_vendor"))p.push("请填写作者 / 供应商。");
+    if(!version)p.push("请填写声库版本，例如 101 或 106b1。");
+    if(!val("sfpk_models_root"))p.push("请选择 Synthesizer V 的 models 目录。");
+    let output=val("sfpk_output");
+    if(!output)p.push("请指定 SFPK 保存位置。");
+    else if(!/\\.sfpk$/i.test(output)){output += ".sfpk";const el=document.getElementById("sfpk_output");if(el)el.value=output;}
+    a.push("--voice",voicePath,"--models-root",val("sfpk_models_root"),"--output",output,
+      "--name",val("sfpk_name"),"--vendor",val("sfpk_vendor"),"--version",version);
+    return{cmd:"package-sfpk",label:"打包 SFPK 测试包",args:a,p}
+  },
   synth(){const p=[];if(!val("voice"))p.push("Choose a voice (step 1).");if(!val("s_output"))p.push("Choose where to save the data.");
     const a=["--voice",val("voice"),"--output",val("s_output"),"--language",lang()];
     addOpt(a,p,"--phrases","s_phrases");addOpt(a,p,"--notes","s_notes");
@@ -1192,7 +1220,8 @@ const DONE={
   convert(ok){if(ok){setVal("dataset",val("c_output"));JOB.next={text:"Use it: go to Train",go:"train"}}},
   async finetune(ok){if(ok){EXTRA.trained=true;persist();try{const r=await api("resolve-voice?path="+enc(val("t_output")));if(r.path)setVal("e_new",r.path)}catch(e){}JOB.next={text:"Next: check the result",go:"results"};renderJob()}},
   evaluate(ok){if(ok){EXTRA.evaluated=true;persist();loadResults();JOB.next={text:"See the comparison",go:"results",to:"#results"};renderJob();if(JOB.kind==="evaluate"){go("results");showPackageFormatDialog()}}},
-  svpk(ok){const el=$("#packageStatus");if(el){el.className="status "+(ok?"warn":"bad");el.textContent=ok?"SVPK 诊断包已生成："+val("svpk_output")+"。全零字段版本在 Sharp 中无响应；复制 Chifuyu 字段后提示数据损坏。该包不可安装或发布。":"SVPK 诊断包生成失败；请查看下方任务日志中的具体错误。"}}
+  svpk(ok){const el=$("#packageStatus");if(el){el.className="status "+(ok?"warn":"bad");el.textContent=ok?"SVPK 诊断包已生成："+val("svpk_output")+"。全零字段版本在 Sharp 中无响应；复制 Chifuyu 字段后提示数据损坏。该包不可安装或发布。":"SVPK 诊断包生成失败；请查看下方任务日志中的具体错误。"}},
+  sfpk(ok){const el=$("#packageStatus");if(el){el.className="status "+(ok?"warn":"bad");el.textContent=ok?"SFPK 测试包已生成："+val("sfpk_output")+"。模型依赖已写入本机："+val("sfpk_models_root")+"。请在 Synthesizer V Studio Flat 中安装/导入、选择声库并测试渲染；目前尚未验证运行时兼容性。":"SFPK 生成失败；请查看任务日志中的具体错误。"}}
 };
 async function startJob(kind){
   const r=B[kind]();if(r.p.length)return;
@@ -1258,7 +1287,7 @@ function renderJob(){
     if(JOB.total)now=`Step ${JOB.step} of ${JOB.total} (${Math.round(pct*100)}%). About ${fmtTime((JOB.total-JOB.step)*JOB.sps)} left. Elapsed ${fmtTime(JOB.elapsed)}.`;
     else if(JOB.kind==="finetune")now=(JOB.dataLine?JOB.dataLine+". ":"")+"Getting ready: loading the voice and your data. This can take a minute the first time.";
     else now="Working… "+fmtTime(JOB.elapsed)+" so far.";
-  }else if(st==="done"){now=JOB.kind==="svpk"?"SVPK 诊断包已生成："+val("svpk_output")+"。全零字段无响应、移植 Chifuyu 字段则提示数据损坏；文件不可安装。":JOB.kind==="finetune"&&JOB.saved?"Finished. Your new voice is saved at "+JOB.saved:"Finished in "+fmtTime(JOB.elapsed)+".";if(JOB.kind==="finetune"&&JOB.saved)now+=" ("+fmtTime(JOB.elapsed)+")"}
+  }else if(st==="done"){now=JOB.kind==="svpk"?"SVPK 诊断包已生成："+val("svpk_output")+"。全零字段无响应、移植 Chifuyu 字段则提示数据损坏；文件不可安装。":JOB.kind==="sfpk"?"SFPK 测试包已生成："+val("sfpk_output")+"。模型依赖位于本机 models 目录，需在 Flat 中验证。":JOB.kind==="finetune"&&JOB.saved?"Finished. Your new voice is saved at "+JOB.saved:"Finished in "+fmtTime(JOB.elapsed)+".";if(JOB.kind==="finetune"&&JOB.saved)now+=" ("+fmtTime(JOB.elapsed)+")"}
   else if(st==="stopped")now="You stopped this."+(JOB.kind==="finetune"?" Training progress is kept in the run folder. Tick “Continue the previous run” in Advanced settings to carry on.":"");
   $("#actNow").textContent=now;
   $("#actSummary").textContent=st==="running"&&JOB.total?`step ${JOB.step}/${JOB.total}`:"";
@@ -1305,6 +1334,18 @@ function suggestSvpkOutput(){
     SVPK_AUTO_OUTPUT="";
   }
 }
+function suggestSfpkOutput(){
+  const voicePath=val("e_new")||val("t_output"),target=$("#sfpk_output");
+  if(!voicePath||!target)return;
+  const current=val("sfpk_output");
+  const next=join(dirname(voicePath),packageFileStem(val("sfpk_name"))+".sfpk");
+  if(!current||(SFPK_AUTO_OUTPUT&&current===SFPK_AUTO_OUTPUT)){
+    target.value=next;
+    SFPK_AUTO_OUTPUT=next;
+  }else if(current!==SFPK_AUTO_OUTPUT){
+    SFPK_AUTO_OUTPUT="";
+  }
+}
 function openSvpkDialog(){
   const voicePath=val("e_new")||val("t_output");
   if(!voicePath){alert("请先选择训练后的声库文件。");return;}
@@ -1320,12 +1361,18 @@ function showSfpkPlaceholder(){
   const voicePath=val("e_new")||val("t_output");
   $("#packageFormatDialog").close();
   $("#packageStatus").className="status warn";
-  $("#packageStatus").textContent="SFPK 打包尚未实现；当前不会生成可能无法加载的包。";
-  if(isInfo(voicePath)){
-    alert("当前 SFPK 打包入口仍是占位项。虽然所选结果是 info.*.nofs 共享模型声库，但完整打包还需要对应 config.json、info.nofs 引用的 acoustic / vocoder / duration / f0 .dnni 模型文件及其准确映射，并且必须通过 Synthesizer V Flat 的实际加载验证。");
-  }else{
-    alert("当前选择的是普通 voice.nofs，不能直接打包成 SFPK。缺少共享模型格式的 info.nofs（NOFS-JSON）、config.json，以及 info.nofs 所引用的 acoustic / vocoder / duration / f0 .dnni 模型文件与准确模型 ID 映射。普通 voice.nofs 不能仅压缩或更改扩展名来生成 SFPK。");
+  $("#packageStatus").textContent="SFPK 是实验性本机依赖版；生成后必须在 Flat 中验证。";
+  if(!voicePath){alert("请先选择训练后的声库文件。");return;}
+  if(!/\\.nofs$/i.test(voicePath)){alert("请选择训练后的 .nofs 文件或已有 info.*.nofs 文件。");return;}
+  if(!val("sfpk_name"))document.getElementById("sfpk_name").value=val("v_name")||"My Singer";
+  if(!val("sfpk_vendor"))document.getElementById("sfpk_vendor").value="TrainSV user";
+  if(!val("sfpk_version")){
+    const m=basename(voicePath).match(/^info\\.(.+)\\.nofs$/i);
+    document.getElementById("sfpk_version").value=m?m[1]:"101";
   }
+  suggestSfpkOutput();
+  $("#sfpkFormError").textContent="";
+  $("#sfpkDialog").showModal();
 }
 async function loadResults(){
   const box=$("#results");
@@ -1374,6 +1421,8 @@ async function init(){
     if(AUTO.includes(t.id))EXTRA.manual[t.id]=t.value.trim()!=="";
     if(t.id==="svpk_name")suggestSvpkOutput();
     if(t.id==="svpk_output"&&SVPK_AUTO_OUTPUT&&val("svpk_output")!==SVPK_AUTO_OUTPUT)SVPK_AUTO_OUTPUT="";
+    if(t.id==="sfpk_name")suggestSfpkOutput();
+    if(t.id==="sfpk_output"&&SFPK_AUTO_OUTPUT&&val("sfpk_output")!==SFPK_AUTO_OUTPUT)SFPK_AUTO_OUTPUT="";
     if(t.id==="voice")checkVoice();
     if(t.id==="dataset")checkDataset();
     if(["i_corpus","i_wavs","i_labs","i_wavs_names"].includes(t.id))checkSource();
@@ -1405,6 +1454,20 @@ async function init(){
   $("#chooseSvpk").onclick=()=>{$("#packageFormatDialog").close();openSvpkDialog()};
   $("#chooseSfpk").onclick=showSfpkPlaceholder;
   $("#cancelSvpk").onclick=()=>$("#svpkDialog").close();
+  $("#cancelSfpk").onclick=()=>$("#sfpkDialog").close();
+  $("#buildSfpk").onclick=async()=>{
+    const button=$("#buildSfpk"),r=B.sfpk();
+    if(r.p.length){$("#sfpkFormError").textContent=r.p.join("\n");return;}
+    $("#sfpkFormError").textContent="";
+    button.disabled=true;
+    try{
+      const target=await api("stat?path="+enc(val("sfpk_output")));
+      if(target.isfile&&!confirm("输出文件已存在：\n"+val("sfpk_output")+"\n\n是否覆盖它？"))return;
+      $("#sfpkDialog").close();
+      startJob("sfpk");
+    }catch(e){alert("无法检查输出路径："+e.message)}
+    finally{button.disabled=false}
+  };
   $("#buildSvpk").onclick=async()=>{
     const button=$("#buildSvpk"),r=B.svpk();
     if(r.p.length){$("#packageFormError").textContent=r.p.join("\n");return;}
