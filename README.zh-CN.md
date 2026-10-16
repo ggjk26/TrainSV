@@ -251,6 +251,7 @@ trainsv finetune \
   --data /path/to/my-dataset \
   --language ja \
   --models acoustic \
+  --f0-profile vocaloid \
   --steps 2000 \
   --output out/voice.nofs \
   --name "我的声库" \
