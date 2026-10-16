@@ -1363,7 +1363,7 @@ function openSfpkDialog(){
   $("#packageStatus").className="status warn";
   $("#packageStatus").textContent="SFPK 是实验性本机依赖版；生成后必须在 Flat 中验证。";
   if(!voicePath){alert("请先选择训练后的声库文件。");return;}
-  if(!/\\.nofs$/i.test(voicePath)){alert("请选择训练后的 .nofs 文件或已有 info.*.nofs 文件。");return;}
+  if(!/\.nofs$/i.test(voicePath)){alert("请选择训练后的 .nofs 文件或已有 info.*.nofs 文件。");return;}
   if(!val("sfpk_name"))document.getElementById("sfpk_name").value=val("v_name")||"My Singer";
   if(!val("sfpk_vendor"))document.getElementById("sfpk_vendor").value="TrainSV user";
   if(!val("sfpk_version")){
