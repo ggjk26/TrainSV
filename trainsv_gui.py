@@ -607,6 +607,25 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <label class="choice"><input type="checkbox" id="m_pitch" data-s><span><b>Pitch</b> (melody and vibrato)<small>How the singer moves between notes. Needs notes in the dataset.</small></span></label>
     <label class="choice"><input type="checkbox" id="m_vocoder" data-s><span><b>Vocoder</b> (final audio stage)<small>Optional and slower. Most people leave this off.</small></span></label>
   </fieldset>
+  <fieldset id="pitchTrainingPanel">
+    <legend>Pitch 专项训练与 F0 校准</legend>
+    <p class="hint">Pitch 模型控制音符到音高曲线的生成。下方设置作用于训练 WAV 的 F0 目标：平滑、孤立八度错误修正和半音校准。若只有音素 LAB、没有 note_seq/note_dur，Pitch 无法有效训练。</p>
+    <div class="grid2">
+      <div class="field" data-id="t_pitch_source" data-kind="select" data-options="base|使用当前底模自带 Pitch 模型;pretrained|导入兼容的预训练 Pitch DNNI" data-value="base" data-label="Pitch 模型初始化来源" data-hint="默认使用当前底模的 Pitch 模型；导入外部模型前会检查模型结构、音素表和说话人向量维度。"></div>
+      <div class="field" data-id="t_pitch_model" data-kind="path" data-mode="file" data-ext="dnni" data-label="外部预训练 Pitch 模型（.dnni）" data-hint="仅在选择导入预训练模型时需要。必须是 TrainSV 当前支持的 Pitch DNNI，并且音素表与底模匹配。"></div>
+      <div class="field" data-id="t_f0_profile" data-kind="select" data-options="standard|Standard (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID / synthetic singing (45–1400 Hz, threshold 0.45)" data-value="standard" data-label="F0 追踪预设" data-hint="选择输入 WAV 的基频检测范围及清浊音门槛。"></div>
+      <div class="field" data-id="t_f0_floor" data-label="F0 最低频率（Hz，可覆盖预设）" data-ph="跟随预设，例如 45" data-hint="低于此频率的音高不在检测范围内；应根据歌手最低音设置。"></div>
+      <div class="field" data-id="t_f0_ceiling" data-label="F0 最高频率（Hz，可覆盖预设）" data-ph="跟随预设，例如 1400" data-hint="高于此频率的音高不在检测范围内；过高也可能增加谐波误检。"></div>
+      <div class="field" data-id="t_f0_threshold" data-label="清浊音门槛（0–1，可覆盖预设）" data-ph="跟随预设，例如 0.45" data-hint="降低可能减少漏检，也可能把噪声误判为有声；留空时使用所选预设值。"></div>
+      <div class="field" data-id="t_f0_smoothing" data-kind="select" data-options="0|关闭;3|轻度（15 ms）;5|中度（25 ms）;7|较强（35 ms）" data-value="0" data-label="F0 中值平滑" data-hint="在有声片段内对 log2(F0) 做中值滤波；较强平滑会压低部分颤音细节。"></div>
+      <div class="field" data-id="t_f0_shift" data-label="F0 校准偏移（半音）" data-value="0" data-ph="0" data-hint="对检测到的 F0 训练目标整体加上该半音偏移。若检测目标整体高约 1 半音，可试 -1；不要用它掩盖音符标注错误。范围 -24 到 +24。"></div>
+    </div>
+    <label class="choice"><input type="checkbox" id="t_f0_octave" data-s><span><b>修正孤立的八度跳变</b><small>只修正前后相邻有声帧一致、且中间帧疑似高/低 1–2 个八度的离群点；默认关闭。</small></span></label>
+    <div class="actions">
+      <button type="button" class="secondary" data-run="pitch">只训练 Pitch 模型</button>
+    </div>
+    <p class="hint">当前仓库没有可验证的通用神经 Pitch 权重，因此不会把现有底模伪装成“通用预训练模型”。你可以使用底模 Pitch 或导入结构/音素表兼容的预训练 .dnni；内置 F0 平滑与校准属于通用信号处理，不是神经 Pitch 模型。</p>
+  </fieldset>
   <div class="note" id="trainWarn" hidden></div>
   <fieldset>
     <legend>How long?</legend>
@@ -624,7 +643,6 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div class="grid2">
       <div class="field"><label for="t_params">What to adjust</label><select id="t_params" data-s><option value="all">Everything (default)</option><option value="embeddings">Only the voice's identity vectors</option></select><small>The second option is quicker and gentler; used first when adding vocal modes.</small></div>
       <div class="field"><label for="t_device">Computer part to use</label><select id="t_device" data-s><option value="">Automatic (default)</option><option value="cuda">GPU (NVIDIA)</option><option value="mps">GPU (Apple)</option><option value="cpu">CPU (slow)</option></select></div>
-      <div class="field" data-id="t_f0_profile" data-kind="select" data-options="standard|Standard (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID / synthetic singing (45–1400 Hz, threshold 0.45)" data-value="standard" data-label="F0 tracking preset" data-hint="Controls F0 extraction from input WAVs; it does not train the Pitch model by itself."></div>
       <div class="field" data-id="t_lr" data-label="Learning rate" data-ph="2e-5 (3e-3 for identity only)" data-hint="How big each adjustment is."></div>
       <div class="field" data-id="t_warmup" data-label="Warm-up steps" data-ph="0" data-hint="Start gently over this many steps."></div>
       <div class="field" data-id="t_lrend" data-label="Final learning rate" data-ph="constant" data-hint="Slowly lower the learning rate to this."></div>
