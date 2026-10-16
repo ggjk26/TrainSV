@@ -51,6 +51,7 @@ trainsv package-sfpk `
 - `--voice` 可指定训练后普通二进制 `voice.nofs`，或已有 `info.nofs` JSON 文件。
 - `--models-root` 必须是目标 Synthesizer V Studio Flat 使用的实际 `models` 目录。普通 `voice.nofs` 的模型会以其序列化字节内容的 MD5 命名，写入 `acoustic/`、`vocoder/`、`duration/` 和 `f0/` 子目录；如果目标 ID 文件已存在但内容不同，程序会拒绝覆盖。
 - `--name`、`--vendor` 和 `--version` 可覆盖原元数据。
-- 输出 SFPK 当前仅包含 `config.json` 和 `info.nofs`，不会把模型二进制嵌入包内，因此它不是自包含/便携包。目标安装必须能够访问这些同 ID 的模型依赖。
+- 可选参数 `--profile` 和 `--background` 用于指定头像/背景 PNG；如果提供，文件会分别作为 `profile.png` 与 `background.png` 写入 SFPK 根目录。WebUI 的 SFPK 弹窗也提供这两个选择器；留空则不额外打包相应图片。
+- SFPK 至少包含 `config.json` 和 `info.nofs`；选择图片后会追加相应 PNG，但不会把模型二进制嵌入包内，因此它不是自包含/便携包。目标安装必须能够访问这些同 ID 的模型依赖。
 
 这版参考一个实际样本的文件结构，但尚未通过 Synthesizer V Studio Flat 的运行时验证。生成后需手动导入/安装、确认歌手出现在列表、选择声库并渲染音频；如果失败，请保留生成的 SFPK、所选 models 目录结构和完整报错。不要把通过 ZIP/JSON 检查当成 Flat 兼容性的证明。
