@@ -26,6 +26,7 @@ def test_svpk_dialog_collects_required_metadata_and_assets():
         "svpk_name",
         "svpk_vendor",
         "svpk_version",
+        "svpk_header_preset",
         "svpk_profile",
         "svpk_background",
         "svpk_output",
@@ -40,6 +41,9 @@ def test_svpk_dialog_collects_required_metadata_and_assets():
     assert "startJob(\"svpk\")" in PAGE
     assert '"--version-string",version' in PAGE
     assert '"--version-number",String(Number(version))' in PAGE
+    assert '"--header-preset",val("svpk_header_preset")||"zero"' in PAGE
+    assert "aes256-cbc-test|AES-256-CBC 合成测试（非官方）" in PAGE
+    assert "不是官方签名或密钥" in PAGE
 
 
 def test_sfpk_dialog_collects_local_model_dependencies_and_starts_job():
