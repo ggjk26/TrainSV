@@ -20,6 +20,7 @@ MODEL_IDS = {
     "f0": "d" * 32,
 }
 VECTOR = "AB" * 128
+DURATION_VECTOR = "CD" * 512
 
 
 def _info_document(name="Test Singer", version="101"):
@@ -35,7 +36,7 @@ def _info_document(name="Test Singer", version="101"):
             {"name": "(base)", "data": VECTOR},
             {"name": "(default)", "data": VECTOR},
         ],
-        "duration_style": VECTOR,
+        "duration_style": DURATION_VECTOR,
         "f0_style": VECTOR,
     }
 
@@ -81,6 +82,10 @@ def test_build_sfpk_from_existing_info_json(tmp_path):
     assert json.loads(config["translations"])["English"] == '"Localized Singer"'
     assert info["acoustic"] == MODEL_IDS["acoustic"]
     assert info["f0_style"] == VECTOR
+    assert info["duration_style"] == DURATION_VECTOR
+    assert len(info["duration_style"]) == 1024
+    assert info["duration_style"] == DURATION_VECTOR
+    assert len(info["duration_style"]) == 1024
 
 
 def test_build_sfpk_rejects_missing_model_dependency(tmp_path):
@@ -146,7 +151,7 @@ def test_build_sfpk_exports_binary_voice_models_and_embedding_vectors(tmp_path, 
 
     class FakeVoice:
         files = fake_files
-        duration = SimpleNamespace(voice_vector=lambda: vector)
+        duration = SimpleNamespace(voice_vector=lambda: Vector(128))
         pitch = SimpleNamespace(speaker=lambda: vector)
         acoustic = SimpleNamespace(
             vocal_modes=[],
@@ -169,7 +174,7 @@ def test_build_sfpk_exports_binary_voice_models_and_embedding_vectors(tmp_path, 
     fake_voice_module.ROLES = ("duration", "pitch", "acoustic", "vocoder")
     fake_voice_module.Voice = FakeVoice
     fake_nofs_module = types.ModuleType("opensv_train.nofs")
-    fake_nofs_module.vector_hex = lambda _value: VECTOR
+    fake_nofs_module.vector_hex = lambda value: "AB" * (value.size * 4)
     monkeypatch.setitem(sys.modules, "opensv_train.voice", fake_voice_module)
     monkeypatch.setitem(sys.modules, "opensv_train.nofs", fake_nofs_module)
 
