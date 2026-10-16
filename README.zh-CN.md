@@ -308,7 +308,7 @@ my-dataset/
 
 ## WebUI 声库打包（SVPK 实验版）
 
-在 WebUI 的 Results 页面完成“Compare voices”后，会弹出格式选择窗口。选择“使用 SVPK 格式打包”，在弹窗中填写声库名称、供应商/作者、整数版本，选择 `profile.png` 头像与背景 PNG，然后点击“开始打包”。不需要手动创建或导入 JSON。当前 SVPK 打包仅支持普通单文件 `voice.nofs`，共享模型 `info.*.nofs` 暂不支持该流程。
+在 WebUI 的 Results 页面完成“Compare voices”后，会弹出格式选择窗口。选择“使用 SVPK 格式打包”，在弹窗中填写声库名称、供应商/作者、整数版本，选择 `profile.png` 头像与背景 PNG，然后点击“开始打包”。不需要手动创建或导入 JSON。当前 SVPK 打包仅支持普通单文件 `voice.nofs`，共享模型 `info.*.nofs` 暂不支持该流程。弹窗还提供四种 **仅用于诊断** 的 256 字节字段预设：`zero`（默认）、`random`、`sha256-chain`、`aes256-cbc-test`。AES 选项使用合成、可公开推导的测试密钥/IV，并非 Synthesizer V 的密钥或官方格式。
 
 SFPK 现在提供**实验性本机依赖版导出**。选择普通二进制 `voice.nofs` 时，`trainsv package-sfpk` 会把四类 DNNI 模型写入你指定的 Synthesizer V `models` 目录，以模型内容 MD5 作为 ID，并从原声库提取 32 个 float32 的声学风格/F0 向量，以及 128 个 float32 的 `duration_style` 向量，生成 `info.nofs` JSON 描述与 `config.json`，最后将这两个文件按样本结构打入 SFPK。SFPK **不包含模型二进制**，因此目标安装必须已有对应的模型依赖。Flat 中的导入、歌手选择和实际渲染尚未验证；通过手动测试之前，请勿把生成文件视为可用声库。
 
@@ -326,7 +326,7 @@ trainsv package-svpk `
   --version-number 101
 ```
 
-**已知限制：当前输出不可安装。** 已实测：当前工具将 256 字节外层字段置零后，Sharp 导入没有反应；将 Hanakuma Chifuyu 的 256 字节字段复制到自制包后，Sharp 能识别该包，但提示数据损坏。这强烈暗示字段参与包专属完整性/认证校验。256 字节长度与 RSA-2048 签名相符，但算法、签名覆盖范围及官方签署流程尚未证实。当前输出只能用于研究内部 ZIP 和元数据，不能当作可安装声库或发布；不能直接复制其他官方包的字段来解决。命令行的 `--license` 参数可选；若未提供，打包器会生成包含 `!language en-us` 与 `!language zh-cn` 区块的 `license.txt` 占位文本（按样本中观察到的语言标记格式）。它只说明尚未指定正式许可条款，并不会替你声明授权；实际发布前应填写你有权发布的真实许可条款。
+**已知限制：当前输出不可安装。** 已实测：当前工具将 256 字节外层字段置零后，Sharp 导入没有反应；将 Hanakuma Chifuyu 的 256 字节字段复制到自制包后，Sharp 能识别该包，但提示数据损坏。这强烈暗示字段可能参与包专属完整性/认证校验。用户提供的 STARDUST_INFINITY 样本也在偏移量 264 处开始 ZIP；其 256 字节字段包含 162 种不同字节、没有零字节，与 Teto 字段按位置仅有 1 个字节相同，观察到的字节熵约为 7.17 bit/byte。这符合高熵数据的表现，却不能识别具体算法。仅凭 256 字节长度，无法区分 RSA-2048 签名、任意数据或 16 个 AES-CBC 密文块；算法、签名覆盖范围和官方校验流程仍未确认。当前输出只能用于研究内部 ZIP 和元数据，不能当作可安装声库或发布；不能直接复制其他官方包的字段来解决。`random`、`sha256-chain` 和 `aes256-cbc-test` 只用于比较应用对不同合成字节的反应，不会重现官方认证数据，也不代表能够生成有效安装包。命令行的 `--license` 参数可选；若未提供，打包器会生成包含 `!language en-us` 与 `!language zh-cn` 区块的 `license.txt` 占位文本（按样本中观察到的语言标记格式）。它只说明尚未指定正式许可条款，并不会替你声明授权；实际发布前应填写你有权发布的真实许可条款。
 
 包内文件名与顺序按已检查的 `KASANE_TETO_AI_104.svpk` 样例设置：`voice.nofs`、`license.txt`、`profile.png`、`background.png`、`package-config`。
 
