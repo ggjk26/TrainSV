@@ -744,7 +744,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <div class="pkg-form">
     <div class="field" data-id="sfpk_name" data-label="声库名称" data-ph="例如：Luo Tianyi"></div>
     <div class="field" data-id="sfpk_vendor" data-label="作者 / 供应商" data-ph="例如：个人或工作室"></div>
-    <div class="field" data-id="sfpk_version" data-label="声库版本" data-value="101" data-ph="101" data-hint="可使用 101、106 或 106b1 等版本标识。"></div>
+    <div class="field" data-id="sfpk_version" data-label="声库版本（可留空）" data-ph="101" data-hint="留空时保留来源声库已有版本；输入后会覆盖来源版本，可使用 101、106 或 106b1 等标识。"></div>
     <div class="field" data-id="sfpk_models_root" data-kind="path" data-mode="dir" data-label="Synthesizer V 的 models 目录" data-hint="选择包含 acoustic、vocoder、duration、f0 等子目录的现有 models 文件夹。新模型会按内容 MD5 命名写入相应子目录，已有同名但内容不同的文件不会被覆盖。"></div>
     <div class="field" data-id="sfpk_output" data-kind="path" data-mode="save" data-ext="sfpk" data-label="SFPK 保存位置" data-hint="生成的 SFPK 仅包含 config.json 与 info.nofs，所引用的模型仍在上方选定的本机 models 目录。"></div>
     <p class="status bad" id="sfpkFormError" role="alert"></p>
@@ -1062,13 +1062,14 @@ const B={
     else if(!/\.nofs$/i.test(voicePath))p.push("请选择 .nofs 文件，而不是目录或其他文件。");
     if(!val("sfpk_name"))p.push("请填写声库名称。");
     if(!val("sfpk_vendor"))p.push("请填写作者 / 供应商。");
-    if(!version)p.push("请填写声库版本，例如 101 或 106b1。");
+    
     if(!val("sfpk_models_root"))p.push("请选择 Synthesizer V 的 models 目录。");
     let output=val("sfpk_output");
     if(!output)p.push("请指定 SFPK 保存位置。");
     else if(!/\.sfpk$/i.test(output)){output += ".sfpk";const el=document.getElementById("sfpk_output");if(el)el.value=output;}
     a.push("--voice",voicePath,"--models-root",val("sfpk_models_root"),"--output",output,
-      "--name",val("sfpk_name"),"--vendor",val("sfpk_vendor"),"--version",version);
+      "--name",val("sfpk_name"),"--vendor",val("sfpk_vendor"));
+    if(version)a.push("--version",version);
     return{cmd:"package-sfpk",label:"打包 SFPK 测试包",args:a,p}
   },
   synth(){const p=[];if(!val("voice"))p.push("Choose a voice (step 1).");if(!val("s_output"))p.push("Choose where to save the data.");
@@ -1368,7 +1369,7 @@ function openSfpkDialog(){
   if(!val("sfpk_vendor"))document.getElementById("sfpk_vendor").value="TrainSV user";
   if(!val("sfpk_version")){
     const m=basename(voicePath).match(/^info\.(.+)\.nofs$/i);
-    document.getElementById("sfpk_version").value=m?m[1]:"101";
+    if(m)document.getElementById("sfpk_version").value=m[1];
   }
   suggestSfpkOutput();
   $("#sfpkFormError").textContent="";
