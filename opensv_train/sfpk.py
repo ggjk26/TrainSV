@@ -228,6 +228,19 @@ def _config_for(info: dict) -> dict:
     }
 
 
+def _optional_png(path: str | Path | None, label: str) -> Path | None:
+    """Resolve an optional PNG asset and reject non-PNG content."""
+    if path is None or not str(path).strip():
+        return None
+    resolved = Path(path).expanduser()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"{label} file not found: {resolved}")
+    with resolved.open("rb") as stream:
+        if stream.read(8) != b"\x89PNG\r\n\x1a\n":
+            raise ValueError(f"{label} must be a PNG file: {resolved}")
+    return resolved
+
+
 def build_sfpk(
     *,
     voice: str | Path,
@@ -236,20 +249,23 @@ def build_sfpk(
     name: str | None = None,
     vendor: str | None = None,
     version: str | None = None,
+    profile: str | Path | None = None,
+    background: str | Path | None = None,
 ) -> Path:
-    """Build a Flat SFPK that references DNNI files in a local models directory.
+    """Build a Flat SFPK with local DNNI dependencies and optional PNG artwork.
 
     For a binary voice.nofs, DNNI payloads are split out to the selected model
     directory and an info.nofs JSON is derived from its speaker/style vectors.
     For an existing info.nofs, that metadata is reused after validating its
-    referenced DNNI files. The archive matches the observed minimal SFPK layout
-    (config.json and info.nofs) and does not embed model binaries, so it is not
-    portable to another installation unless those model dependencies are also
-    installed there.
+    referenced DNNI files. Selected profile.png and background.png artwork is
+    placed at the SFPK archive root. Model binaries remain in the local models
+    tree and are not bundled into the SFPK.
     """
     source = Path(voice).expanduser()
     models_root = Path(models_root).expanduser().resolve()
     output = Path(output).expanduser()
+    profile_path = _optional_png(profile, "profile.png")
+    background_path = _optional_png(background, "background.png")
 
     if not source.is_file():
         raise FileNotFoundError(f"voice file not found: {source}")
@@ -290,9 +306,18 @@ def build_sfpk(
         ) as archive:
             archive.writestr("config.json", config_bytes)
             archive.writestr("info.nofs", info_bytes)
+            if profile_path is not None:
+                archive.write(profile_path, arcname="profile.png")
+            if background_path is not None:
+                archive.write(background_path, arcname="background.png")
 
+        expected_members = ["config.json", "info.nofs"]
+        if profile_path is not None:
+            expected_members.append("profile.png")
+        if background_path is not None:
+            expected_members.append("background.png")
         with zipfile.ZipFile(temp_output) as archive:
-            if archive.namelist() != ["config.json", "info.nofs"]:
+            if archive.namelist() != expected_members:
                 raise ValueError(f"unexpected SFPK members: {archive.namelist()}")
             bad_member = archive.testzip()
             if bad_member is not None:
