@@ -339,10 +339,12 @@ trainsv package-sfpk `
   --output "out\我的声库.sfpk" `
   --name "我的声库" `
   --vendor "作者或工作室" `
-  --version 101
+  --version 101 `
+  --profile "assets\profile.png" `
+  --background "assets\background.png"
 ```
 
-也可以将从 Flat 包中提取的 `info.nofs` JSON 传给 `--voice`；其引用的所有模型 ID 必须已存在于所选 models 目录。普通 `voice.nofs` 则会导出 acoustic、vocoder、duration、F0 四类模型到相应子目录，并以模型内容的 MD5 作为 ID。生成的 SFPK 只包含 `config.json` 和 `info.nofs`，不是可独立迁移的完整包。请选择 Synthesizer V Studio Flat 实际使用的 `models` 目录，并在测试前备份。当前实现参照一个已检查的 SFPK 样本，仍需在 Flat 中导入、选择歌手并实际渲染验证。
+也可以将从 Flat 包中提取的 `info.nofs` JSON 传给 `--voice`；其引用的所有模型 ID 必须已存在于所选 models 目录。普通 `voice.nofs` 则会导出 acoustic、vocoder、duration、F0 四类模型到相应子目录，并以模型内容的 MD5 作为 ID。SFPK 基本包含 `config.json` 和 `info.nofs`；指定 `--profile` 和/或 `--background` 后，会把 PNG 以 `profile.png`、`background.png` 的名称额外放入包根目录。两个图片参数都是可选的。不像模型依赖一样，图片会随 SFPK 一起打包；四类模型二进制仍在本机 `models` 目录，不包含在包内，因此它不是可独立迁移的完整包。请选择 Synthesizer V Studio Flat 实际使用的 `models` 目录，并在测试前备份。当前实现参照一个已检查的 SFPK 样本，仍需在 Flat 中导入、选择歌手并实际渲染验证。
 
 ## 常见问题
 
