@@ -1,19 +1,19 @@
 """Build diagnostic SVPK-layout archives for TrainSV-finetuned voice banks.
 
-The inspected Teto package and the user-provided Hanakuma Chifuyu header both
-have an eight-byte magic/version prefix, 256 bytes of high-entropy, package-
-specific data, then a ZIP archive at offset 264. The user reports that a
-zero-filled field makes Sharp ignore the package; transplanting Chifuyu's field
-onto the modified custom package makes Sharp recognize it but report corrupted
-data. This strongly suggests package-bound integrity/authentication data. A
-256-byte field is consistent with an RSA-2048-sized signature, but the
-algorithm and signed payload are unverified. Outputs are diagnostic only and
-are not installable SVPKs.
+Observed Synthesizer V SVPK samples have an eight-byte magic/version prefix,
+256 bytes of package-specific high-entropy data, then a ZIP archive at offset
+264. Zero filling makes Sharp ignore a package; transplanting a commercial
+sample's field onto modified content causes a corruption warning. The field's
+formal encoding and signing process remain unknown. The selectable nonzero
+presets in this module are synthetic diagnostics, not official signatures and
+not a way to create installable SVPKs.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import secrets
 import tempfile
 import zipfile
 from pathlib import Path
@@ -21,7 +21,70 @@ from pathlib import Path
 SVPK_PREFIX = b"SVPK\x00\x01\x00\x00"
 SVPK_OPAQUE_FIELD_SIZE = 256
 SVPK_HEADER_SIZE = len(SVPK_PREFIX) + SVPK_OPAQUE_FIELD_SIZE
+SVPK_HEADER_PRESETS = ("zero", "random", "sha256-chain", "aes256-cbc-test")
 _ARCHIVE_MEMBERS = ("voice.nofs", "license.txt", "profile.png", "background.png", "package-config")
+_HEADER_DOMAIN = b"TrainSV synthetic SVPK diagnostic field v1\x00"
+
+
+def _sha256_file(path: Path) -> bytes:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.digest()
+
+
+def _make_diagnostic_header_field(preset: str, package_digest: bytes) -> bytes:
+    """Return a 256-byte test field; none of these presets is an official format."""
+    if preset not in SVPK_HEADER_PRESETS:
+        raise ValueError(
+            f"unknown SVPK header preset {preset!r}; choose one of {', '.join(SVPK_HEADER_PRESETS)}"
+        )
+    if len(package_digest) != hashlib.sha256().digest_size:
+        raise ValueError("package_digest must be a 32-byte SHA-256 digest")
+    if preset == "zero":
+        return bytes(SVPK_OPAQUE_FIELD_SIZE)
+    if preset == "random":
+        return secrets.token_bytes(SVPK_OPAQUE_FIELD_SIZE)
+
+    if preset == "sha256-chain":
+        field = bytearray()
+        counter = 0
+        while len(field) < SVPK_OPAQUE_FIELD_SIZE:
+            field.extend(
+                hashlib.sha256(
+                    _HEADER_DOMAIN + b"sha256-chain\x00" + package_digest + counter.to_bytes(4, "big")
+                ).digest()
+            )
+            counter += 1
+        return bytes(field[:SVPK_OPAQUE_FIELD_SIZE])
+
+    # This is deliberately synthetic. Its key/IV are publicly derivable from
+    # the ZIP digest, so it is not a secret and cannot impersonate official
+    # authentication data. The plaintext is a 240-byte diagnostic marker;
+    # PKCS#7 adds one 16-byte block, yielding exactly 256 encrypted bytes.
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    except ImportError as error:
+        raise RuntimeError(
+            "AES-256-CBC diagnostic mode requires the 'cryptography' package; install it with: python -m pip install cryptography"
+        ) from error
+
+    key = hashlib.sha256(_HEADER_DOMAIN + b"test-key\x00" + package_digest).digest()
+    iv = hashlib.sha256(_HEADER_DOMAIN + b"test-iv\x00" + package_digest).digest()[:16]
+    marker = (
+        b"TrainSV synthetic AES-256-CBC diagnostic field; not an official signature; ZIP sha256="
+        + package_digest.hex().encode("ascii")
+    )
+    if len(marker) > 240:
+        raise ValueError("internal AES diagnostic marker exceeds its fixed plaintext size")
+    plaintext = marker.ljust(240, b"\x00")
+    padded = plaintext + bytes([16]) * 16
+    encryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
+    result = encryptor.update(padded) + encryptor.finalize()
+    if len(result) != SVPK_OPAQUE_FIELD_SIZE:
+        raise ValueError(f"internal AES diagnostic field has unexpected size: {len(result)}")
+    return result
 
 
 def build_svpk(
@@ -36,19 +99,24 @@ def build_svpk(
     version_string: str = "101",
     version_number: int = 101,
     depending_version_number: int = 0,
+    header_preset: str = "zero",
 ) -> Path:
     """Build a diagnostic archive with an SVPK-like prefix, not an installable package.
 
-    The 256-byte package-specific outer field is zero-filled because its
-    official encoding/signing process is unknown. Sharp ignores this package;
-    transplanting Chifuyu's field onto modified content triggers a corruption
-    error. Do not distribute this as a working voicebank installer.
+    header_preset chooses zero, random, sha256-chain, or aes256-cbc-test.
+    Nonzero presets only test how a high-entropy-looking field affects parser
+    feedback. The SHA-256 and AES fields are synthetic, not official signatures.
     """
     voice = Path(voice).expanduser()
     license_file = Path(license_file).expanduser() if license_file is not None else None
     profile = Path(profile).expanduser()
     background = Path(background).expanduser()
     output = Path(output).expanduser()
+
+    if header_preset not in SVPK_HEADER_PRESETS:
+        raise ValueError(
+            f"unknown SVPK header preset {header_preset!r}; choose one of {', '.join(SVPK_HEADER_PRESETS)}"
+        )
 
     for label, path in (
         ("voice.nofs", voice),
@@ -138,9 +206,11 @@ def build_svpk(
             )
 
         try:
+            package_digest = _sha256_file(inner_zip)
+            header_field = _make_diagnostic_header_field(header_preset, package_digest)
             with temp_output.open("wb") as result, inner_zip.open("rb") as source:
                 result.write(SVPK_PREFIX)
-                result.write(bytes(SVPK_OPAQUE_FIELD_SIZE))
+                result.write(header_field)
                 while chunk := source.read(1024 * 1024):
                     result.write(chunk)
 
@@ -154,6 +224,8 @@ def build_svpk(
                     raise ValueError(f"corrupt ZIP member: {bad_member}")
                 if json.loads(archive.read("package-config")) != config:
                     raise ValueError("package-config failed validation")
+            if temp_output.read_bytes()[SVPK_HEADER_SIZE:SVPK_HEADER_SIZE + 4] != b"PK\x03\x04":
+                raise ValueError("SVPK ZIP payload is not at the expected offset 264")
 
             os.replace(temp_output, output)
         finally:
