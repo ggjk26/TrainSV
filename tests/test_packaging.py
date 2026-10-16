@@ -3,7 +3,7 @@ import zipfile
 
 import pytest
 
-from opensv_train.packaging import SVPK_HEADER_SIZE, SVPK_PREFIX, build_svpk
+from opensv_train.packaging import (SVPK_HEADER_SIZE, SVPK_HEADER_PRESETS, SVPK_PREFIX, _make_diagnostic_header_field, build_svpk)
 
 
 def _png(path):
@@ -145,4 +145,69 @@ def test_build_svpk_rejects_blank_version_string(tmp_path):
             vendor_name="TrainSV test",
             version_string=" ",
             version_number=101,
+        )
+
+
+@pytest.mark.parametrize("preset", ["random", "sha256-chain", "aes256-cbc-test"])
+def test_nonzero_header_presets_keep_zip_at_offset_264(tmp_path, preset):
+    voice, license_file, profile, background = _assets(tmp_path)
+    output = tmp_path / f"voice-{preset}.svpk"
+
+    result = build_svpk(
+        voice=voice,
+        license_file=license_file,
+        profile=profile,
+        background=background,
+        output=output,
+        product_name="Test Voice",
+        vendor_name="TrainSV test",
+        version_string="101",
+        version_number=101,
+        header_preset=preset,
+    )
+
+    raw = result.read_bytes()
+    assert raw[:8] == SVPK_PREFIX
+    assert len(raw[8:SVPK_HEADER_SIZE]) == 256
+    assert raw[8:SVPK_HEADER_SIZE] != bytes(256)
+    assert raw.find(b"PK\x03\x04") == SVPK_HEADER_SIZE
+    with zipfile.ZipFile(result) as archive:
+        assert archive.testzip() is None
+        assert archive.namelist() == [
+            "voice.nofs", "license.txt", "profile.png", "background.png", "package-config"
+        ]
+
+
+def test_header_preset_helper_has_fixed_field_size_and_validates_names():
+    digest = bytes(range(32))
+    assert set(SVPK_HEADER_PRESETS) == {"zero", "random", "sha256-chain", "aes256-cbc-test"}
+
+    for preset in SVPK_HEADER_PRESETS:
+        field = _make_diagnostic_header_field(preset, digest)
+        assert len(field) == 256
+        if preset == "zero":
+            assert field == bytes(256)
+        else:
+            assert field != bytes(256)
+
+    sha_a = _make_diagnostic_header_field("sha256-chain", digest)
+    sha_b = _make_diagnostic_header_field("sha256-chain", digest)
+    aes_a = _make_diagnostic_header_field("aes256-cbc-test", digest)
+    aes_b = _make_diagnostic_header_field("aes256-cbc-test", digest)
+    assert sha_a == sha_b
+    assert aes_a == aes_b
+
+
+def test_build_svpk_rejects_unknown_header_preset(tmp_path):
+    voice, license_file, profile, background = _assets(tmp_path)
+    with pytest.raises(ValueError, match="unknown SVPK header preset"):
+        build_svpk(
+            voice=voice,
+            license_file=license_file,
+            profile=profile,
+            background=background,
+            output=tmp_path / "voice.svpk",
+            product_name="Test Voice",
+            vendor_name="TrainSV test",
+            header_preset="official-signature",
         )
