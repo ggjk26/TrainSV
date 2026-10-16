@@ -277,9 +277,11 @@ def package_svpk_command(arguments) -> None:
         version_string=arguments.version_string,
         version_number=arguments.version_number,
         depending_version_number=arguments.depending_version_number,
+        header_preset=arguments.header_preset,
     )
     print(f"wrote {output} ({output.stat().st_size:,} bytes)")
-    print("Warning: diagnostic-only output; Sharp ignores a zero-filled SVPK header field. This file is not installable or suitable for distribution.")
+    print(f"SVPK diagnostic header preset: {arguments.header_preset}")
+    print("Warning: synthetic header fields are not official signatures. This file remains diagnostic-only, is not installable, and is not suitable for distribution.")
 
 def package_sfpk_command(arguments) -> None:
     output = build_sfpk(
@@ -381,7 +383,7 @@ def parser() -> argparse.ArgumentParser:
     command = commands.add_parser("inspect", help="summarise a voice's models and phone sets")
     command.add_argument("--voice", required=True)
     command.set_defaults(handler=inspect)
-    command = commands.add_parser("package-svpk", help="build a diagnostic-only SVPK-layout container (not installable in Sharp)")
+    command = commands.add_parser("package-svpk", help="build a diagnostic-only SVPK container with a selectable synthetic header field (not installable in Sharp)")
     command.add_argument("--voice", required=True, help="trained voice.nofs file")
     command.add_argument("--license", dest="license_file", help="optional license text file to include")
     command.add_argument("--profile", required=True, help="voicebank avatar PNG")
@@ -392,6 +394,12 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--version-string", default="101")
     command.add_argument("--version-number", type=int, default=101)
     command.add_argument("--depending-version-number", type=int, default=0)
+    command.add_argument(
+        "--header-preset",
+        choices=("zero", "random", "sha256-chain", "aes256-cbc-test"),
+        default="zero",
+        help="diagnostic-only 256-byte field generator; none of these presets recreates the official signing/authentication data",
+    )
     command.set_defaults(handler=package_svpk_command)
 
     command = commands.add_parser("package-sfpk", help="build an experimental Flat SFPK that references local DNNI dependencies")
