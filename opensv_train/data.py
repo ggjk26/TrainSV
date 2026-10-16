@@ -12,6 +12,7 @@ from scipy.signal import resample_poly
 
 from .acoustic import TimedPhoneme
 from .duration import PhonemeDuration, Syllable
+from .f0 import F0_PROFILES, f0_cache_tag, resolve_f0_profile
 from .pitch import PITCH_CONTEXT_SECONDS, PitchNote
 
 FRAME_SECONDS = 0.005
@@ -21,37 +22,6 @@ PHRASE_BREAK_SECONDS = 0.2
 SPECIAL_PHONEMES = {"SP": "sil", "AP": "br"}
 LANGUAGE_CODES = {"ja": "japanese", "zh": "mandarin", "en": "english", "yue": "cantonese", "es": "spanish"}
 NOTE_NAMES = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
-
-# Presets affect only F0 extraction from the input WAVs; they do not change MIDI
-# note labels or replace training the Pitch model on a dataset with note labels.
-F0_PROFILES = {
-    "standard": (65.0, 1100.0, 0.60),
-    "vocaloid": (45.0, 1400.0, 0.45),
-}
-
-
-def resolve_f0_profile(
-    profile: str = "standard",
-    *,
-    floor: float | None = None,
-    ceiling: float | None = None,
-    voicing_threshold: float | None = None,
-) -> tuple[float, float, float]:
-    """Resolve the selected F0 preset and validate any numeric overrides."""
-    if profile not in F0_PROFILES:
-        raise ValueError(f"unknown F0 profile {profile!r}; choose one of {', '.join(F0_PROFILES)}")
-    default_floor, default_ceiling, default_threshold = F0_PROFILES[profile]
-    resolved_floor = default_floor if floor is None else float(floor)
-    resolved_ceiling = default_ceiling if ceiling is None else float(ceiling)
-    resolved_threshold = default_threshold if voicing_threshold is None else float(voicing_threshold)
-    if not math.isfinite(resolved_floor) or resolved_floor <= 0:
-        raise ValueError("F0 floor must be a positive finite frequency in Hz")
-    if not math.isfinite(resolved_ceiling) or resolved_ceiling <= resolved_floor:
-        raise ValueError("F0 ceiling must be a finite frequency greater than the F0 floor")
-    if not math.isfinite(resolved_threshold) or not 0 < resolved_threshold <= 1:
-        raise ValueError("F0 voicing threshold must be greater than 0 and at most 1")
-    return resolved_floor, resolved_ceiling, resolved_threshold
-
 
 @dataclass
 class Phone:
@@ -259,7 +229,7 @@ def load_dataset(
                     raise ValueError(f"{name}: {word + 1} note groups for {len(counts)} ph_num words")
             # Include analysis parameters in the cache key: switching to a
             # different F0 preset must never silently reuse an old contour.
-            cache_tag = f"f0-{floor:g}-{ceiling:g}-v{threshold:g}"
+            cache_tag = f0_cache_tag(floor, ceiling, threshold)
             cached = cache / f"{name}.{cache_tag}.npz"
             if cached.exists():
                 with np.load(cached) as stored:
