@@ -181,10 +181,12 @@ trainsv package-sfpk `
   --output "out\MySinger.sfpk" `
   --name "My Singer" `
   --vendor "Your name or studio" `
-  --version 101
+  --version 101 `
+  --profile "assets\profile.png" `
+  --background "assets\background.png"
 ```
 
-You can also provide an extracted Flat `info.nofs` JSON file as `--voice`; its model ID dependencies must already exist under the selected models root. For a regular binary `voice.nofs`, TrainSV writes acoustic, vocoder, duration, and F0 model files into their corresponding subfolders, then refers to their content MD5 IDs from `info.nofs`. The SFPK itself contains only `config.json` and `info.nofs`; it is not a portable, self-contained package. Choose the actual `models` folder used by Synthesizer V Studio Flat, and make a backup before testing. This format writer follows one inspected SFPK sample and remains experimental until it imports, selects and renders correctly in Flat.
+You can also provide an extracted Flat `info.nofs` JSON file as `--voice`; its model ID dependencies must already exist under the selected models root. For a regular binary `voice.nofs`, TrainSV writes acoustic, vocoder, duration, and F0 model files into their corresponding subfolders, then refers to their content MD5 IDs from `info.nofs`. The SFPK contains `config.json` and `info.nofs`; when supplied, `--profile` and `--background` add the selected PNG files at the archive root as `profile.png` and `background.png`. Both artwork flags are optional. Model binaries are not included, so this is not a portable, self-contained package. Choose the actual `models` folder used by Synthesizer V Studio Flat, and make a backup before testing. This format writer follows one inspected SFPK sample and remains experimental until it imports, selects and renders correctly in Flat.
 
 Each 16-bit weight matrix stores a word that OpenSV reads as the original engine's input-quantization setting. Every stock matrix's inputs fit `|x| < 2^(15 - word)`, so before saving, the toolkit measures inputs on the training data and widens that range where finetuning outgrew it.
 
