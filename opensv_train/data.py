@@ -12,7 +12,7 @@ from scipy.signal import resample_poly
 
 from .acoustic import TimedPhoneme
 from .duration import PhonemeDuration, Syllable
-from .f0 import F0_PROFILES, f0_cache_tag, resolve_f0_profile
+from .f0 import F0_PROFILES, f0_cache_tag, process_f0_track, resolve_f0_profile
 from .pitch import PITCH_CONTEXT_SECONDS, PitchNote
 
 FRAME_SECONDS = 0.005
@@ -192,6 +192,9 @@ def load_dataset(
     cache: Path | None = None,
     f0_range: tuple[float, float] = (65.0, 1100.0),
     f0_voicing_threshold: float = 0.60,
+    f0_smoothing: int = 0,
+    f0_octave_correction: bool = False,
+    f0_shift_semitones: float = 0.0,
 ) -> list[Utterance]:
     directory = Path(directory)
     mapping = phoneme_map or {}
@@ -243,7 +246,18 @@ def load_dataset(
                 tuning = tuning_offset(notes)
                 for note in notes:
                     note.pitch = None if note.rest else note.pitch - tuning
-            utterances.append(Utterance(name, audio, phones, notes, times, values, tuning, (row.get("style") or "").strip() or None))
+            processed_values = process_f0_track(
+                values,
+                smoothing_frames=f0_smoothing,
+                correct_octave=f0_octave_correction,
+                shift_semitones=f0_shift_semitones,
+            )
+            utterances.append(
+                Utterance(
+                    name, audio, phones, notes, times, processed_values, tuning,
+                    (row.get("style") or "").strip() or None,
+                )
+            )
     return utterances
 
 
