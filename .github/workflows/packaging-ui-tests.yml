@@ -27,6 +27,6 @@ jobs:
         with:
           node-version: "22"
       - name: Install test dependency
-        run: python -m pip install pytest
+        run: python -m pip install pytest cryptography
       - name: Run SVPK and WebUI regression tests
         run: python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py
