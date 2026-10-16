@@ -197,9 +197,19 @@ def build_svpk(
                 if isinstance(source, Path):
                     archive.write(source, arcname=archive_name)
                 else:
-                    archive.writestr(archive_name, source)
+                    # Keep generated entry timestamps fixed so the inner ZIP is
+                    # identical across header-preset comparisons.
+                    member = zipfile.ZipInfo(archive_name, date_time=(1980, 1, 1, 0, 0, 0))
+                    member.compress_type = zipfile.ZIP_DEFLATED
+                    archive.writestr(
+                        member, source,
+                        compress_type=zipfile.ZIP_DEFLATED,
+                        compresslevel=9,
+                    )
+            config_member = zipfile.ZipInfo("package-config", date_time=(1980, 1, 1, 0, 0, 0))
+            config_member.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(
-                "package-config",
+                config_member,
                 json.dumps(config, ensure_ascii=False, indent=2).replace("\n", "\r\n"),
                 compress_type=zipfile.ZIP_DEFLATED,
                 compresslevel=9,
