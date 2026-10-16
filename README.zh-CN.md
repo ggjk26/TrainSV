@@ -310,7 +310,7 @@ my-dataset/
 
 在 WebUI 的 Results 页面完成“Compare voices”后，会弹出格式选择窗口。选择“使用 SVPK 格式打包”，在弹窗中填写声库名称、供应商/作者、整数版本，选择 `profile.png` 头像与背景 PNG，然后点击“开始打包”。不需要手动创建或导入 JSON。当前 SVPK 打包仅支持普通单文件 `voice.nofs`，共享模型 `info.*.nofs` 暂不支持该流程。
 
-SFPK 现在提供**实验性本机依赖版导出**。选择普通二进制 `voice.nofs` 时，`trainsv package-sfpk` 会把四类 DNNI 模型写入你指定的 Synthesizer V `models` 目录，以模型内容 MD5 作为 ID，并从原声库提取 32 个 float32 的风格嵌入向量，生成 `info.nofs` JSON 描述与 `config.json`，最后将这两个文件按样本结构打入 SFPK。SFPK **不包含模型二进制**，因此目标安装必须已有对应的模型依赖。Flat 中的导入、歌手选择和实际渲染尚未验证；通过手动测试之前，请勿把生成文件视为可用声库。
+SFPK 现在提供**实验性本机依赖版导出**。选择普通二进制 `voice.nofs` 时，`trainsv package-sfpk` 会把四类 DNNI 模型写入你指定的 Synthesizer V `models` 目录，以模型内容 MD5 作为 ID，并从原声库提取 32 个 float32 的声学风格/F0 向量，以及 128 个 float32 的 `duration_style` 向量，生成 `info.nofs` JSON 描述与 `config.json`，最后将这两个文件按样本结构打入 SFPK。SFPK **不包含模型二进制**，因此目标安装必须已有对应的模型依赖。Flat 中的导入、歌手选择和实际渲染尚未验证；通过手动测试之前，请勿把生成文件视为可用声库。
 
 命令行也可使用 `trainsv package-svpk`：
 
