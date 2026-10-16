@@ -36,7 +36,7 @@ trainsv package-svpk `
 
 ## SFPK（实验性本机依赖版）
 
-`.sfpk` 是 Synthesizer V Studio Flat / Flat Manager 使用的另一种格式，不能把 `.svpk` 改名后得到。我们检查的 Chifuyu 样本包含 ZIP 归档中的 `config.json` 和 `info.nofs`，而 `info.nofs` 通过 32 位浮点嵌入向量和模型 ID 引用 acoustic、vocoder、duration 与 F0 模型。当前 TrainSV 的实验实现根据这个样本格式生成本机依赖版包。
+`.sfpk` 是 Synthesizer V Studio Flat / Flat Manager 使用的另一种格式，不能把 `.svpk` 改名后得到。我们检查的 Chifuyu 样本包含 ZIP 归档中的 `config.json` 和 `info.nofs`，而 `info.nofs` 通过模型 ID 引用 acoustic、vocoder、duration 与 F0 模型；样本中的声学风格和 F0 向量各为 32 个 float32，`duration_style` 则为 128 个 float32（1024 个十六进制字符）。当前 TrainSV 的实验实现根据这个样本格式生成本机依赖版包。
 
 ```powershell
 trainsv package-sfpk `
