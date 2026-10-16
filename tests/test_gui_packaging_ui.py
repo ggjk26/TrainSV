@@ -101,3 +101,12 @@ def test_svpk_output_suggestion_preserves_unicode_name_and_manual_paths():
 def test_successful_comparison_opens_the_package_format_chooser():
     assert 'if(JOB.kind==="evaluate"){go("results");showPackageFormatDialog()}' in PAGE
     assert 'if(target.isfile&&!confirm("输出文件已存在：\\n"+val("svpk_output")+"\\n\\n是否覆盖它？"))return;' in PAGE
+
+
+def test_training_and_evaluation_expose_f0_tracking_profiles():
+    assert 'id="t_f0_profile"' in PAGE
+    assert 'value="standard">Standard (65–1100 Hz, threshold 0.60)' in PAGE
+    assert 'value="vocaloid">VOCALOID / synthetic singing (45–1400 Hz, threshold 0.45)' in PAGE
+    assert 'a.push("--f0-profile",val("t_f0_profile")||"standard")' in PAGE
+    assert "F0 追踪预设只影响训练/评估时从 WAV 提取基频的方式" in PAGE
+    assert "没有 note_seq/音符标注，Pitch 模型无法训练" in PAGE
