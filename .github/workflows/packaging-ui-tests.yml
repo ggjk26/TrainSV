@@ -31,5 +31,7 @@ jobs:
           node-version: "22"
       - name: Install test dependency
         run: python -m pip install pytest cryptography
-      - name: Run SVPK and WebUI regression tests
+      - name: Check Python syntax
+        run: python -m compileall -q opensv_train
+      - name: Run SVPK, F0 profile and WebUI regression tests
         run: python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py tests/test_f0_profile.py
