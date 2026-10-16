@@ -746,6 +746,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div class="field" data-id="sfpk_name" data-label="声库名称（可留空）" data-ph="例如：Luo Tianyi" data-hint="留空时尽量保留来源声库名称；填写后覆盖。"></div>
     <div class="field" data-id="sfpk_vendor" data-label="作者 / 供应商（可留空）" data-ph="例如：个人或工作室" data-hint="留空时保留来源声库的作者信息；普通 voice.nofs 未提供时会使用 TrainSV。"></div>
     <div class="field" data-id="sfpk_version" data-label="声库版本（可留空）" data-ph="101" data-hint="留空时保留来源声库已有版本；输入后会覆盖来源版本，可使用 101、106 或 106b1 等标识。"></div>
+    <div class="field" data-id="sfpk_profile" data-kind="path" data-mode="file" data-ext="png" data-label="头像图片 profile.png（可留空）" data-hint="选择 PNG 头像后，会作为 profile.png 放入 SFPK 根目录。不选择则不额外打包头像。"></div>
+    <div class="field" data-id="sfpk_background" data-kind="path" data-mode="file" data-ext="png" data-label="背景图片 background.png（可留空）" data-hint="选择 PNG 背景后，会作为 background.png 放入 SFPK 根目录。不选择则不额外打包背景。"></div>
     <div class="field" data-id="sfpk_models_root" data-kind="path" data-mode="dir" data-label="Synthesizer V 的 models 目录" data-hint="选择包含 acoustic、vocoder、duration、f0 等子目录的现有 models 文件夹。新模型会按内容 MD5 命名写入相应子目录，已有同名但内容不同的文件不会被覆盖。"></div>
     <div class="field" data-id="sfpk_output" data-kind="path" data-mode="save" data-ext="sfpk" data-label="SFPK 保存位置" data-hint="生成的 SFPK 仅包含 config.json 与 info.nofs，所引用的模型仍在上方选定的本机 models 目录。"></div>
     <p class="status bad" id="sfpkFormError" role="alert"></p>
@@ -1076,6 +1078,8 @@ const B={
     if(val("sfpk_name"))a.push("--name",val("sfpk_name"));
     if(val("sfpk_vendor"))a.push("--vendor",val("sfpk_vendor"));
     if(version)a.push("--version",version);
+    if(val("sfpk_profile"))a.push("--profile",val("sfpk_profile"));
+    if(val("sfpk_background"))a.push("--background",val("sfpk_background"));
     return{cmd:"package-sfpk",label:"打包 SFPK 测试包",args:a,p}
   },
   synth(){const p=[];if(!val("voice"))p.push("Choose a voice (step 1).");if(!val("s_output"))p.push("Choose where to save the data.");
