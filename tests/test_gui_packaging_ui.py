@@ -16,7 +16,7 @@ from trainsv_gui import PAGE
 def test_results_page_exposes_both_package_choices():
     assert 'id="openPackageFormat"' in PAGE
     assert 'id="chooseSvpk"' in PAGE
-    assert "使用 SVPK 格式打包" in PAGE
+    assert "生成 SVPK 诊断包（当前不可安装）" in PAGE
     assert 'id="chooseSfpk"' in PAGE
     assert "使用 SFPK 格式打包（实验）" in PAGE
 
