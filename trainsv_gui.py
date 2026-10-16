@@ -742,8 +742,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 <dialog id="sfpkDialog">
   <div class="pk-head"><b>使用 SFPK 格式打包（实验版）</b><div class="hint">普通 voice.nofs 将转换为 Flat 使用的 info.nofs 描述，并把 acoustic / vocoder / duration / f0 的 .dnni 文件写入你选定的本机 models 目录。SFPK 内只放 config.json 与 info.nofs，不包含模型二进制；这是本机依赖版，暂未验证 Flat 安装和渲染。</div></div>
   <div class="pkg-form">
-    <div class="field" data-id="sfpk_name" data-label="声库名称" data-ph="例如：Luo Tianyi"></div>
-    <div class="field" data-id="sfpk_vendor" data-label="作者 / 供应商" data-ph="例如：个人或工作室"></div>
+    <div class="field" data-id="sfpk_name" data-label="声库名称（可留空）" data-ph="例如：Luo Tianyi" data-hint="留空时尽量保留来源声库名称；填写后覆盖。"></div>
+    <div class="field" data-id="sfpk_vendor" data-label="作者 / 供应商（可留空）" data-ph="例如：个人或工作室" data-hint="留空时保留来源声库的作者信息；普通 voice.nofs 未提供时会使用 TrainSV。"></div>
     <div class="field" data-id="sfpk_version" data-label="声库版本（可留空）" data-ph="101" data-hint="留空时保留来源声库已有版本；输入后会覆盖来源版本，可使用 101、106 或 106b1 等标识。"></div>
     <div class="field" data-id="sfpk_models_root" data-kind="path" data-mode="dir" data-label="Synthesizer V 的 models 目录" data-hint="选择包含 acoustic、vocoder、duration、f0 等子目录的现有 models 文件夹。新模型会按内容 MD5 命名写入相应子目录，已有同名但内容不同的文件不会被覆盖。"></div>
     <div class="field" data-id="sfpk_output" data-kind="path" data-mode="save" data-ext="sfpk" data-label="SFPK 保存位置" data-hint="生成的 SFPK 仅包含 config.json 与 info.nofs，所引用的模型仍在上方选定的本机 models 目录。"></div>
@@ -1060,15 +1060,14 @@ const B={
   sfpk(){const p=[],a=[],voicePath=val("e_new")||val("t_output"),version=val("sfpk_version");
     if(!voicePath)p.push("先选择训练后的声库文件。");
     else if(!/\.nofs$/i.test(voicePath))p.push("请选择 .nofs 文件，而不是目录或其他文件。");
-    if(!val("sfpk_name"))p.push("请填写声库名称。");
-    if(!val("sfpk_vendor"))p.push("请填写作者 / 供应商。");
     
     if(!val("sfpk_models_root"))p.push("请选择 Synthesizer V 的 models 目录。");
     let output=val("sfpk_output");
     if(!output)p.push("请指定 SFPK 保存位置。");
     else if(!/\.sfpk$/i.test(output)){output += ".sfpk";const el=document.getElementById("sfpk_output");if(el)el.value=output;}
-    a.push("--voice",voicePath,"--models-root",val("sfpk_models_root"),"--output",output,
-      "--name",val("sfpk_name"),"--vendor",val("sfpk_vendor"));
+    a.push("--voice",voicePath,"--models-root",val("sfpk_models_root"),"--output",output);
+    if(val("sfpk_name"))a.push("--name",val("sfpk_name"));
+    if(val("sfpk_vendor"))a.push("--vendor",val("sfpk_vendor"));
     if(version)a.push("--version",version);
     return{cmd:"package-sfpk",label:"打包 SFPK 测试包",args:a,p}
   },
@@ -1365,8 +1364,8 @@ function openSfpkDialog(){
   $("#packageStatus").textContent="SFPK 是实验性本机依赖版；生成后必须在 Flat 中验证。";
   if(!voicePath){alert("请先选择训练后的声库文件。");return;}
   if(!/\.nofs$/i.test(voicePath)){alert("请选择训练后的 .nofs 文件或已有 info.*.nofs 文件。");return;}
-  if(!val("sfpk_name"))document.getElementById("sfpk_name").value=val("v_name")||"My Singer";
-  if(!val("sfpk_vendor"))document.getElementById("sfpk_vendor").value="TrainSV user";
+  if(!val("sfpk_name")&&!isInfo(voicePath))document.getElementById("sfpk_name").value=val("v_name")||"My Singer";
+  if(!val("sfpk_vendor")&&!isInfo(voicePath))document.getElementById("sfpk_vendor").value="TrainSV user";
   if(!val("sfpk_version")){
     const m=basename(voicePath).match(/^info\.(.+)\.nofs$/i);
     if(m)document.getElementById("sfpk_version").value=m[1];
