@@ -203,3 +203,87 @@ def test_build_sfpk_exports_binary_voice_models_and_embedding_vectors(tmp_path, 
     assert len(info["f0_style"]) == 32 * 8
     assert len(info["styles"][0]["data"]) == 32 * 8
     assert config["name"] == info["name"]
+
+
+def _png(path: Path, payload=b"sample image"):
+    path.write_bytes(b"\x89PNG\r\n\x1a\n" + payload)
+    return path
+
+
+def test_build_sfpk_includes_optional_profile_and_background_pngs(tmp_path):
+    models_root = _models_root(tmp_path)
+    info_path = tmp_path / "info.nofs"
+    info_path.write_text(json.dumps(_info_document()), encoding="utf-8")
+    profile = _png(tmp_path / "avatar.png", b"avatar-pixels")
+    background = _png(tmp_path / "backdrop.png", b"background-pixels")
+    output = tmp_path / "with-artwork.sfpk"
+
+    build_sfpk(
+        voice=info_path,
+        models_root=models_root,
+        output=output,
+        profile=profile,
+        background=background,
+    )
+
+    with zipfile.ZipFile(output) as archive:
+        assert archive.namelist() == [
+            "config.json", "info.nofs", "profile.png", "background.png"
+        ]
+        assert archive.read("profile.png") == profile.read_bytes()
+        assert archive.read("background.png") == background.read_bytes()
+        assert archive.testzip() is None
+        config = json.loads(archive.read("config.json"))
+    # Preserve the booleans observed in the reference config.json sample.
+    assert config["profile"] is True
+    assert config["background"] is True
+
+
+def test_build_sfpk_can_include_only_one_png_asset(tmp_path):
+    models_root = _models_root(tmp_path)
+    info_path = tmp_path / "info.nofs"
+    info_path.write_text(json.dumps(_info_document()), encoding="utf-8")
+    profile = _png(tmp_path / "avatar.png")
+    output = tmp_path / "profile-only.sfpk"
+
+    build_sfpk(
+        voice=info_path,
+        models_root=models_root,
+        output=output,
+        profile=profile,
+    )
+
+    with zipfile.ZipFile(output) as archive:
+        assert archive.namelist() == ["config.json", "info.nofs", "profile.png"]
+        assert archive.read("profile.png") == profile.read_bytes()
+
+
+@pytest.mark.parametrize("asset_field", ["profile", "background"])
+def test_build_sfpk_rejects_invalid_png_assets(tmp_path, asset_field):
+    models_root = _models_root(tmp_path)
+    info_path = tmp_path / "info.nofs"
+    info_path.write_text(json.dumps(_info_document()), encoding="utf-8")
+    bad_file = tmp_path / "not-a-png.png"
+    bad_file.write_bytes(b"this is not a png")
+
+    with pytest.raises(ValueError, match=r"must be a PNG file"):
+        build_sfpk(
+            voice=info_path,
+            models_root=models_root,
+            output=tmp_path / "bad-asset.sfpk",
+            **{asset_field: bad_file},
+        )
+
+
+def test_build_sfpk_rejects_missing_png_path(tmp_path):
+    models_root = _models_root(tmp_path)
+    info_path = tmp_path / "info.nofs"
+    info_path.write_text(json.dumps(_info_document()), encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError, match="profile.png file not found"):
+        build_sfpk(
+            voice=info_path,
+            models_root=models_root,
+            output=tmp_path / "missing-asset.sfpk",
+            profile=tmp_path / "missing.png",
+        )
