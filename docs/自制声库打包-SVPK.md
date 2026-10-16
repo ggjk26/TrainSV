@@ -34,6 +34,23 @@ trainsv package-svpk `
 
 输出完成后，程序会检查 ZIP 成员、CRC 和 `package-config` JSON；这只验证内部归档结构，不代表 SVPK 外层有效。全零字段版本在 Sharp 中无响应。外层 256 字节字段目前仍未有已验证的公开格式说明，因此当前输出仅供诊断，不可安装；只有通过受支持的打包/签署方式生成并完成 Sharp 安装测试，才能称为可用声库包。
 
-## SFPK
+## SFPK（实验性本机依赖版）
 
-`.sfpk` 是 Synthesizer V Studio Flat / Flat Manager 的另一种格式，不是把 `.svpk` 改名即可。Flat 的声库结构还涉及其 NOFS-JSON、模型 ID 与依赖模型等内容；在确认目标 SFPK 的真实结构及 TrainSV 输出与其模型架构兼容前，本命令不会伪造 SFPK。
+`.sfpk` 是 Synthesizer V Studio Flat / Flat Manager 使用的另一种格式，不能把 `.svpk` 改名后得到。我们检查的 Chifuyu 样本包含 ZIP 归档中的 `config.json` 和 `info.nofs`，而 `info.nofs` 通过 32 位浮点嵌入向量和模型 ID 引用 acoustic、vocoder、duration 与 F0 模型。当前 TrainSV 的实验实现根据这个样本格式生成本机依赖版包。
+
+```powershell
+trainsv package-sfpk `
+  --voice "out\voice.nofs" `
+  --models-root "C:\path\to\Synthesizer V Studio\models" `
+  --output "out\MySinger.sfpk" `
+  --name "My Singer" `
+  --vendor "Your name or studio" `
+  --version 101
+```
+
+- `--voice` 可指定训练后普通二进制 `voice.nofs`，或已有 `info.nofs` JSON 文件。
+- `--models-root` 必须是目标 Synthesizer V Studio Flat 使用的实际 `models` 目录。普通 `voice.nofs` 的模型会以其序列化字节内容的 MD5 命名，写入 `acoustic/`、`vocoder/`、`duration/` 和 `f0/` 子目录；如果目标 ID 文件已存在但内容不同，程序会拒绝覆盖。
+- `--name`、`--vendor` 和 `--version` 可覆盖原元数据。
+- 输出 SFPK 当前仅包含 `config.json` 和 `info.nofs`，不会把模型二进制嵌入包内，因此它不是自包含/便携包。目标安装必须能够访问这些同 ID 的模型依赖。
+
+这版参考一个实际样本的文件结构，但尚未通过 Synthesizer V Studio Flat 的运行时验证。生成后需手动导入/安装、确认歌手出现在列表、选择声库并渲染音频；如果失败，请保留生成的 SFPK、所选 models 目录结构和完整报错。不要把通过 ZIP/JSON 检查当成 Flat 兼容性的证明。
