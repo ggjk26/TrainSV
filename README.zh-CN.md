@@ -268,6 +268,7 @@ trainsv evaluate \
   --voice out/voice.nofs \
   --data /path/to/my-dataset \
   --language ja \
+  --f0-profile vocaloid \
   --out out/evaluation
 ```
 
