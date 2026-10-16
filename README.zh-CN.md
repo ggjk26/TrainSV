@@ -310,7 +310,7 @@ my-dataset/
 
 在 WebUI 的 Results 页面完成“Compare voices”后，会弹出格式选择窗口。选择“使用 SVPK 格式打包”，在弹窗中填写声库名称、供应商/作者、整数版本，选择 `profile.png` 头像与背景 PNG，然后点击“开始打包”。不需要手动创建或导入 JSON。当前 SVPK 打包仅支持普通单文件 `voice.nofs`，共享模型 `info.*.nofs` 暂不支持该流程。
 
-SFPK 按钮当前是占位提示。如果所选结果是普通 `voice.nofs`，程序会说明它缺少共享模型结构所需的 `info.nofs`、`config.json` 和相应的 `.dnni` 模型引用；不会生成一个未经验证的伪包。
+SFPK 现在提供**实验性本机依赖版导出**。选择普通二进制 `voice.nofs` 时，`trainsv package-sfpk` 会把四类 DNNI 模型写入你指定的 Synthesizer V `models` 目录，以模型内容 MD5 作为 ID，并从原声库提取 32 个 float32 的风格嵌入向量，生成 `info.nofs` JSON 描述与 `config.json`，最后将这两个文件按样本结构打入 SFPK。SFPK **不包含模型二进制**，因此目标安装必须已有对应的模型依赖。Flat 中的导入、歌手选择和实际渲染尚未验证；通过手动测试之前，请勿把生成文件视为可用声库。
 
 命令行也可使用 `trainsv package-svpk`：
 
@@ -330,7 +330,19 @@ trainsv package-svpk `
 
 包内文件名与顺序按已检查的 `KASANE_TETO_AI_104.svpk` 样例设置：`voice.nofs`、`license.txt`、`profile.png`、`background.png`、`package-config`。
 
-该命令只生成 SVPK。SFPK 是 Flat Manager 使用的另一种格式，不能仅通过更改扩展名生成。
+### 实验性 SFPK 导出
+
+```powershell
+trainsv package-sfpk `
+  --voice "out\voice.nofs" `
+  --models-root "C:\path\to\Synthesizer V Studio\models" `
+  --output "out\我的声库.sfpk" `
+  --name "我的声库" `
+  --vendor "作者或工作室" `
+  --version 101
+```
+
+也可以将从 Flat 包中提取的 `info.nofs` JSON 传给 `--voice`；其引用的所有模型 ID 必须已存在于所选 models 目录。普通 `voice.nofs` 则会导出 acoustic、vocoder、duration、F0 四类模型到相应子目录，并以模型内容的 MD5 作为 ID。生成的 SFPK 只包含 `config.json` 和 `info.nofs`，不是可独立迁移的完整包。请选择 Synthesizer V Studio Flat 实际使用的 `models` 目录，并在测试前备份。当前实现参照一个已检查的 SFPK 样本，仍需在 Flat 中导入、选择歌手并实际渲染验证。
 
 ## 常见问题
 
