@@ -53,6 +53,7 @@ def test_sfpk_dialog_collects_local_model_dependencies_and_starts_job():
         assert f'data-id="{field}"' in PAGE
     assert 'id="sfpkDialog"' in PAGE
     assert "function openSfpkDialog()" in PAGE
+    assert "info(?:\\..*)?" in PAGE
     assert 'cmd:"package-sfpk"' in PAGE
     assert '"--models-root",val("sfpk_models_root")' in PAGE
     assert 'startJob("sfpk")' in PAGE
