@@ -211,3 +211,25 @@ def test_build_svpk_rejects_unknown_header_preset(tmp_path):
             vendor_name="TrainSV test",
             header_preset="official-signature",
         )
+
+
+def test_header_presets_change_only_the_outer_opaque_field(tmp_path):
+    voice, _license_file, profile, background = _assets(tmp_path)
+    outputs = {}
+    for preset in ("zero", "random", "sha256-chain", "aes256-cbc-test"):
+        outputs[preset] = build_svpk(
+            voice=voice,
+            profile=profile,
+            background=background,
+            output=tmp_path / f"same-body-{preset}.svpk",
+            product_name="Same Body",
+            vendor_name="TrainSV test",
+            version_string="101",
+            version_number=101,
+            header_preset=preset,
+        ).read_bytes()
+
+    bodies = {package[SVPK_HEADER_SIZE:] for package in outputs.values()}
+    assert len(bodies) == 1
+    assert all(package[:8] == SVPK_PREFIX for package in outputs.values())
+    assert all(package[SVPK_HEADER_SIZE:SVPK_HEADER_SIZE + 4] == b"PK\x03\x04" for package in outputs.values())
