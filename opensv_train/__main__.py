@@ -291,6 +291,8 @@ def package_sfpk_command(arguments) -> None:
         name=arguments.name,
         vendor=arguments.vendor,
         version=arguments.version,
+        profile=arguments.profile,
+        background=arguments.background,
     )
     print(f"wrote {output} ({output.stat().st_size:,} bytes)")
     print("Warning: this SFPK references DNNI files in the selected local models directory; it does not embed model dependencies.")
@@ -409,6 +411,8 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--name", help="optional singer name override")
     command.add_argument("--vendor", help="optional vendor override")
     command.add_argument("--version", help="optional version override, for example 101 or 106b1")
+    command.add_argument("--profile", help="optional avatar PNG to include as profile.png in the SFPK")
+    command.add_argument("--background", help="optional background PNG to include as background.png in the SFPK")
     command.set_defaults(handler=package_sfpk_command)
 
     for command in commands.choices.values():
