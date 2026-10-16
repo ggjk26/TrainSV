@@ -15,8 +15,9 @@ import torch
 from .acoustic import TimedPhoneme
 from .calibration import fit_input_ranges
 from .data import F0_PROFILES, LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, resolve_f0_profile, split
+from .f0 import F0_SMOOTHING_OPTIONS
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
-from .voice import ROLES, Voice
+from .voice import ROLES, Voice, initialize_pitch_model
 from .packaging import build_svpk
 from .sfpk import build_sfpk
 
@@ -28,6 +29,13 @@ def finetune(arguments) -> None:
     models = tuple(arguments.models.split(","))
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
+    if arguments.pitch_model:
+        try:
+            pitch_path = initialize_pitch_model(voice, arguments.pitch_model)
+        except (ValueError, FileNotFoundError) as error:
+            raise SystemExit(f"cannot use pretrained Pitch model: {error}") from error
+        print(f"initialized Pitch network from compatible DNNI: {pitch_path}")
+        print("kept the selected base voice's Pitch speaker embedding")
     f0_floor, f0_ceiling, f0_threshold = resolve_f0_profile(
         arguments.f0_profile,
         floor=arguments.f0_floor,
@@ -40,6 +48,9 @@ def finetune(arguments) -> None:
         read_phoneme_map(arguments.phoneme_map),
         f0_range=(f0_floor, f0_ceiling),
         f0_voicing_threshold=f0_threshold,
+        f0_smoothing=arguments.f0_smoothing,
+        f0_octave_correction=arguments.f0_octave_correction,
+        f0_shift_semitones=arguments.f0_shift_semitones,
     )
     phrases = [phrase for utterance in utterances for phrase in make_phrases(utterance)]
     problems = [phrase.problem for phrase in phrases if phrase.problem]
@@ -55,6 +66,16 @@ def finetune(arguments) -> None:
         f"voicing threshold {f0_threshold:g}; voiced {voiced_percent:.1f}% of frames"
         + (f", median voiced F0 {median_f0:.1f} Hz" if median_f0 else ", no voiced F0 frames detected")
     )
+    print(
+        f"F0 processing: median smoothing={arguments.f0_smoothing} frames, "
+        f"isolated-octave correction={'on' if arguments.f0_octave_correction else 'off'}, "
+        f"target shift={arguments.f0_shift_semitones:+g} semitones"
+    )
+    if "pitch" in models and not any(phrase.pitch_example() is not None for phrase in phrases):
+        raise SystemExit(
+            "Pitch training requires note_seq/note_dur (and usable ph_num word boundaries); "
+            "phoneme-only LAB labels cannot train a Pitch model. Train acoustic only, or import note-labelled data."
+        )
     if problems and set(models) & {"duration", "pitch"}:
         print(f"{len(problems)} phrases lack usable notes and train the acoustic model only; first: {problems[0]}")
     _check_phonemes(voice, phrases)
@@ -255,6 +276,9 @@ def evaluate(arguments) -> None:
                 read_phoneme_map(arguments.phoneme_map),
                 f0_range=(f0_floor, f0_ceiling),
                 f0_voicing_threshold=f0_threshold,
+                f0_smoothing=arguments.f0_smoothing,
+                f0_octave_correction=arguments.f0_octave_correction,
+                f0_shift_semitones=arguments.f0_shift_semitones,
             )
             for phrase in make_phrases(utterance)
         ]
@@ -360,6 +384,10 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--f0-floor", type=float, help="override the selected F0 preset's minimum frequency in Hz")
     command.add_argument("--f0-ceiling", type=float, help="override the selected F0 preset's maximum frequency in Hz")
     command.add_argument("--f0-voicing-threshold", type=float, help="override the selected F0 preset's voicing threshold (0, 1]")
+    command.add_argument("--f0-smoothing", type=int, choices=F0_SMOOTHING_OPTIONS, default=0, help="median smoothing width in 5 ms frames: 0/off, 3/light, 5/medium, 7/strong")
+    command.add_argument("--f0-octave-correction", action="store_true", help="correct isolated 1-2 octave tracker jumps only when adjacent voiced frames agree")
+    command.add_argument("--f0-shift-semitones", type=float, default=0.0, help="add this semitone offset to measured F0 targets, range -24 to +24")
+    command.add_argument("--pitch-model", help="initialize the Pitch network from a compatible pretrained Pitch .dnni; current voice speaker embedding is retained")
     command.add_argument("--lr", type=float, help="learning rate (default 2e-5 for all, 3e-3 for embeddings)")
     command.add_argument("--warmup", type=int, default=0, help="steps of linear learning-rate warmup")
     command.add_argument("--lr-end", type=float, help="cosine-decay the learning rate to this by the last step; constant without it")
@@ -422,6 +450,9 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--f0-floor", type=float, help="override the selected F0 preset's minimum frequency in Hz")
     command.add_argument("--f0-ceiling", type=float, help="override the selected F0 preset's maximum frequency in Hz")
     command.add_argument("--f0-voicing-threshold", type=float, help="override the selected F0 preset's voicing threshold (0, 1]")
+    command.add_argument("--f0-smoothing", type=int, choices=F0_SMOOTHING_OPTIONS, default=0, help="median smoothing width in 5 ms frames")
+    command.add_argument("--f0-octave-correction", action="store_true", help="correct isolated octave errors in tracked F0")
+    command.add_argument("--f0-shift-semitones", type=float, default=0.0, help="semitone offset added to measured F0 targets")
     command.add_argument("--validation", type=float, default=0.1)
     command.add_argument("--phoneme-map")
     command.add_argument("--seed", type=int, default=0)
