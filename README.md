@@ -152,7 +152,7 @@ A `voice.nofs` voice is written as a `voice.nofs` with its model entries patched
 
 After “Compare voices” finishes in the WebUI Results stage, a format-choice dialog appears. Choose “使用 SVPK 格式打包” to enter the singer name, vendor/author, integer version, avatar PNG and background PNG. The WebUI creates the metadata JSON internally; you do not need to author or import it. This SVPK packager currently accepts a regular single-file `voice.nofs`, not a shared-model `info.*.nofs`.
 
-The SFPK option is a placeholder. For a regular `voice.nofs`, it explains that SFPK requires a shared-model `info.nofs`, `config.json`, and the referenced `.dnni` model files/model-ID mapping; it will not create a speculative package.
+SFPK export is now an **experimental local-dependency build**. For a regular `voice.nofs`, `trainsv package-sfpk` extracts the four DNNI model payloads to a selected existing Synthesizer V `models` directory using content MD5 IDs, derives the 32-float style embeddings for an `info.nofs` JSON descriptor, and creates an SFPK ZIP with `config.json` and `info.nofs` (the two entries found in the inspected sample). The SFPK does **not** embed model binaries, so the referenced model files must exist in the target installation. Runtime import, singer selection and rendering in Synthesizer V Studio Flat are not yet verified; do not rely on the file until that manual test passes.
 
 The CLI entry point is also available:
 
@@ -172,7 +172,19 @@ trainsv package-svpk `
 
 The archive entries and order match the inspected `KASANE_TETO_AI_104.svpk` sample: `voice.nofs`, `license.txt`, `profile.png`, `background.png`, `package-config`.
 
-This command only makes SVPK. SFPK is a separate Flat Manager format and is not produced by renaming the SVPK file.
+### Experimental Flat SFPK export
+
+```powershell
+trainsv package-sfpk `
+  --voice "out\voice.nofs" `
+  --models-root "C:\path\to\Synthesizer V Studio\models" `
+  --output "out\MySinger.sfpk" `
+  --name "My Singer" `
+  --vendor "Your name or studio" `
+  --version 101
+```
+
+You can also provide an extracted Flat `info.nofs` JSON file as `--voice`; its model ID dependencies must already exist under the selected models root. For a regular binary `voice.nofs`, TrainSV writes acoustic, vocoder, duration, and F0 model files into their corresponding subfolders, then refers to their content MD5 IDs from `info.nofs`. The SFPK itself contains only `config.json` and `info.nofs`; it is not a portable, self-contained package. Choose the actual `models` folder used by Synthesizer V Studio Flat, and make a backup before testing. This format writer follows one inspected SFPK sample and remains experimental until it imports, selects and renders correctly in Flat.
 
 Each 16-bit weight matrix stores a word that OpenSV reads as the original engine's input-quantization setting. Every stock matrix's inputs fit `|x| < 2^(15 - word)`, so before saving, the toolkit measures inputs on the training data and widens that range where finetuning outgrew it.
 
