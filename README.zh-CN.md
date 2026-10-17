@@ -130,7 +130,7 @@ trainsv import-lab --from-filenames --wavs C:\\my-wavs --voice C:\\path\\to\\voi
 
 此模式按文件名从左到右排列音素，只删除末尾的 `_0` / `_1` 重录编号，保留音素内部下划线；首尾固定添加 `sil`，不会合并文件名中原有的静音。首尾静音各占音频时长的 10%，中间音素平均分配剩余 80%。**这是按规则均分的近似标注，不是声学强制对齐**；实际音素边界可能不同，建议先检查生成的 LAB。
 
-如果 `--language mandarin`，`--source-phoneme-system` 默认是 `auto`，会将常见 VOCALOID 中文音素转成目标 SynthV 普通话音素（兼容 SynthV 简化音素名与旧式 X-SAMPA 音素名），并优先匹配目标声库实际包含的符号。通常只需指定 `--voice` 来读取目标音素表，不必准备 `phone_table.json`。对于不能转换的文件，程序会跳过该 WAV 并将文件名和错误原因写入输出目录的 `unmatched_phones.csv`；其余可处理的样本会继续生成标签。可用 `--source-phoneme-system none` 关闭转换，或显式指定 `vocaloid-mandarin`。
+当 `--language mandarin` 时，`--source-phoneme-system` 默认是 `auto`，会将常见 VOCALOID 中文文件名音素转换为目标 SynthV 普通话音素。文件名使用标准普通话 X-SAMPA 时选择 `xsampa`；使用 Synthesizer V 旧版普通话 X-SAMPA 写法时选择 `synthv-xsampa`；`vocaloid-mandarin` 可显式启用 VOCALOID 映射，`none` 则关闭音素转换。X-SAMPA 映射依据 Dreamtonics 公布的 Synthesizer V 2.3 音素变更表；对于旧式 X-SAMPA 音素表，会优先保留目标声库中完整匹配的符号。显式 X-SAMPA 模式不会猜测拆分未知音素，而是报告具体文件与错误。通常指定 `--voice` 读取目标音素表即可，不必准备 `phone_table.json`。无法映射的音素或无法解码的 WAV 会记录在输出目录的 `unmatched_phones.csv`，其他文件仍会继续处理。
 
 X-SAMPA 的 `@\``、`3\`` 表示卷舌化元音：若目标音素表中有完整符号则原样保留；若没有，程序会尝试用对应元音加音素表中已有的卷舌音近似拆分（优先 `r\\`，其次 `ɹ`、`ɻ`、`r` 等）。若表内既没有完整符号，也没有可用近似音，会报出更具体的错误，不会直接丢掉卷舌特征。
 
@@ -204,9 +204,10 @@ Training 页面将 F0 Analysis & Calibration 与 Pitch Model & Training 分成�
 
 - **Standard**：65–1100 Hz、浊音阈值 0.60。
 - **VOCALOID F0 cleanup**：45–1400 Hz、浊音阈值 0.45；额外启用有声片段内 25 ms 中值平滑与保守的孤立八度跳点修正。
+- **Sensitive**：35–1800 Hz、浊音阈值 0.30，并使用 15 ms 轻度平滑，适合尝试找回较弱的有声帧。
 - **Low / High / Wide**：选择不同检测音域，不默认打开额外清理。
 
-F0 的音域、阈值、中值平滑、孤立八度修正、参考音分校正均可单独调整。处理作用于训练/评估使用的 F0 目标曲线，并非对最终 WAV 做后期滤镜，也不能保证单独消除源音频、声学模型或声码器产生的金属音色。
+F0 的音域、阈值、中值平滑、孤立八度修正、参考音分校正均可单独调整。有效 WAV 即使没有可测 F0（例如静音或单独的清辅音 /k/）也会保留用于声学模型训练；其音高掩码标记为无声，不会提供有效 Pitch 监督。敏感预设可以帮助跟踪较弱有声片段，但不能为真正静音或清辅音凭空生成基频。处理作用于训练/评估使用的 F0 目标曲线，并非对最终 WAV 做后期滤镜，也不能保证单独消除源音频、声学模型或声码器产生的金属音色。
 
 #### Pitch 模型训练
 
@@ -397,7 +398,7 @@ cmake --build build --target OpenSVParity
 ## 许可
 
 项目采用 GPL-3.0。感谢 [OpenSV](https://github.com/cubeww/OpenSV) 项目提供的参考实现。请通过当前仓库的 [Issues](https://github.com/ggjk26/TrainSV/issues) 提交复现步骤、底模类型和完整日志。
-现在支持输入Vocaloid音频样本的X-SAMPA音素，不会因为不匹配Synthesizer V的而报错退出。目前F0预测器的清浊音部分处理有问题（如“Sil k_01.wav”会识别损坏的wav从而终止训练）
+文件名转 LAB 现支持按源标记体系选择明确映射：`auto`、`vocaloid-mandarin`、`xsampa` 与 `synthv-xsampa`。F0 无有声帧不等同于 WAV 损坏；像 `Sil Sil k Sil_0.wav` 这样的有效静音/清辅音样本应保留，映射错误或真正无法解码的音频会单独记录到 `unmatched_phones.csv`。
 
 ## F0 分析与校准
 
@@ -405,10 +406,11 @@ Training 页面的 F0 Analysis & Calibration 面板专门处理输入 WAV 的基
 
 - **Standard**：65–1100 Hz、浊音阈值 0.60。
 - **VOCALOID F0 cleanup**：45–1400 Hz、浊音阈值 0.45；额外启用有声片段内的 25 ms 中值平滑和保守的孤立八度跳点修正。
+- **Sensitive**：35–1800 Hz、浊音阈值 0.30，并启用 15 ms 轻度平滑。
 - **Low / High / Wide**：分别覆盖低音、高音或宽音域，默认不启用额外清理。
 - 可以单独覆盖 F0 最低/最高频率、浊音阈值、中值平滑、孤立八度修正和参考音分校正。
 
-这项处理旨在减少 F0 跟踪中的短促跳点和锯齿状抖动，作用于训练/评估的目标曲线，而不是对导出 WAV 做后期平滑；它不能保证单靠 F0 就去除全部金属感。F0 选项可在 CLI 的 finetune 和 evaluate 中使用：--f0-profile、--f0-floor、--f0-ceiling、--f0-voicing-threshold、--f0-smoothing、--f0-octave-correction / --no-f0-octave-correction 与 --f0-reference-cents。
+Sensitive 预设使用 35–1800 Hz 和 0.30 阈值，并以 15 ms 轻度平滑尝试找回较弱的有声帧。有效 WAV 即使没有测得 F0 也会保留用于声学训练，但没有有声帧的样本不会提供有效 Pitch 监督。若导入数量从 5177 降到约 4472，应先检查导入摘要与 `unmatched_phones.csv`：当前数据加载逻辑不会仅因 F0 全零就剔除有效 WAV，音素映射失败或无法解码的音频才可能在生成数据集时被跳过。这项处理作用于训练/评估的目标曲线，而不是对导出 WAV 做后期平滑；它不能保证单靠 F0 就去除全部金属感。F0 选项可在 CLI 的 finetune 和 evaluate 中使用：--f0-profile、--f0-floor、--f0-ceiling、--f0-voicing-threshold、--f0-smoothing、--f0-octave-correction / --no-f0-octave-correction 与 --f0-reference-cents。
 
 ## Pitch 模型训练
 
