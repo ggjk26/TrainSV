@@ -255,7 +255,7 @@ def test_unreadable_wav_is_reported_without_dropping_other_valid_recordings(tmp_
     wav_dir = tmp_path / "wavs"
     wav_dir.mkdir()
     soundfile.write(str(wav_dir / "Sil Sil k Sil_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
-    (wav_dir / "broken_0.wav").write_bytes(b"this is not a WAV")
+    (wav_dir / "k_0.wav").write_bytes(b"this is not a WAV")
     unmatched = []
     recordings = filename_recordings(wav_dir, {"sil", "k"}, unmatched=unmatched)
     assert [name for name, _, _ in recordings] == ["Sil Sil k Sil_0"]
@@ -263,5 +263,5 @@ def test_unreadable_wav_is_reported_without_dropping_other_valid_recordings(tmp_
         "sil", "sil", "sil", "k", "sil", "sil",
     ]
     assert len(unmatched) == 1
-    assert unmatched[0]["filename"] == "broken_0.wav"
+    assert unmatched[0]["filename"] == "k_0.wav"
     assert "unreadable or damaged WAV" in unmatched[0]["error"]
