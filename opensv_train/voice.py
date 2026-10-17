@@ -154,12 +154,12 @@ def initialize_pitch_from_file(voice: Voice, source_path) -> int:
     """
     from .pitch import PitchModel
 
-    source_file = DnniFile.load(source_path)
     target_file = voice.files.models["pitch"]
     target = voice.pitch
     try:
+        source_file = DnniFile.load(source_path)
         source = PitchModel(source_file)
-    except (ValueError, KeyError, struct.error) as error:
+    except (OSError, ValueError, KeyError, struct.error) as error:
         raise ValueError(f"the selected file is not a supported Synthesizer V Pitch DNNI model: {error}") from error
 
     if _phone_set_signature(target.phone_sets) != _phone_set_signature(source.phone_sets):
