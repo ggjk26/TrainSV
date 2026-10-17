@@ -1041,7 +1041,7 @@ function suggest(){
 /* ---------- command builders ---------- */
 function lang(){return val("language")||"ja"}
 function trainedModels(){const m=MODELS.filter(x=>chk("m_"+x));return m.length?m:["acoustic"]}
-function applyF0ProfileControls(profile){
+function applyF0ProfileControls(profile,clearOverrides=true){
   const preset={
     standard:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false,pitchSmoothing:"3",melody:"1",motion:"1"},
     vocaloid:{floor:"",ceiling:"",threshold:"",smoothing:"5",octave:true,pitchSmoothing:"2.5",melody:"1.2",motion:"0.8"},
@@ -1050,10 +1050,10 @@ function applyF0ProfileControls(profile){
     wide:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false,pitchSmoothing:"3",melody:"1",motion:"1"}
   }[profile]||null;
   if(!preset)return;
-  [["t_f0_floor",preset.floor],["t_f0_ceiling",preset.ceiling],["t_f0_threshold",preset.threshold],
-   ["t_f0_smoothing",preset.smoothing],["t_pitch_smoothing",preset.pitchSmoothing],
-   ["t_pitch_melody_weight",preset.melody],["t_pitch_motion_weight",preset.motion]]
-    .forEach(([id,value])=>{const el=document.getElementById(id);if(el)el.value=value});
+  const controls=[["t_f0_smoothing",preset.smoothing],["t_pitch_smoothing",preset.pitchSmoothing],
+   ["t_pitch_melody_weight",preset.melody],["t_pitch_motion_weight",preset.motion]];
+  if(clearOverrides)controls.unshift(["t_f0_floor",preset.floor],["t_f0_ceiling",preset.ceiling],["t_f0_threshold",preset.threshold]);
+  controls.forEach(([id,value])=>{const el=document.getElementById(id);if(el)el.value=value});
   const octave=document.getElementById("t_f0_octave");if(octave)octave.checked=preset.octave;
 }
 const B={
@@ -1487,7 +1487,7 @@ async function init(){
   if(val("t_f0_profile")==="vocaloid"&&String(savedSettings.t_f0_smoothing??"0")==="0"&&
      !savedSettings.t_f0_octave&&String(savedSettings.t_pitch_smoothing??"3")==="3"&&
      String(savedSettings.t_pitch_melody_weight??"1")==="1"&&String(savedSettings.t_pitch_motion_weight??"1")==="1"){
-    applyF0ProfileControls("vocaloid");
+    applyF0ProfileControls("vocaloid",false);
   }
   // a path the user typed earlier stays; empty or untouched ones are re-suggested
   AUTO.forEach(id=>{if(!val(id))EXTRA.manual[id]=false});
