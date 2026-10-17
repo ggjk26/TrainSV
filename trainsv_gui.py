@@ -607,23 +607,29 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <label class="choice"><input type="checkbox" id="m_pitch" data-s><span><b>Pitch</b> (melody and vibrato)<small>How the singer moves between notes. Needs notes in the dataset.</small></span></label>
     <label class="choice"><input type="checkbox" id="m_vocoder" data-s><span><b>Vocoder</b> (final audio stage)<small>Optional and slower. Most people leave this off.</small></span></label>
   </fieldset>
-  <fieldset id="pitchTrainingPanel">
-    <legend>Pitch Training &amp; F0 Calibration</legend>
-    <p class="hint">Pitch 模型控制音符到音高曲线的生成。下方设置作用于训练 WAV 的 F0 目标：平滑、孤立八度错误修正和半音校准。若只有音素 LAB、没有 note_seq/note_dur，Pitch 无法有效训练。</p>
+  <fieldset id="f0CalibrationPanel">
+    <legend>F0 Analysis &amp; Calibration</legend>
+    <p class="hint">F0 options control only the analysis and cleanup of the recorded WAV's fundamental-frequency targets. They do not change Pitch-network loss settings.</p>
     <div class="grid2">
-      <div class="field" data-id="t_pitch_source" data-kind="select" data-options="base|Use Pitch model from selected base voice;pretrained|Import compatible pretrained Pitch DNNI" data-value="base" data-label="Pitch model initialization" data-hint="默认使用当前底模的 Pitch 模型；导入外部模型前会检查模型结构、音素表和说话人向量维度。"></div>
-      <div class="field" data-id="t_pitch_model" data-kind="path" data-mode="file" data-ext="dnni" data-label="External pretrained Pitch model (.dnni)" data-hint="仅在选择导入预训练模型时需要。必须是 TrainSV 当前支持的 Pitch DNNI，并且音素表与底模匹配。"></div>
-      <div class="field" data-id="t_f0_profile" data-kind="select" data-options="standard|Standard tracking (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID → Natural-Smooth (45–1400 Hz, threshold 0.45);low|Low register (45–650 Hz, threshold 0.60);high|High register (100–1400 Hz, threshold 0.60);wide|Wide range (40–1600 Hz, threshold 0.60)" data-value="standard" data-label="F0 tracking &amp; naturalization preset" data-hint="选择 F0 预设时，VOCALOID 模式还会自动启用中度 F0 中值平滑、孤立八度跳变修正，并略微强调平滑旋律轮廓。该处理旨在减少错误音高点和过度抖动；仅靠 F0 不一定能消除音色本身的金属感。建议同时训练 Pitch 与 Sound，并在验证录音上试听。"></div>
+      <div class="field" data-id="t_f0_profile" data-kind="select" data-options="standard|Standard (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID F0 cleanup (45–1400 Hz, threshold 0.45);low|Low register (45–650 Hz, threshold 0.60);high|High register (100–1400 Hz, threshold 0.60);wide|Wide range (40–1600 Hz, threshold 0.60)" data-value="standard" data-label="F0 analysis preset" data-hint="此预设只控制输入 WAV 的 F0 检测范围与目标曲线清理，不会更改 Pitch 模型的损失权重。VOCALOID 预设会启用中值平滑与保守的孤立八度跳点修正。该操作不是最终 WAV 的后期滤镜。"></div>
       <div class="field" data-id="t_f0_floor" data-label="F0 floor (Hz; overrides preset)" data-ph="Preset default, e.g. 45" data-hint="低于此频率的音高不在检测范围内；应根据歌手最低音设置。"></div>
       <div class="field" data-id="t_f0_ceiling" data-label="F0 ceiling (Hz; overrides preset)" data-ph="Preset default, e.g. 1400" data-hint="高于此频率的音高不在检测范围内；过高也可能增加谐波误检。"></div>
       <div class="field" data-id="t_f0_threshold" data-label="Voicing threshold (0–1; overrides preset)" data-ph="Preset default, e.g. 0.45" data-hint="降低可能减少漏检，也可能把噪声误判为有声；留空时使用所选预设值。"></div>
-      <div class="field" data-id="t_f0_smoothing" data-kind="select" data-options="0|Off;3|Light (15 ms);5|Medium (25 ms);7|Strong (35 ms)" data-value="0" data-label="F0 median smoothing" data-hint="在连续有声片段内对 log2(F0) 中值滤波；VOCALOID 预设默认启用 25 ms 平滑来压制短促的音高抖动，强度过高也可能压低真实颤音细节。"></div>
+      <div class="field" data-id="t_f0_smoothing" data-kind="select" data-options="0|Off;3|Light (15 ms);5|Medium (25 ms);7|Strong (35 ms)" data-value="0" data-label="F0 median smoothing" data-hint="在连续有声片段内对 log2(F0) 中值滤波；VOCALOID F0 cleanup 预设默认启用 25 ms 平滑来压制短促跳点，强度过高也可能压低真实颤音细节。"></div>
       <div class="field" data-id="t_f0_correction" data-label="F0 reference correction (cents)" data-value="0" data-ph="0 (no correction)" data-hint="在缓存后的 F0 参考曲线上整体校正音分。若检测结果测得高约 25 音分，可先试 -25。不能修复错误八度、错误音符或对齐问题。范围 -1200 到 +1200。"></div>
-      <div class="field" data-id="t_pitch_smoothing" data-label="Melody smoothing cutoff (Hz)" data-value="3" data-hint="用于把 Pitch 预测拆分为慢旋律轮廓与快速音高运动的低通截止频率，不会直接对导出的 WAV 做后期平滑。"></div>
+    </div>
+    <label class="choice"><input type="checkbox" id="t_f0_octave" data-s><span><b>Correct isolated octave jumps</b><small>仅修正前后有声帧一致、且中间帧疑似高/低 1–2 个八度的离群点；不会改写持续的八度变化。</small></span></label>
+  </fieldset>
+  <fieldset id="pitchTrainingPanel">
+    <legend>Pitch Model &amp; Training</legend>
+    <p class="hint">Pitch options control how the Pitch network is initialized and trained. They are independent of F0 detection, smoothing and reference calibration.</p>
+    <div class="grid2">
+      <div class="field" data-id="t_pitch_source" data-kind="select" data-options="base|Use Pitch model from selected base voice;pretrained|Import compatible pretrained Pitch DNNI" data-value="base" data-label="Pitch model initialization" data-hint="默认使用当前底模的 Pitch 模型；导入外部模型前会检查模型结构、音素表和说话人向量维度。"></div>
+      <div class="field" data-id="t_pitch_model" data-kind="path" data-mode="file" data-ext="dnni" data-label="External pretrained Pitch model (.dnni)" data-hint="仅在选择导入预训练模型时需要。必须是 TrainSV 当前支持的 Pitch DNNI，并且音素表与底模匹配。"></div>
+      <div class="field" data-id="t_pitch_smoothing" data-label="Melody smoothing cutoff (Hz)" data-value="3" data-hint="用于 Pitch 训练损失中区分慢旋律轮廓和快速音高运动的低通截止频率；不会直接对导出的 WAV 做后期平滑。"></div>
       <div class="field" data-id="t_pitch_melody_weight" data-label="Smooth melody loss weight" data-value="1" data-hint="控制 Pitch 模型学习整体音符走向的权重。数值越大，越重视较平滑的旋律误差；设为 0 可关闭该损失分量。"></div>
       <div class="field" data-id="t_pitch_motion_weight" data-label="Vibrato / fast-motion loss weight" data-value="1" data-hint="控制 Pitch 模型学习颤音和快速音高运动的权重。太高可能使模型把原始合成器的抖动也学进去。至少一个 Pitch loss 权重必须大于 0。"></div>
     </div>
-    <label class="choice"><input type="checkbox" id="t_f0_octave" data-s><span><b>Correct isolated octave jumps</b><small>只修正前后相邻有声帧一致、且中间帧疑似高/低 1–2 个八度的离群点；默认关闭。</small></span></label>
     <div class="actions">
       <button type="button" class="secondary" data-run="pitch">Train Pitch Model Only</button>
     </div>
@@ -834,9 +840,9 @@ const FIELD_HELP = {
   "v_name": "为输出声库设置显示名称。建议使用容易识别的名称；该名称也会用于自动生成部分输出路径。",
   "t_output": "指定训练后声库的保存位置。普通 voice.nofs 声库保存为文件；info.*.nofs 类型的共享模型声库会按工具规则保存到目录中。",
   "t_lr": "学习率，控制每次更新模型参数时的调整幅度。默认值取决于“调整内容”：全部权重通常为 2e-5，仅训练身份向量时通常为 3e-3。过高可能不稳定，过低可能进展缓慢。",
-  "t_f0_profile": "F0 追踪预设控制从输入 WAV 提取基频时的频率范围与浊音阈值。可选通用默认、VOCALOID 合成声、低音、高音和宽音域。预设只是起点，建议检查训练日志的有声帧比例和中位 F0，错误音高候选也可能随范围放宽而增加。",
+  "t_f0_profile": "F0 预设只控制输入 WAV 的基频检测范围与目标曲线清理，不会更改 Pitch 模型的损失函数参数。预设只是起点，建议检查训练日志中的有声帧比例和中位 F0；范围放宽也可能增加错误音高候选。",
   "t_f0_correction": "对从 WAV 检测并经过基本清理的 F0 参考曲线整体做音分校正。负值降低参考音高，正值提高。建议先测量实际偏差并小幅调整；不应用于修正八度跳变、错误音符或时间对齐。",
-  "t_pitch_smoothing": "低通截止频率，用于 Pitch 损失里分离平滑旋律轮廓和快速变化。较低会更强调旋律大轮廓，较高会把更多快速变化纳入旋律项。这不是直接平滑最终音频。",
+  "t_pitch_smoothing": "低通截止频率，用于 Pitch 训练损失里分离平滑旋律轮廓和快速变化。较低会更强调旋律大轮廓，较高会把更多快速变化纳入旋律项。这不是直接平滑最终音频；它独立于 F0 检测预设。",
   "t_pitch_melody_weight": "平滑旋律轮廓损失权重，表示 Pitch 训练更重视整体旋律曲线还是其他音高细节。请结合验证集的 pitch_semitones/pitch_melody 和试听设置。",
   "t_pitch_motion_weight": "快速变化/颤音损失权重。提高它可能保留更多细节，也可能学到不需要的抖动；初始建议保留 1.0。",
   "t_f0_smoothing": "F0 中值平滑只在连续有声片段内部工作，不会把平滑结果跨过静音或辅音。强度越大越可能压低原有颤音细节。",
@@ -1043,15 +1049,14 @@ function lang(){return val("language")||"ja"}
 function trainedModels(){const m=MODELS.filter(x=>chk("m_"+x));return m.length?m:["acoustic"]}
 function applyF0ProfileControls(profile,clearOverrides=true){
   const preset={
-    standard:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false,pitchSmoothing:"3",melody:"1",motion:"1"},
-    vocaloid:{floor:"",ceiling:"",threshold:"",smoothing:"5",octave:true,pitchSmoothing:"2.5",melody:"1.2",motion:"0.8"},
-    low:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false,pitchSmoothing:"3",melody:"1",motion:"1"},
-    high:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false,pitchSmoothing:"3",melody:"1",motion:"1"},
-    wide:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false,pitchSmoothing:"3",melody:"1",motion:"1"}
+    standard:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false},
+    vocaloid:{floor:"",ceiling:"",threshold:"",smoothing:"5",octave:true},
+    low:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false},
+    high:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false},
+    wide:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false}
   }[profile]||null;
   if(!preset)return;
-  const controls=[["t_f0_smoothing",preset.smoothing],["t_pitch_smoothing",preset.pitchSmoothing],
-   ["t_pitch_melody_weight",preset.melody],["t_pitch_motion_weight",preset.motion]];
+  const controls=[["t_f0_smoothing",preset.smoothing]];
   if(clearOverrides)controls.unshift(["t_f0_floor",preset.floor],["t_f0_ceiling",preset.ceiling],["t_f0_threshold",preset.threshold]);
   controls.forEach(([id,value])=>{const el=document.getElementById(id);if(el)el.value=value});
   const octave=document.getElementById("t_f0_octave");if(octave)octave.checked=preset.octave;
@@ -1483,10 +1488,8 @@ async function init(){
   try{ENV=await api("env")}catch(e){$("#banner").hidden=false;$("#banner").textContent=e.message;return}
   const savedSettings=await api("settings").catch(()=>({}));
   restore(savedSettings);
-  // Upgrade old saved VOCALOID defaults (tracking-only) to the naturalization preset.
-  if(val("t_f0_profile")==="vocaloid"&&String(savedSettings.t_f0_smoothing??"0")==="0"&&
-     !savedSettings.t_f0_octave&&String(savedSettings.t_pitch_smoothing??"3")==="3"&&
-     String(savedSettings.t_pitch_melody_weight??"1")==="1"&&String(savedSettings.t_pitch_motion_weight??"1")==="1"){
+  // Upgrade legacy VOCALOID tracking-only settings to F0 cleanup without changing Pitch options.
+  if(val("t_f0_profile")==="vocaloid"&&String(savedSettings.t_f0_smoothing??"0")==="0"&&!savedSettings.t_f0_octave){
     applyF0ProfileControls("vocaloid",false);
   }
   // a path the user typed earlier stays; empty or untouched ones are re-suggested
