@@ -173,7 +173,9 @@ The Training page includes a dedicated Pitch / F0 workspace. The existing Pitch 
 
 The matching CLI flags are available to both `finetune` and `evaluate`: `--f0-floor`, `--f0-ceiling`, `--f0-voicing-threshold`, `--f0-reference-cents`, `--pitch-smoothing-hz`, `--pitch-melody-weight`, and `--pitch-motion-weight`. Changing F0 range or voicing threshold invalidates and recomputes the detector cache. Reference correction is applied after cache loading.
 
-This change does **not** ship general-purpose neural Pitch weights or arbitrary model swapping. Training still starts from the selected voice's own Pitch model. A reusable pretrained model must pass checks for network layout, phoneme sets, normalization data, and speaker-vector compatibility before it can safely be imported into a voice.
+The Training page also accepts an optional external pretrained Pitch DNNI file. The CLI equivalent is `trainsv finetune --pitch-base-model <path-to-pitch.dnni>`. TrainSV strictly checks the network tree, phoneme tables, normalization buffers, sparse masks, and trainable tensor shapes before copying the source model's non-speaker parameters. The target voice's own speaker vector is preserved; an incompatible file is rejected rather than force-written.
+
+The repository does **not** yet bundle a tested general-purpose Pitch weight file. This option lets a user initialize from a locally available compatible pretrained model; it does not make different Pitch architectures or phone sets automatically compatible. For VOCALOID/UTAU sources, first check the F0 range/voicing settings and small reference correction, then compare listening results on recordings held out from training.
 
 ## Layout
 
