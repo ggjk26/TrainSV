@@ -15,6 +15,9 @@ F0_PROFILES: dict[str, tuple[float, float, float]] = {
     "low": (45.0, 650.0, 0.60),
     "high": (100.0, 1400.0, 0.60),
     "wide": (40.0, 1600.0, 0.60),
+    # For weakly voiced and unusually low/high synthesized recordings. This can
+    # recover more voiced frames, but cannot create pitch for silence or /k/.
+    "sensitive": (35.0, 1800.0, 0.30),
 }
 
 
@@ -60,6 +63,7 @@ F0_PROCESSING_PROFILES: dict[str, tuple[int, bool]] = {
     "low": (0, False),
     "high": (0, False),
     "wide": (0, False),
+    "sensitive": (3, False),
 }
 
 
@@ -72,8 +76,10 @@ def resolve_f0_processing(
     """Resolve F0 cleanup defaults for a tracking preset.
 
     The VOCALOID profile enables a 25 ms median filter and conservative
-    correction of isolated octave tracker spikes. Pitch-loss defaults are not
-    coupled to this profile.
+    correction of isolated octave tracker spikes. The sensitive profile lowers
+    Praat's voicing threshold and uses a light 15 ms median filter; it can help
+    weakly voiced frames but cannot infer F0 during true silence or voiceless
+    consonants. Pitch-loss defaults are not coupled to these profiles.
     """
     if profile not in F0_PROCESSING_PROFILES:
         raise ValueError(f"unknown F0 processing profile {profile!r}")
