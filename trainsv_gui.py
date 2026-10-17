@@ -802,19 +802,19 @@ function translateString(source, language=UI_LANG) {
   const row=I18N_MAP.get(source);
   if(row) return row[I18N_INDEX[language]??0] || source;
   let m;
-  if((m=source.match(/^Step (\\d+) of (\\d+) \\((\\d+)%\\)\\. About (.+) left\\. Elapsed (.+)\\.$/))){
+  if((m=source.match(/^Step (\d+) of (\d+) \((\d+)%\)\. About (.+) left\. Elapsed (.+)\.$/))){
     if(language==="zh-CN")return `第 ${m[1]}/${m[2]} 步（${m[3]}%）。预计还需 ${m[4]}。已用时 ${m[5]}。`;
-    if(language==="ja")return `ステップ ${m[1}/${m[2]}（${m[3]}%）。残り約 ${m[4]}。経過時間 ${m[5]}。`;
+    if(language==="ja")return `ステップ ${m[1]}/${m[2]}（${m[3]}%）。残り約 ${m[4]}。経過時間 ${m[5]}。`;
   }
-  if((m=source.match(/^Working… (.+) so far\\.$/))){
+  if((m=source.match(/^Working… (.+) so far\.$/))){
     if(language==="zh-CN")return `正在处理……已用时 ${m[1]}。`;
     if(language==="ja")return `処理中…経過時間 ${m[1]}。`;
   }
-  if((m=source.match(/^Finished in (.+)\\.$/))){
+  if((m=source.match(/^Finished in (.+)\.$/))){
     if(language==="zh-CN")return `已完成，用时 ${m[1]}。`;
     if(language==="ja")return `完了しました（所要時間：${m[1]}）。`;
   }
-  if((m=source.match(/^Finished\\. Your new voice is saved at (.+)$/))){
+  if((m=source.match(/^Finished\. Your new voice is saved at (.+)$/))){
     if(language==="zh-CN")return `训练完成。新声库已保存到：${m[1]}`;
     if(language==="ja")return `学習が完了しました。新しい音声の保存先：${m[1]}`;
   }
@@ -822,15 +822,15 @@ function translateString(source, language=UI_LANG) {
     if(language==="zh-CN")return `无法检查输出路径：${m[1]}`;
     if(language==="ja")return `出力先を確認できません：${m[1]}`;
   }
-  if((m=source.match(/^SVPK diagnostic package created: (.+)\\. This package is not installable or suitable for release\\.$/))){
+  if((m=source.match(/^SVPK diagnostic package created: (.+)\. This package is not installable or suitable for release\.$/))){
     if(language==="zh-CN")return `已生成 SVPK 诊断包：${m[1]}。此包不可安装，也不适合发布。`;
     if(language==="ja")return `SVPK 診断パッケージを作成しました：${m[1]}。インストールや公開には使用できません。`;
   }
-  if((m=source.match(/^Found (\\d+) \\.wav and (\\d+) \\.lab files\\.$/))){
+  if((m=source.match(/^Found (\d+) \.wav and (\d+) \.lab files\.$/))){
     if(language==="zh-CN")return `找到 ${m[1]} 个 .wav 和 ${m[2]} 个 .lab 文件。`;
     if(language==="ja")return `.wav ${m[1]} 個、.lab ${m[2]} 個が見つかりました。`;
   }
-  if((m=source.match(/^Found (\\d+) WAV files\\. Labels will be estimated from filenames and equal-duration timing\\.$/))){
+  if((m=source.match(/^Found (\d+) WAV files\. Labels will be estimated from filenames and equal-duration timing\.$/))){
     if(language==="zh-CN")return `找到 ${m[1]} 个 WAV 文件。将根据文件名生成标签并均分时长。`;
     if(language==="ja")return `WAV ファイルが ${m[1]} 個見つかりました。ファイル名と均等な時間配分からラベルを推定します。`;
   }
@@ -846,7 +846,7 @@ function localizeTree(root=document.body) {
     if(!current.trim())continue;
     let meta=node.__i18nText;
     if(!meta || current!==meta.rendered){
-      const match=current.match(/^(\\s*)([\\s\\S]*?)(\\s*)$/);
+      const match=current.match(/^(\s*)([\s\S]*?)(\s*)$/);
       meta={source:match[2],leading:match[1],trailing:match[3],rendered:current};
       node.__i18nText=meta;
     }
