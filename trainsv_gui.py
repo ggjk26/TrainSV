@@ -1041,6 +1041,21 @@ function suggest(){
 /* ---------- command builders ---------- */
 function lang(){return val("language")||"ja"}
 function trainedModels(){const m=MODELS.filter(x=>chk("m_"+x));return m.length?m:["acoustic"]}
+function applyF0ProfileControls(profile){
+  const preset={
+    standard:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false,pitchSmoothing:"3",melody:"1",motion:"1"},
+    vocaloid:{floor:"",ceiling:"",threshold:"",smoothing:"5",octave:true,pitchSmoothing:"2.5",melody:"1.2",motion:"0.8"},
+    low:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false,pitchSmoothing:"3",melody:"1",motion:"1"},
+    high:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false,pitchSmoothing:"3",melody:"1",motion:"1"},
+    wide:{floor:"",ceiling:"",threshold:"",smoothing:"0",octave:false,pitchSmoothing:"3",melody:"1",motion:"1"}
+  }[profile]||null;
+  if(!preset)return;
+  [["t_f0_floor",preset.floor],["t_f0_ceiling",preset.ceiling],["t_f0_threshold",preset.threshold],
+   ["t_f0_smoothing",preset.smoothing],["t_pitch_smoothing",preset.pitchSmoothing],
+   ["t_pitch_melody_weight",preset.melody],["t_pitch_motion_weight",preset.motion]]
+    .forEach(([id,value])=>{const el=document.getElementById(id);if(el)el.value=value});
+  const octave=document.getElementById("t_f0_octave");if(octave)octave.checked=preset.octave;
+}
 const B={
   inspect(){const p=[];if(!val("voice"))p.push("Choose a voice file.");
     return{cmd:"inspect",label:"Looking inside the voice",args:["--voice",val("voice")],p,log:true}},
@@ -1070,10 +1085,10 @@ const B={
       ["--pitch-smoothing-hz","t_pitch_smoothing"],["--pitch-melody-weight","t_pitch_melody_weight"],
       ["--pitch-motion-weight","t_pitch_motion_weight"]
     ].forEach(([flag,id])=>addOpt(a,p,flag,id));
-    if(chk("t_f0_octave"))a.push("--f0-octave-correction");
+    a.push(chk("t_f0_octave")?"--f0-octave-correction":"--no-f0-octave-correction");
     if(val("t_pitch_source")==="pretrained"){
-      if(!val("t_pitch_model"))p.push("选择外部预训练 Pitch 时，必须指定 .dnni 文件。");
-      else if(!models.includes("pitch"))p.push("导入预训练 Pitch 模型时，请勾选上方 Pitch 模型。");
+      if(!val("t_pitch_model"))p.push("Select a .dnni file when using an external pretrained Pitch model.");
+      else if(!models.includes("pitch"))p.push("Select Pitch in the model list above to import pretrained weights.");
       else a.push("--pitch-base-model",val("t_pitch_model"));
     }
     addOpt(a,p,"--steps","t_steps",true);
@@ -1094,36 +1109,36 @@ const B={
       ["--pitch-smoothing-hz","t_pitch_smoothing"],["--pitch-melody-weight","t_pitch_melody_weight"],
       ["--pitch-motion-weight","t_pitch_motion_weight"]
     ].forEach(([flag,id])=>addOpt(a,p,flag,id));
-    if(chk("t_f0_octave"))a.push("--f0-octave-correction");
+    a.push(chk("t_f0_octave")?"--f0-octave-correction":"--no-f0-octave-correction");
     addOpt(a,p,"--validation","t_val");addOpt(a,p,"--seed","t_seed");
     if(val("t_pmap"))a.push("--phoneme-map",val("t_pmap"));
     a.push("--out",val("e_out"));addOpt(a,p,"--max-phrases","e_max");
     return{cmd:"evaluate",label:"Comparing voices",args:a,p}},
   svpk(){const p=[],a=[],voicePath=val("e_new")||val("t_output"),version=val("svpk_version");
-    if(!voicePath)p.push("先选择训练后的 voice.nofs。");
-    else if(isInfo(voicePath))p.push("当前结果是 info.*.nofs 共享模型声库；这个 SVPK 打包器只支持普通单文件 voice.nofs。");
-    else if(!/\.nofs$/i.test(voicePath))p.push("请选择训练后的 .nofs 文件，而不是目录或其他文件。");
-    if(!val("svpk_name"))p.push("请填写声库名称。");
-    if(!val("svpk_vendor"))p.push("请填写声库供应商 / 作者。");
-    if(!/^\d+$/.test(version)||!Number.isSafeInteger(Number(version)))p.push("声库版本必须是安全范围内的非负整数，例如 101。");
-    if(!val("svpk_profile"))p.push("请选择 profile.png 头像图片。");
-    if(!val("svpk_background"))p.push("请选择背景 PNG 图片。");
+    if(!voicePath)p.push("Choose the trained voice.nofs file first.");
+    else if(isInfo(voicePath))p.push("This is an info.*.nofs shared-model voicebank; the SVPK diagnostic exporter supports only a regular single-file voice.nofs.");
+    else if(!/\.nofs$/i.test(voicePath))p.push("Choose the trained .nofs file, not a directory or another file type.");
+    if(!val("svpk_name"))p.push("Enter a voicebank name.");
+    if(!val("svpk_vendor"))p.push("Enter a vendor / author.");
+    if(!/^\d+$/.test(version)||!Number.isSafeInteger(Number(version)))p.push("Version must be a non-negative safe integer, e.g. 101.");
+    if(!val("svpk_profile"))p.push("Choose a profile.png avatar image.");
+    if(!val("svpk_background"))p.push("Choose a background PNG image.");
     let output=val("svpk_output");
-    if(!output)p.push("请指定 SVPK 保存位置。");
+    if(!output)p.push("Choose an SVPK output path.");
     else if(!/\.svpk$/i.test(output)){output += ".svpk";const el=document.getElementById("svpk_output");if(el)el.value=output;}
     a.push("--voice",voicePath,"--profile",val("svpk_profile"),"--background",val("svpk_background"),
       "--output",output,"--name",val("svpk_name"),"--vendor",val("svpk_vendor"),
       "--version-string",version,"--version-number",String(Number(version)),
       "--header-preset",val("svpk_header_preset")||"zero");
-    return{cmd:"package-svpk",label:"打包 SVPK 声库",args:a,p}
+    return{cmd:"package-svpk",label:"Build SVPK diagnostic package",args:a,p}
   },
   sfpk(){const p=[],a=[],voicePath=val("e_new")||val("t_output"),version=val("sfpk_version");
-    if(!voicePath)p.push("先选择训练后的声库文件。");
-    else if(!/\.nofs$/i.test(voicePath))p.push("请选择 .nofs 文件，而不是目录或其他文件。");
+    if(!voicePath)p.push("Choose the trained voicebank file first.");
+    else if(!/\.nofs$/i.test(voicePath))p.push("Choose a .nofs file, not a directory or another file type.");
     
-    if(!val("sfpk_models_root"))p.push("请选择 Synthesizer V 的 models 目录。");
+    if(!val("sfpk_models_root"))p.push("Choose the Synthesizer V models directory.");
     let output=val("sfpk_output");
-    if(!output)p.push("请指定 SFPK 保存位置。");
+    if(!output)p.push("Choose an SFPK output path.");
     else if(!/\.sfpk$/i.test(output)){output += ".sfpk";const el=document.getElementById("sfpk_output");if(el)el.value=output;}
     a.push("--voice",voicePath,"--models-root",val("sfpk_models_root"),"--output",output);
     if(val("sfpk_name"))a.push("--name",val("sfpk_name"));
@@ -1131,7 +1146,7 @@ const B={
     if(version)a.push("--version",version);
     if(val("sfpk_profile"))a.push("--profile",val("sfpk_profile"));
     if(val("sfpk_background"))a.push("--background",val("sfpk_background"));
-    return{cmd:"package-sfpk",label:"打包 SFPK 测试包",args:a,p}
+    return{cmd:"package-sfpk",label:"Build SFPK test package",args:a,p}
   },
   synth(){const p=[];if(!val("voice"))p.push("Choose a voice (step 1).");if(!val("s_output"))p.push("Choose where to save the data.");
     const a=["--voice",val("voice"),"--output",val("s_output"),"--language",lang()];
@@ -1466,7 +1481,14 @@ async function init(){
   addStaticHelp();
   wireHelpInteractions();
   try{ENV=await api("env")}catch(e){$("#banner").hidden=false;$("#banner").textContent=e.message;return}
-  restore(await api("settings").catch(()=>({})));
+  const savedSettings=await api("settings").catch(()=>({}));
+  restore(savedSettings);
+  // Upgrade old saved VOCALOID defaults (tracking-only) to the naturalization preset.
+  if(val("t_f0_profile")==="vocaloid"&&String(savedSettings.t_f0_smoothing??"0")==="0"&&
+     !savedSettings.t_f0_octave&&String(savedSettings.t_pitch_smoothing??"3")==="3"&&
+     String(savedSettings.t_pitch_melody_weight??"1")==="1"&&String(savedSettings.t_pitch_motion_weight??"1")==="1"){
+    applyF0ProfileControls("vocaloid");
+  }
   // a path the user typed earlier stays; empty or untouched ones are re-suggested
   AUTO.forEach(id=>{if(!val(id))EXTRA.manual[id]=false});
   const chips=$("#chips"),add=(t,c)=>{const s=document.createElement("span");s.className="chip "+c;s.textContent=t;chips.append(s);return s};
@@ -1495,6 +1517,7 @@ async function init(){
   document.addEventListener("change",e=>{
     const t=e.target;if(!t.matches)return;
     if(t.name==="preset"&&PRESETS[t.id]){Object.entries(PRESETS[t.id]).forEach(([k,v])=>{document.getElementById(k).value=v})}
+    if(t.id==="t_f0_profile")applyF0ProfileControls(val("t_f0_profile"));
     if(t.name==="d_mode"||t.id==="i_src"){setMode();suggest();checkSource()}
     if(t.id==="i_src")suggest();
     persist();refresh();
