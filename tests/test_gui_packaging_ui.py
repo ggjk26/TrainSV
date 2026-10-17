@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -168,3 +169,77 @@ def test_vocaloid_f0_profile_does_not_override_pitch_loss_settings():
     assert "t_pitch_melody_weight" not in fn
     assert "t_pitch_motion_weight" not in fn
 
+
+
+def test_dynamic_webui_messages_translate_in_all_locales():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is not installed; CI provides it for this check.")
+    rows_match = re.search(r"const I18N_ROWS = (\[.*?\]);\nconst I18N_MAP", PAGE, flags=re.DOTALL)
+    function_match = re.search(
+        r"function translateString\(source, language=UI_LANG\) \{.*?\n\}", PAGE, flags=re.DOTALL
+    )
+    assert rows_match is not None
+    assert function_match is not None
+    cases = [
+        [
+            "✓ 4 recordings, about 2.5 min of singing. 3 have notes. Warning: 1 listed recordings have no .wav file.",
+            "zh-CN",
+            "✓ 4 条录音，歌唱时长约 2.5 分钟。 3 条录音包含音符。 警告：有 1 条已列出的录音缺少 .wav 文件。",
+        ],
+        [
+            "Found 2 .wav and 1 .lab files. Each recording needs both.",
+            "ja",
+            ".wav 2 個、.lab 1 個が見つかりました。 各録音には両方のファイルが必要です。",
+        ],
+        [
+            "SFPK test package created: D:\\voice.sfpk. Model dependencies were written to the local directory: D:\\models. Import and test rendering in Synthesizer V Studio Flat; runtime compatibility has not yet been verified.",
+            "zh-CN",
+            "已生成 SFPK 测试包：D:\\voice.sfpk。模型依赖已写入本机目录：D:\\models。请在 Synthesizer V Studio Flat 中导入并测试渲染；运行时兼容性尚未验证。",
+        ],
+        [
+            "Missing Python packages: numpy, torch. In the TrainSV folder run: pip install -e .   (use the same Python that started this page: C:\\Python\\python.exe)",
+            "ja",
+            "不足している Python パッケージ：numpy, torch。TrainSV フォルダーで pip install -e . を実行してください（このページの起動に使用した Python：C:\\Python\\python.exe）。",
+        ],
+        [
+            "C:\\Dataset (No permission to open this folder.)",
+            "zh-CN",
+            "C:\\Dataset（无权限打开此文件夹）",
+        ],
+        [
+            "“steps” must be a number (you typed “oops”).",
+            "zh-CN",
+            "“steps”必须是数字（你输入的是“oops”）。",
+        ],
+        [
+            "Finished. Your new voice is saved at D:\\voice.nofs (1m 30s)",
+            "ja",
+            "学習が完了しました。新しい音声の保存先：D:\\voice.nofs（所要時間：1m 30s）",
+        ],
+        [
+            "The output file already exists:\nD:\\voice.svpk\n\nOverwrite it?",
+            "zh-CN",
+            "输出文件已存在：\nD:\\voice.svpk\n\n是否覆盖？",
+        ],
+        ["Request failed (404)", "ja", "リクエストに失敗しました（HTTP 404）。"],
+        [
+            "Could not read transcriptions.csv: invalid encoding",
+            "zh-CN",
+            "无法读取 transcriptions.csv：invalid encoding",
+        ],
+        ["Choose a voice (step 1).", "ja", "音声ライブラリを選択してください（手順 1）。"],
+    ]
+    script = (
+        "const I18N_ROWS = " + rows_match.group(1) + ";\\n"
+        + "const I18N_MAP = new Map(); for (const row of I18N_ROWS) for (const source of row) if (source && !I18N_MAP.has(source)) I18N_MAP.set(source, row);\\n"
+        + 'const I18N_INDEX = {en:0,"zh-CN":1,ja:2}; const UI_LANG = "en";\\n'
+        + function_match.group(0)
+        + "\\nconst cases = " + json.dumps(cases, ensure_ascii=False) + ";\\n"
+        + "for (const [source, language, expected] of cases) { const actual = translateString(source, language); if (actual !== expected) { console.error(JSON.stringify({source, language, expected, actual})); process.exit(1); } }\\n"
+    )
+    result = subprocess.run([node, "-e", script], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert r"source.match(/^✓ (\d+) recordings, about ([\d.]+) min" in PAGE
+    assert r"source.match(/^SFPK test package created: (.+?)\. Model dependencies" in PAGE
+    assert 'id="uiLanguage"' in PAGE
