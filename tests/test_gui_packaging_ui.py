@@ -35,7 +35,7 @@ def test_svpk_dialog_collects_required_metadata_and_assets():
     assert "JSON" in PAGE
     assert "全零字段版本在 Sharp 中无反应" in PAGE
     assert "Hanakuma Chifuyu" in PAGE
-    assert "复制 Chifuyu 字段后提示数据损坏" in PAGE
+    assert "复制 Chifuyu 字段会触发“数据损坏”" in PAGE
     assert "完整性/认证校验" in PAGE
     assert "Build Diagnostic Package (Not Installable)" in PAGE
     assert "startJob(\"svpk\")" in PAGE
