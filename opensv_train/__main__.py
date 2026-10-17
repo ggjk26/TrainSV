@@ -87,6 +87,13 @@ def finetune(arguments) -> None:
     )
     phrases = [phrase for utterance in utterances for phrase in make_phrases(utterance)]
     problems = [phrase.problem for phrase in phrases if phrase.problem]
+    no_f0 = [utterance.name for utterance in utterances if not np.any(np.isfinite(utterance.f0_values) & (utterance.f0_values > 0))]
+    if no_f0:
+        print(
+            f"F0 note: {len(no_f0)} utterance(s) have no measurable voiced frames; "
+            "they are retained for acoustic training and are not counted as damaged WAVs. "
+            f"Examples: {', '.join(no_f0[:5])}"
+        )
     print(f"{len(utterances)} utterances, {len(phrases)} phrases, {sum(p.frames for p in phrases) * 0.005 / 60:.1f} min")
     total_f0_frames = sum(len(utterance.f0_values) for utterance in utterances)
     voiced_f0 = np.concatenate(
@@ -245,9 +252,9 @@ def import_lab(arguments) -> None:
             writer.writeheader()
             writer.writerows(unmatched)
         if unmatched:
-            print(f"skipped {len(unmatched)} WAV file(s) with unmapped phones; see {report_path}")
+            print(f"skipped {len(unmatched)} WAV file(s) with unmappable phone labels or unreadable WAV audio; see {report_path}")
         if not recordings:
-            raise SystemExit(f"no WAV files could be labelled; see {report_path} for unmapped phones")
+            raise SystemExit(f"no WAV files could be labelled; see {report_path} for phone-mapping/audio errors")
     elif arguments.corpus:
         recordings = corpus_recordings(arguments.corpus)
     elif arguments.labs and arguments.wavs:
@@ -472,7 +479,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--language", default="japanese", type=language_name, help="language phone set for --voice")
     command.add_argument("--from-filenames", action="store_true", help="generate approximate LAB labels from space-separated phones in WAV filenames")
     command.add_argument("--phone-table", help="JSON phone table used to validate and split custom phoneme names")
-    command.add_argument("--source-phoneme-system", choices=("auto", "vocaloid-mandarin", "none"), default="auto", help="source filename phone convention; auto applies the VOCALOID Mandarin map for --language mandarin")
+    command.add_argument("--source-phoneme-system", choices=("auto", "vocaloid-mandarin", "xsampa", "synthv-xsampa", "none"), default="auto", help="source filename phone convention: auto uses VOCALOID Mandarin for Mandarin; xsampa uses standard X-SAMPA; synthv-xsampa uses legacy SynthV Mandarin X-SAMPA labels")
     command.set_defaults(handler=import_lab)
 
     command = commands.add_parser("convert-dict", help="re-spell a DiffSinger dataset with SV's dictionary for its language")
