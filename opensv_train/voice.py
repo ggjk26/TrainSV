@@ -147,69 +147,92 @@ class Voice(torch.nn.Module):
 
 
 
-def initialize_pitch_model(voice: Voice, model_path: str | Path) -> Path:
-    """Replace the voice's Pitch network with a compatible pretrained DNNI.
+def initialize_pitch_from_file(voice: Voice, source_path) -> int:
+    """Initialize a voice's Pitch network from a strictly compatible DNNI model.
 
-    The current voice's speaker embedding is retained. The candidate must load
-    as a supported PitchModel, have the same phone-table definitions, and
-    expose a speaker vector of the same shape. This deliberately rejects
-    arbitrary DNNI files and models for a different phoneme frontend.
+    The target voice's speaker vector is deliberately preserved. A source is
+    accepted only when its model layout, phone tables, normalization buffers,
+    non-parameter node payloads, and parameter shapes match.
     """
-    model_path = Path(model_path).expanduser()
+    model_path = Path(source_path).expanduser()
     if not model_path.is_file():
         raise FileNotFoundError(f"pretrained Pitch DNNI not found: {model_path}")
     if model_path.suffix.lower() != ".dnni":
         raise ValueError("pretrained Pitch model must be a .dnni file")
 
-    candidate_data = DnniFile.load(model_path)
     from .pitch import PitchModel
 
+    target_file = voice.files.models["pitch"]
+    target = voice.pitch
     try:
-        candidate_pitch = PitchModel(candidate_data)
-    except (ValueError, IndexError, KeyError, struct.error) as error:
-        raise ValueError(
-            f"{model_path} is not a Pitch DNNI architecture supported by this TrainSV build: {error}"
-        ) from error
+        source_file = DnniFile.load(source_path)
+        source = PitchModel(source_file)
+    except (OSError, ValueError, KeyError, struct.error) as error:
+        raise ValueError(f"the selected file is not a supported Synthesizer V Pitch DNNI model: {error}") from error
 
-    def phone_set_signature(phone_set):
-        return (
-            phone_set.name,
-            tuple(phone_set.symbols),
-            tuple(phone_set.categories),
-            tuple(phone_set.unified),
-            tuple(phone_set.classes),
-        )
+    if _phone_set_signature(target.phone_sets) != _phone_set_signature(source.phone_sets):
+        raise ValueError("Pitch model phoneme tables do not match the selected voice")
+    if _phone_set_signature([target.unified]) != _phone_set_signature([source.unified]):
+        raise ValueError("Pitch model unified phoneme tables do not match the selected voice")
 
-    current_pitch = voice.pitch
-    current_tables = tuple(phone_set_signature(table) for table in current_pitch.phone_sets)
-    candidate_tables = tuple(phone_set_signature(table) for table in candidate_pitch.phone_sets)
-    if current_tables != candidate_tables or phone_set_signature(current_pitch.unified) != phone_set_signature(candidate_pitch.unified):
-        raise ValueError(
-            "pretrained Pitch model uses different phone tables from the selected base voice; "
-            "choose a model exported from a voice with matching language/phoneme definitions"
-        )
+    def same_tree(a, b, root=False):
+        if a.type_id != b.type_id or len(a.children) != len(b.children):
+            return False
+        parameter_nodes = {"prim0", "prim1", "prim2", "prim3", "prim4", "prim5"}
+        if not root and a.type not in parameter_nodes and a.payload != b.payload:
+            return False
+        return all(same_tree(x, y) for x, y in zip(a.children, b.children))
 
-    current_speaker = current_pitch.speaker_vector().detach().cpu().numpy()
-    candidate_speaker = candidate_pitch.speaker_vector().detach().cpu().numpy()
-    if current_speaker.shape != candidate_speaker.shape:
-        raise ValueError(
-            f"pretrained Pitch speaker vector has shape {candidate_speaker.shape}, "
-            f"but the selected base voice requires {current_speaker.shape}"
-        )
+    if not same_tree(target_file.root, source_file.root, root=True):
+        raise ValueError("Pitch model network layout/configuration is not an exact match")
 
-    if voice.files.info is None:
-        # Keep the VectorParameter wrapper so Voice.export() writes the retained
-        # speaker vector into the replacement DNNI for single-file NOFS voices.
-        speaker = getattr(candidate_pitch, "speaker", None)
-        value = getattr(speaker, "value", None)
-        if value is None or tuple(value.shape) != tuple(current_speaker.shape):
-            raise ValueError("pretrained Pitch model speaker embedding cannot be exported into a voice.nofs")
-        with torch.no_grad():
-            value.copy_(torch.from_numpy(current_speaker).to(value.device, value.dtype))
-    else:
-        # Shared-model info voices store this voice-specific embedding in info.nofs.
-        candidate_pitch = PitchModel(candidate_data, speaker=current_speaker)
+    target_buffers = dict(target.named_buffers())
+    source_buffers = dict(source.named_buffers())
+    if target_buffers.keys() != source_buffers.keys():
+        raise ValueError("Pitch model normalization/mask layout does not match")
+    for name, target_value in target_buffers.items():
+        source_value = source_buffers[name]
+        if target_value.shape != source_value.shape or not torch.equal(
+            target_value.detach().cpu(), source_value.detach().cpu()
+        ):
+            raise ValueError(f"Pitch model normalization or sparsity mask differs at {name}")
 
-    voice.pitch = candidate_pitch
-    voice.files.models["pitch"] = candidate_data
-    return model_path.resolve()
+    def trainable_parameters(model):
+        # Keep the target singer identity. Its parameter can be stored inside the
+        # DNNI file or in the info voice's metadata, depending on voice format.
+        return {
+            name: value for name, value in model.named_parameters()
+            if not name.startswith("speaker")
+        }
+
+    target_params = trainable_parameters(target)
+    source_params = trainable_parameters(source)
+    if target_params.keys() != source_params.keys():
+        raise ValueError("Pitch model trainable parameter layout does not match")
+    for name, target_value in target_params.items():
+        if target_value.shape != source_params[name].shape:
+            raise ValueError(f"Pitch model parameter shape differs at {name}")
+
+    with torch.no_grad():
+        for name, target_value in target_params.items():
+            target_value.copy_(source_params[name].detach().to(target_value.device))
+    target.expression = source.expression
+    target.expression_strength = source.expression_strength
+    target.rap_expression = source.rap_expression
+    target_file.root.payload = source_file.root.payload[:12] + target_file.root.payload[12:]
+    return len(target_params)
+
+
+def _phone_set_signature(phone_sets) -> tuple:
+    return tuple(
+        (phone_set.name, tuple(phone_set.symbols), tuple(phone_set.categories),
+         tuple(phone_set.unified), tuple(phone_set.classes))
+        for phone_set in phone_sets
+    )
+
+
+def initialize_pitch_model(voice: Voice, model_path: str | Path) -> Path:
+    """Backward-compatible wrapper returning the resolved model path."""
+    resolved = Path(model_path).expanduser().resolve()
+    initialize_pitch_from_file(voice, resolved)
+    return resolved

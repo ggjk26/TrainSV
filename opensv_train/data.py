@@ -158,6 +158,14 @@ def read_audio(path: Path) -> np.ndarray:
     return audio
 
 
+def _validate_f0_settings(floor: float, ceiling: float, voicing_threshold: float) -> None:
+    """Validate F0 range and Praat's autocorrelation voicing threshold."""
+    if not np.isfinite(floor) or not np.isfinite(ceiling) or floor <= 0 or ceiling <= floor:
+        raise ValueError("F0 range must satisfy 0 < floor < ceiling (Hz)")
+    if not np.isfinite(voicing_threshold) or not 0.0 <= voicing_threshold <= 1.0:
+        raise ValueError("F0 voicing threshold must be between 0 and 1")
+
+
 def extract_f0(
     audio: np.ndarray,
     floor: float = 65.0,
@@ -167,6 +175,7 @@ def extract_f0(
 ) -> tuple[np.ndarray, np.ndarray]:
     import parselmouth
 
+    _validate_f0_settings(floor, ceiling, voicing_threshold)
     pitch = parselmouth.Sound(audio.astype(np.float64), SAMPLE_RATE).to_pitch_ac(
         time_step=FRAME_SECONDS,
         voicing_threshold=voicing_threshold,
@@ -195,12 +204,16 @@ def load_dataset(
     f0_smoothing: int = 0,
     f0_octave_correction: bool = False,
     f0_shift_semitones: float = 0.0,
+    f0_reference_cents: float = 0.0,
 ) -> list[Utterance]:
+    if not np.isfinite(f0_reference_cents) or abs(f0_reference_cents) > 1200.0:
+        raise ValueError("F0 reference correction must be finite and between -1200 and +1200 cents")
     directory = Path(directory)
     mapping = phoneme_map or {}
     floor, ceiling, threshold = resolve_f0_profile(
         "standard", floor=f0_range[0], ceiling=f0_range[1], voicing_threshold=f0_voicing_threshold
     )
+    _validate_f0_settings(floor, ceiling, threshold)
     cache = cache or directory / ".opensv-cache"
     cache.mkdir(exist_ok=True)
     utterances = []
@@ -252,6 +265,10 @@ def load_dataset(
                 correct_octave=f0_octave_correction,
                 shift_semitones=f0_shift_semitones,
             )
+            # Apply the reference calibration after loading raw F0 from cache;
+            # changing a cents offset does not require re-running audio analysis.
+            if f0_reference_cents:
+                processed_values = processed_values * np.float32(2.0 ** (f0_reference_cents / 1200.0))
             utterances.append(
                 Utterance(
                     name, audio, phones, notes, times, processed_values, tuning,

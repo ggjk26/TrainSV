@@ -105,7 +105,34 @@ def test_successful_comparison_opens_the_package_format_chooser():
 
 def test_training_and_evaluation_expose_f0_tracking_profiles():
     assert 'data-id="t_f0_profile"' in PAGE
-    assert 'data-options="standard|Standard (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID / synthetic singing (45–1400 Hz, threshold 0.45)"' in PAGE
+    assert 'data-options="standard|通用默认（65–1100 Hz，阈值 0.60）;vocaloid|VOCALOID 合成声（45–1400 Hz，阈值 0.45）;low|低音（45–650 Hz，阈值 0.60）;high|高音（100–1400 Hz，阈值 0.60）;wide|宽音域（40–1600 Hz，阈值 0.60）"' in PAGE
     assert 'a.push("--f0-profile",val("t_f0_profile")||"standard")' in PAGE
-    assert "F0 追踪预设只影响训练/评估时从 WAV 提取基频的方式" in PAGE
-    assert "没有 note_seq/音符标注，Pitch 模型无法训练" in PAGE
+    assert "F0 追踪预设控制从输入 WAV 提取基频时的频率范围与浊音阈值" in PAGE
+    assert "若只有音素 LAB、没有 note_seq/note_dur，Pitch 无法有效训练" in PAGE
+
+
+def test_training_pitch_workspace_exposes_full_f0_and_pretrained_controls():
+    assert 'id="pitchTrainingPanel"' in PAGE
+    for field in (
+        "t_pitch_source",
+        "t_pitch_model",
+        "t_f0_profile",
+        "t_f0_floor",
+        "t_f0_ceiling",
+        "t_f0_threshold",
+        "t_f0_smoothing",
+        "t_f0_correction",
+        "t_pitch_smoothing",
+        "t_pitch_melody_weight",
+        "t_pitch_motion_weight",
+    ):
+        assert f'data-id="{field}"' in PAGE
+    assert 'value="low|低音（45–650 Hz，阈值 0.60）"' in PAGE or "low|低音（45–650 Hz，阈值 0.60）" in PAGE
+    assert "high|高音（100–1400 Hz，阈值 0.60）" in PAGE
+    assert "wide|宽音域（40–1600 Hz，阈值 0.60）" in PAGE
+    assert 'a.push("--pitch-base-model",val("t_pitch_model"))' in PAGE
+    assert '["--f0-reference-cents","t_f0_correction"]' in PAGE
+    assert '["--pitch-smoothing-hz","t_pitch_smoothing"]' in PAGE
+    assert '["--pitch-melody-weight","t_pitch_melody_weight"]' in PAGE
+    assert '["--pitch-motion-weight","t_pitch_motion_weight"]' in PAGE
+    assert 'pitch(){return this.finetune(true)}' in PAGE

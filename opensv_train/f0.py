@@ -12,6 +12,9 @@ import math
 F0_PROFILES: dict[str, tuple[float, float, float]] = {
     "standard": (65.0, 1100.0, 0.60),
     "vocaloid": (45.0, 1400.0, 0.45),
+    "low": (45.0, 650.0, 0.60),
+    "high": (100.0, 1400.0, 0.60),
+    "wide": (40.0, 1600.0, 0.60),
 }
 
 

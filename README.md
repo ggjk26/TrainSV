@@ -209,3 +209,24 @@ Now supported Vocaloid-styled X-SAMPA dict. But something wrong with F0.
 - `opensv_train/`: the CLI, dataset, model, training and export code
 - `parity/`: the vendored OpenSV engine and the harness the tests compare against
 - `tests/`: parity and training tests
+
+## Pitch / F0 tuning
+
+The Training page includes a dedicated Pitch / F0 workspace. The existing Pitch checkbox still controls whether the voice's own pitch model is finetuned. The additional controls are:
+
+- F0 presets for default (65–1100 Hz), low (45–650 Hz), high (100–1400 Hz), and wide (40–1600 Hz) ranges.
+- Configurable pitch floor/ceiling and Praat autocorrelation voicing threshold.
+- Optional F0 reference correction in cents (negative lowers the detected pitch reference; e.g. try -25 for a measured reference that is about 25 cents sharp).
+- Smoothing cutoff for separating the slow melody contour from faster pitch motion, plus independent melody and motion loss weights.
+
+The matching CLI flags are available to both `finetune` and `evaluate`: `--f0-floor`, `--f0-ceiling`, `--f0-voicing-threshold`, `--f0-reference-cents`, `--pitch-smoothing-hz`, `--pitch-melody-weight`, and `--pitch-motion-weight`. Changing F0 range or voicing threshold invalidates and recomputes the detector cache. Reference correction is applied after cache loading.
+
+The Training page also accepts an optional external pretrained Pitch DNNI file. The CLI equivalent is `trainsv finetune --pitch-base-model <path-to-pitch.dnni>`. TrainSV strictly checks the network tree, phoneme tables, normalization buffers, sparse masks, and trainable tensor shapes before copying the source model's non-speaker parameters. The target voice's own speaker vector is preserved; an incompatible file is rejected rather than force-written.
+
+The repository does **not** yet bundle a tested general-purpose Pitch weight file. This option lets a user initialize from a locally available compatible pretrained model; it does not make different Pitch architectures or phone sets automatically compatible. For VOCALOID/UTAU sources, first check the F0 range/voicing settings and small reference correction, then compare listening results on recordings held out from training.
+
+## Layout
+
+- `opensv_train/`: the CLI, dataset, model, training and export code
+- `parity/`: the vendored OpenSV engine and the harness the tests compare against
+- `tests/`: parity and training tests

@@ -6,9 +6,12 @@ from opensv_train.f0 import F0_PROFILES, f0_cache_tag, resolve_f0_profile
 
 
 def test_f0_profiles_have_expected_ranges():
-    assert tuple(F0_PROFILES) == ("standard", "vocaloid")
+    assert tuple(F0_PROFILES) == ("standard", "vocaloid", "low", "high", "wide")
     assert resolve_f0_profile("standard") == (65.0, 1100.0, 0.60)
     assert resolve_f0_profile("vocaloid") == (45.0, 1400.0, 0.45)
+    assert resolve_f0_profile("low") == (45.0, 650.0, 0.60)
+    assert resolve_f0_profile("high") == (100.0, 1400.0, 0.60)
+    assert resolve_f0_profile("wide") == (40.0, 1600.0, 0.60)
 
 
 def test_f0_profile_numeric_overrides_and_validation():

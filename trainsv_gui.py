@@ -613,12 +613,15 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div class="grid2">
       <div class="field" data-id="t_pitch_source" data-kind="select" data-options="base|使用当前底模自带 Pitch 模型;pretrained|导入兼容的预训练 Pitch DNNI" data-value="base" data-label="Pitch 模型初始化来源" data-hint="默认使用当前底模的 Pitch 模型；导入外部模型前会检查模型结构、音素表和说话人向量维度。"></div>
       <div class="field" data-id="t_pitch_model" data-kind="path" data-mode="file" data-ext="dnni" data-label="外部预训练 Pitch 模型（.dnni）" data-hint="仅在选择导入预训练模型时需要。必须是 TrainSV 当前支持的 Pitch DNNI，并且音素表与底模匹配。"></div>
-      <div class="field" data-id="t_f0_profile" data-kind="select" data-options="standard|Standard (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID / synthetic singing (45–1400 Hz, threshold 0.45)" data-value="standard" data-label="F0 追踪预设" data-hint="选择输入 WAV 的基频检测范围及清浊音门槛。"></div>
+      <div class="field" data-id="t_f0_profile" data-kind="select" data-options="standard|通用默认（65–1100 Hz，阈值 0.60）;vocaloid|VOCALOID 合成声（45–1400 Hz，阈值 0.45）;low|低音（45–650 Hz，阈值 0.60）;high|高音（100–1400 Hz，阈值 0.60）;wide|宽音域（40–1600 Hz，阈值 0.60）" data-value="standard" data-label="F0 追踪预设" data-hint="选择输入 WAV 的基频检测范围及清浊音门槛。"></div>
       <div class="field" data-id="t_f0_floor" data-label="F0 最低频率（Hz，可覆盖预设）" data-ph="跟随预设，例如 45" data-hint="低于此频率的音高不在检测范围内；应根据歌手最低音设置。"></div>
       <div class="field" data-id="t_f0_ceiling" data-label="F0 最高频率（Hz，可覆盖预设）" data-ph="跟随预设，例如 1400" data-hint="高于此频率的音高不在检测范围内；过高也可能增加谐波误检。"></div>
       <div class="field" data-id="t_f0_threshold" data-label="清浊音门槛（0–1，可覆盖预设）" data-ph="跟随预设，例如 0.45" data-hint="降低可能减少漏检，也可能把噪声误判为有声；留空时使用所选预设值。"></div>
       <div class="field" data-id="t_f0_smoothing" data-kind="select" data-options="0|关闭;3|轻度（15 ms）;5|中度（25 ms）;7|较强（35 ms）" data-value="0" data-label="F0 中值平滑" data-hint="在有声片段内对 log2(F0) 做中值滤波；较强平滑会压低部分颤音细节。"></div>
-      <div class="field" data-id="t_f0_shift" data-label="F0 校准偏移（半音）" data-value="0" data-ph="0" data-hint="对检测到的 F0 训练目标整体加上该半音偏移。若检测目标整体高约 1 半音，可试 -1；不要用它掩盖音符标注错误。范围 -24 到 +24。"></div>
+      <div class="field" data-id="t_f0_correction" data-label="F0 参考校正（音分）" data-value="0" data-ph="0（不校正）" data-hint="在缓存后的 F0 参考曲线上整体校正音分。若检测结果测得高约 25 音分，可先试 -25。不能修复错误八度、错误音符或对齐问题。范围 -1200 到 +1200。"></div>
+      <div class="field" data-id="t_pitch_smoothing" data-label="旋律平滑截止频率（Hz）" data-value="3" data-hint="用于把 Pitch 预测拆分为慢旋律轮廓与快速音高运动的低通截止频率，不会直接对导出的 WAV 做后期平滑。"></div>
+      <div class="field" data-id="t_pitch_melody_weight" data-label="旋律轮廓损失权重" data-value="1" data-hint="控制 Pitch 模型学习整体音符走向的权重。数值越大，越重视较平滑的旋律误差；设为 0 可关闭该损失分量。"></div>
+      <div class="field" data-id="t_pitch_motion_weight" data-label="颤音 / 快速变化损失权重" data-value="1" data-hint="控制 Pitch 模型学习颤音和快速音高运动的权重。太高可能使模型把原始合成器的抖动也学进去。至少一个 Pitch loss 权重必须大于 0。"></div>
     </div>
     <label class="choice"><input type="checkbox" id="t_f0_octave" data-s><span><b>修正孤立的八度跳变</b><small>只修正前后相邻有声帧一致、且中间帧疑似高/低 1–2 个八度的离群点；默认关闭。</small></span></label>
     <div class="actions">
@@ -831,7 +834,13 @@ const FIELD_HELP = {
   "v_name": "为输出声库设置显示名称。建议使用容易识别的名称；该名称也会用于自动生成部分输出路径。",
   "t_output": "指定训练后声库的保存位置。普通 voice.nofs 声库保存为文件；info.*.nofs 类型的共享模型声库会按工具规则保存到目录中。",
   "t_lr": "学习率，控制每次更新模型参数时的调整幅度。默认值取决于“调整内容”：全部权重通常为 2e-5，仅训练身份向量时通常为 3e-3。过高可能不稳定，过低可能进展缓慢。",
-  "t_f0_profile": "F0 追踪预设只影响训练/评估时从 WAV 提取基频的方式。Standard 沿用旧默认值；VOCALOID / synthetic singing 会扩大检测范围到 45–1400 Hz，并采用 0.45 的清浊音门槛，可能帮助漏检低音或高音，也可能引入错误候选。它不会单独校正合成时的音高。若数据只有按文件名生成的音素 LAB、没有 note_seq/音符标注，Pitch 模型无法训练；这种数据请先训练 Sound/Acoustic。",
+  "t_f0_profile": "F0 追踪预设控制从输入 WAV 提取基频时的频率范围与浊音阈值。可选通用默认、VOCALOID 合成声、低音、高音和宽音域。预设只是起点，建议检查训练日志的有声帧比例和中位 F0，错误音高候选也可能随范围放宽而增加。",
+  "t_f0_correction": "对从 WAV 检测并经过基本清理的 F0 参考曲线整体做音分校正。负值降低参考音高，正值提高。建议先测量实际偏差并小幅调整；不应用于修正八度跳变、错误音符或时间对齐。",
+  "t_pitch_smoothing": "低通截止频率，用于 Pitch 损失里分离平滑旋律轮廓和快速变化。较低会更强调旋律大轮廓，较高会把更多快速变化纳入旋律项。这不是直接平滑最终音频。",
+  "t_pitch_melody_weight": "平滑旋律轮廓损失权重，表示 Pitch 训练更重视整体旋律曲线还是其他音高细节。请结合验证集的 pitch_semitones/pitch_melody 和试听设置。",
+  "t_pitch_motion_weight": "快速变化/颤音损失权重。提高它可能保留更多细节，也可能学到不需要的抖动；初始建议保留 1.0。",
+  "t_f0_smoothing": "F0 中值平滑只在连续有声片段内部工作，不会把平滑结果跨过静音或辅音。强度越大越可能压低原有颤音细节。",
+  "t_pitch_source": "默认使用当前底模的 Pitch 网络。选择外部预训练时，必须提供兼容的 .dnni 文件；TrainSV 会严格检查网络树、音素表、归一化和稀疏掩码，不兼容时会拒绝。当前仓库没有随包附带经过验证的通用神经 Pitch 权重。",
   "t_warmup": "预热步数。大于 0 时，学习率会在指定步数内逐渐升高；留空或为 0 时不启用预热。",
   "t_lrend": "最终学习率。填写后，训练会按余弦衰减逐步降至该值；留空时学习率保持不变（除非设置了预热）。",
   "t_anchor": "控制微调权重向原始声库权重靠拢的强度。值越大，约束通常越强、越能保留原声库特征；具体效果仍取决于数据和训练设置。",
@@ -1049,23 +1058,43 @@ const B={
     if(chk("i_words")){if(!val("voice"))p.push("Choose a voice (step 1), or untick “Mark word boundaries”.");a.push("--voice",val("voice"),"--language",lang())}
     const pairs=val("i_map").split(/[\s,]+/).filter(x=>x.includes("="));if(pairs.length)a.push("--map",...pairs);
     return{cmd:"import-lab",label:"Converting recordings to a dataset",args:a,p}},
-  finetune(){const p=[],a=[];
+  finetune(pitchOnly=false){const p=[],a=[];
     if(!val("voice"))p.push("Choose a voice (step 1).");dsNeed(p,"Choose a dataset (step 2).");
     if(!val("v_name"))p.push("Name your new voice.");if(!val("t_output"))p.push("Choose where to save the new voice.");
-    const models=MODELS.filter(x=>chk("m_"+x));if(!models.length)p.push("Tick at least one thing to learn.");
+    const models=pitchOnly?["pitch"]:MODELS.filter(x=>chk("m_"+x));if(!models.length)p.push("Tick at least one thing to learn.");
     a.push("--voice",val("voice"),"--data",val("dataset"),"--output",val("t_output"),"--language",lang(),"--models",models.join(","),"--name",val("v_name"));
     a.push("--f0-profile",val("t_f0_profile")||"standard");
+    [
+      ["--f0-floor","t_f0_floor"],["--f0-ceiling","t_f0_ceiling"],["--f0-voicing-threshold","t_f0_threshold"],
+      ["--f0-smoothing","t_f0_smoothing"],["--f0-reference-cents","t_f0_correction"],
+      ["--pitch-smoothing-hz","t_pitch_smoothing"],["--pitch-melody-weight","t_pitch_melody_weight"],
+      ["--pitch-motion-weight","t_pitch_motion_weight"]
+    ].forEach(([flag,id])=>addOpt(a,p,flag,id));
+    if(chk("t_f0_octave"))a.push("--f0-octave-correction");
+    if(val("t_pitch_source")==="pretrained"){
+      if(!val("t_pitch_model"))p.push("选择外部预训练 Pitch 时，必须指定 .dnni 文件。");
+      else if(!models.includes("pitch"))p.push("导入预训练 Pitch 模型时，请勾选上方 Pitch 模型。");
+      else a.push("--pitch-base-model",val("t_pitch_model"));
+    }
     addOpt(a,p,"--steps","t_steps",true);
     if(val("t_params")&&val("t_params")!=="all")a.push("--params",val("t_params"));
     [["--lr","t_lr"],["--warmup","t_warmup"],["--lr-end","t_lrend"],["--anchor","t_anchor"],["--batch","t_batch"],["--consonant-weight","t_cons"],["--validation","t_val"],["--evaluate-every","t_evalevery"],["--log-every","t_logevery"],["--seed","t_seed"],["--gain","t_gain"]].forEach(([f,i])=>addOpt(a,p,f,i));
     [["--device","t_device"],["--phoneme-map","t_pmap"],["--vocal-modes","t_modes"],["--version","t_version"],["--final-version","t_final"],["--level-reference","t_levelref"],["--history","t_history"],["--run","t_run"]].forEach(([f,i])=>{if(val(i))a.push(f,val(i))});
     if(chk("t_keep"))a.push("--keep-level");if(chk("t_savebest"))a.push("--save-best");if(chk("t_resume"))a.push("--resume");
-    return{cmd:"finetune",label:"Training",args:a,p}},
+    return{cmd:"finetune",label:pitchOnly?"Pitch model training":"Training",args:a,p}},
+  pitch(){return this.finetune(true)},
   evaluate(){const p=[],a=[];
     if(!val("voice"))p.push("Choose the original voice (step 1).");if(!val("e_new"))p.push("Choose your new voice.");
     dsNeed(p,"Choose a dataset (step 2).");if(!val("e_out"))p.push("Choose where to save the comparison.");
     a.push("--voice",val("voice"),"--voice",val("e_new"),"--data",val("dataset"),"--language",lang(),"--models",trainedModels().join(","));
     a.push("--f0-profile",val("t_f0_profile")||"standard");
+    [
+      ["--f0-floor","t_f0_floor"],["--f0-ceiling","t_f0_ceiling"],["--f0-voicing-threshold","t_f0_threshold"],
+      ["--f0-smoothing","t_f0_smoothing"],["--f0-reference-cents","t_f0_correction"],
+      ["--pitch-smoothing-hz","t_pitch_smoothing"],["--pitch-melody-weight","t_pitch_melody_weight"],
+      ["--pitch-motion-weight","t_pitch_motion_weight"]
+    ].forEach(([flag,id])=>addOpt(a,p,flag,id));
+    if(chk("t_f0_octave"))a.push("--f0-octave-correction");
     addOpt(a,p,"--validation","t_val");addOpt(a,p,"--seed","t_seed");
     if(val("t_pmap"))a.push("--phoneme-map",val("t_pmap"));
     a.push("--out",val("e_out"));addOpt(a,p,"--max-phrases","e_max");

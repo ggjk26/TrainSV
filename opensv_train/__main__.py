@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import random
 import sys
@@ -17,25 +18,44 @@ from .calibration import fit_input_ranges
 from .data import F0_PROFILES, LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, resolve_f0_profile, split
 from .f0 import F0_SMOOTHING_OPTIONS
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
-from .voice import ROLES, Voice, initialize_pitch_model
+from .voice import ROLES, Voice, initialize_pitch_from_file
 from .packaging import build_svpk
 from .sfpk import build_sfpk
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
 
+def _validate_pitch_options(arguments) -> None:
+    if not math.isfinite(arguments.pitch_smoothing_hz) or not 0.0 < arguments.pitch_smoothing_hz < 100.0:
+        raise SystemExit("--pitch-smoothing-hz must be finite, greater than 0 and below 100 Hz")
+    if not math.isfinite(arguments.pitch_melody_weight) or not math.isfinite(arguments.pitch_motion_weight):
+        raise SystemExit("Pitch loss weights must be finite numbers")
+    if arguments.pitch_melody_weight < 0 or arguments.pitch_motion_weight < 0:
+        raise SystemExit("Pitch loss weights must be non-negative")
+    if arguments.pitch_melody_weight == 0 and arguments.pitch_motion_weight == 0:
+        raise SystemExit("at least one Pitch loss weight must be greater than zero")
+    if not math.isfinite(arguments.f0_reference_cents) or not -1200.0 <= arguments.f0_reference_cents <= 1200.0:
+        raise SystemExit("--f0-reference-cents must be finite and between -1200 and +1200 cents")
+    if not math.isfinite(arguments.f0_shift_semitones) or not -24.0 <= arguments.f0_shift_semitones <= 24.0:
+        raise SystemExit("--f0-shift-semitones must be finite and between -24 and +24 semitones")
+
+
 def finetune(arguments) -> None:
+    _validate_pitch_options(arguments)
     voice = Voice.load(arguments.voice)
     models = tuple(arguments.models.split(","))
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
     if arguments.pitch_model:
+        if "pitch" not in models:
+            raise SystemExit("--pitch-model requires --models to include pitch")
+        if arguments.resume:
+            raise SystemExit("--pitch-model initializes a new run; omit it when resuming a saved run")
         try:
-            pitch_path = initialize_pitch_model(voice, arguments.pitch_model)
-        except (ValueError, FileNotFoundError) as error:
-            raise SystemExit(f"cannot use pretrained Pitch model: {error}") from error
-        print(f"initialized Pitch network from compatible DNNI: {pitch_path}")
-        print("kept the selected base voice's Pitch speaker embedding")
+            copied = initialize_pitch_from_file(voice, arguments.pitch_model)
+        except (OSError, ValueError) as error:
+            raise SystemExit(f"cannot initialize Pitch from {arguments.pitch_model}: {error}") from error
+        print(f"initialized Pitch from compatible DNNI ({copied} parameter tensors); target speaker embedding preserved")
     f0_floor, f0_ceiling, f0_threshold = resolve_f0_profile(
         arguments.f0_profile,
         floor=arguments.f0_floor,
@@ -51,6 +71,7 @@ def finetune(arguments) -> None:
         f0_smoothing=arguments.f0_smoothing,
         f0_octave_correction=arguments.f0_octave_correction,
         f0_shift_semitones=arguments.f0_shift_semitones,
+        f0_reference_cents=arguments.f0_reference_cents,
     )
     phrases = [phrase for utterance in utterances for phrase in make_phrases(utterance)]
     problems = [phrase.problem for phrase in phrases if phrase.problem]
@@ -109,6 +130,9 @@ def finetune(arguments) -> None:
         models=models, params=arguments.params, steps=arguments.steps, learning_rate=arguments.lr, anchor=arguments.anchor,
         evaluate_every=arguments.evaluate_every, seed=arguments.seed, device=arguments.device, rap_languages=voice.files.rap_languages, batch=arguments.batch,
         consonant_weight=arguments.consonant_weight, warmup=arguments.warmup, lr_end=arguments.lr_end, log_every=arguments.log_every,
+        pitch_melody_weight=arguments.pitch_melody_weight,
+        pitch_motion_weight=arguments.pitch_motion_weight,
+        pitch_smoothing_hz=arguments.pitch_smoothing_hz,
     )
     calibration = random.Random(arguments.seed).sample(phrases, min(40, len(phrases)))
     models_root = Path(arguments.output).expanduser().parent.parent / "models"
@@ -257,6 +281,7 @@ def convert_dict(arguments) -> None:
 
 
 def evaluate(arguments) -> None:
+    _validate_pitch_options(arguments)
     device = torch.device(arguments.device)
     output = Path(arguments.out) if arguments.out else None
     report = {}
@@ -279,13 +304,21 @@ def evaluate(arguments) -> None:
                 f0_smoothing=arguments.f0_smoothing,
                 f0_octave_correction=arguments.f0_octave_correction,
                 f0_shift_semitones=arguments.f0_shift_semitones,
+                f0_reference_cents=arguments.f0_reference_cents,
             )
             for phrase in make_phrases(utterance)
         ]
         _, validation = split(phrases, arguments.validation, arguments.seed)
         gain = level_gain(voice, phrases, device)
         apply_gain(phrases, gain)
-        config = TrainConfig(models=tuple(arguments.models.split(",")), device=arguments.device, rap_languages=voice.files.rap_languages)
+        config = TrainConfig(
+            models=tuple(arguments.models.split(",")),
+            device=arguments.device,
+            rap_languages=voice.files.rap_languages,
+            pitch_melody_weight=arguments.pitch_melody_weight,
+            pitch_motion_weight=arguments.pitch_motion_weight,
+            pitch_smoothing_hz=arguments.pitch_smoothing_hz,
+        )
         metrics = Trainer(voice, [], validation, config, log=lambda message: None).evaluate()
         name = voice.files.metadata.get(".name", path)
         print(f"{name} (gain {gain:.3f}): " + " ".join(f"{key}={value:.4f}" for key, value in sorted(metrics.items())))
@@ -379,7 +412,7 @@ def parser() -> argparse.ArgumentParser:
         "--f0-profile",
         choices=tuple(F0_PROFILES),
         default="standard",
-        help="WAV pitch tracking preset: standard (65-1100 Hz, threshold 0.60) or vocaloid (45-1400 Hz, threshold 0.45)",
+        help="WAV pitch tracking preset: standard, vocaloid, low, high, or wide; explicit F0 arguments override preset values",
     )
     command.add_argument("--f0-floor", type=float, help="override the selected F0 preset's minimum frequency in Hz")
     command.add_argument("--f0-ceiling", type=float, help="override the selected F0 preset's maximum frequency in Hz")
@@ -387,7 +420,11 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--f0-smoothing", type=int, choices=F0_SMOOTHING_OPTIONS, default=0, help="median smoothing width in 5 ms frames: 0/off, 3/light, 5/medium, 7/strong")
     command.add_argument("--f0-octave-correction", action="store_true", help="correct isolated 1-2 octave tracker jumps only when adjacent voiced frames agree")
     command.add_argument("--f0-shift-semitones", type=float, default=0.0, help="add this semitone offset to measured F0 targets, range -24 to +24")
-    command.add_argument("--pitch-model", help="initialize the Pitch network from a compatible pretrained Pitch .dnni; current voice speaker embedding is retained")
+    command.add_argument("--f0-reference-cents", type=float, default=0.0, help="fine-tune measured F0 reference by cents after cache loading, range -1200 to +1200")
+    command.add_argument("--pitch-smoothing-hz", type=float, default=3.0, help="low-pass cutoff for the smooth melody contour, 0 < cutoff < 100 Hz")
+    command.add_argument("--pitch-melody-weight", type=float, default=1.0, help="loss weight for the smooth pitch melody contour")
+    command.add_argument("--pitch-motion-weight", type=float, default=1.0, help="loss weight for vibrato and faster pitch movement")
+    command.add_argument("--pitch-model", "--pitch-base-model", dest="pitch_model", help="initialize Pitch from a compatible pretrained .dnni; target speaker embedding is preserved")
     command.add_argument("--lr", type=float, help="learning rate (default 2e-5 for all, 3e-3 for embeddings)")
     command.add_argument("--warmup", type=int, default=0, help="steps of linear learning-rate warmup")
     command.add_argument("--lr-end", type=float, help="cosine-decay the learning rate to this by the last step; constant without it")
@@ -453,6 +490,10 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--f0-smoothing", type=int, choices=F0_SMOOTHING_OPTIONS, default=0, help="median smoothing width in 5 ms frames")
     command.add_argument("--f0-octave-correction", action="store_true", help="correct isolated octave errors in tracked F0")
     command.add_argument("--f0-shift-semitones", type=float, default=0.0, help="semitone offset added to measured F0 targets")
+    command.add_argument("--f0-reference-cents", type=float, default=0.0, help="fine-tune measured F0 reference in cents")
+    command.add_argument("--pitch-smoothing-hz", type=float, default=3.0, help="low-pass cutoff for smooth melody contour, 0 < cutoff < 100 Hz")
+    command.add_argument("--pitch-melody-weight", type=float, default=1.0, help="loss weight for the smooth melody contour")
+    command.add_argument("--pitch-motion-weight", type=float, default=1.0, help="loss weight for vibrato and faster pitch motion")
     command.add_argument("--validation", type=float, default=0.1)
     command.add_argument("--phoneme-map")
     command.add_argument("--seed", type=int, default=0)
