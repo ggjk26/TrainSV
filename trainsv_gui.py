@@ -600,6 +600,29 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <label class="choice"><input type="checkbox" id="m_pitch" data-s><span><b>Pitch</b> (melody and vibrato)<small>How the singer moves between notes. Needs notes in the dataset.</small></span></label>
     <label class="choice"><input type="checkbox" id="m_vocoder" data-s><span><b>Vocoder</b> (final audio stage)<small>Optional and slower. Most people leave this off.</small></span></label>
   </fieldset>
+  <fieldset class="pitch-workspace">
+    <legend>Pitch / F0 workspace</legend>
+    <p class="hint">专用音高设置区。先勾选上方的 Pitch 才会训练音高模型；F0 跟踪设置同时影响 Sound/Pitch 训练用到的录音分析和评估。默认值保持旧版行为。</p>
+    <div class="field">
+      <label for="t_f0_preset">F0 音域预设</label>
+      <select id="t_f0_preset" data-s>
+        <option value="balanced" selected>通用 / 默认（65–1100 Hz）</option>
+        <option value="low">低音（45–650 Hz）</option>
+        <option value="high">高音（100–1400 Hz）</option>
+        <option value="wide">宽音域（40–1600 Hz）</option>
+      </select>
+      <small>预设会填入音高跟踪参数，之后仍可单独修改。若出现跳八度或漏检，可尝试调整音域和阈值。</small>
+    </div>
+    <div class="grid2">
+      <div class="field" data-id="t_f0_floor" data-label="F0 最低频率（Hz）" data-value="65" data-hint="低于该频率的基频不会被跟踪。音域太低会更容易把环境低频当成基频；太高可能漏掉低音。"></div>
+      <div class="field" data-id="t_f0_ceiling" data-label="F0 最高频率（Hz）" data-value="1100" data-hint="高于该频率的基频不会被跟踪。应覆盖原始录音的最高真实基频，不要只按最终目标音域设置。"></div>
+      <div class="field" data-id="t_f0_voicing" data-label="浊音阈值（0–1）" data-value="0.6" data-hint="控制算法把音频帧判断为有声基频的严格程度。调低会保留更多候选帧但可能产生误检；调高会更严格但可能漏掉气声或弱音。"></div>
+      <div class="field" data-id="t_f0_correction" data-label="F0 参考校正（音分）" data-ph="0（不校正）" data-hint="在训练前统一移动检测到的 F0。若测量结果整体偏高 25 音分，可尝试 -25；负值降低参考音高，正值提高。建议先看评估结果，小幅调整，不要用它修复跳八度。"></div>
+      <div class="field" data-id="t_pitch_smoothing" data-label="旋律平滑截止频率（Hz）" data-value="3" data-hint="分离平滑旋律与快速音高运动时使用的低通截止频率。较低会更强调平滑的大轮廓，较高会把更多快速变化归入旋律。不会跨越音符直接平滑合成音频。"></div>
+      <div class="field" data-id="t_pitch_melody_weight" data-label="旋律轮廓损失权重" data-value="1" data-hint="控制 Pitch 训练对平滑旋律轮廓误差的重视程度。较大时会更强调音符中心和整体走向；0 可关闭该项。"></div>
+      <div class="field" data-id="t_pitch_motion_weight" data-label="颤音 / 快速变化损失权重" data-value="1" data-hint="控制训练对颤音及快速音高运动的重视程度。较大可能保留更多细节；太大也可能把原始合成器的不稳定抖动学进去。"></div>
+    </div>
+  </fieldset>
   <div class="note" id="trainWarn" hidden></div>
   <fieldset>
     <legend>How long?</legend>
@@ -774,6 +797,14 @@ const FIELD_HELP = {
   "t_final": "可选：为最后一步的权重另存一个版本。填写要使用的版本标识；它与验证过程中保存的最佳权重版本不同。仅适用于 info 声库。",
   "t_levelref": "可选的响度参考声库。连续微调时可指定最初的基础声库，避免每次训练都以微调后的声音重新定标。",
   "t_gain": "可选：手动固定录音响度缩放系数。留空时由程序测量；只有在明确知道需要的缩放幅度时再填写。",
+  "t_f0_floor": "F0 跟踪允许的最低基频，单位 Hz。应覆盖录音中实际唱出的最低音；设置过高可能漏检低音，设置过低可能增加误检。",
+  "t_f0_ceiling": "F0 跟踪允许的最高基频，单位 Hz。应覆盖录音中实际唱出的最高音；不是 SynthV 最终合成音域的限制。",
+  "t_f0_voicing": "Praat 自相关浊音阈值，范围 0–1。较低会保留更多候选帧，较高会更严格判断有声基频。错误设置可能导致不连续 F0 或八度误判。",
+  "t_f0_correction": "把测得的 F0 整体校正指定的音分后再用于训练。负值降低基频参考，正值提高。只用于小幅整体偏差，不会自动修复错八度或时间对齐问题。",
+  "t_pitch_smoothing": "平滑旋律曲线的低通截止频率，默认 3 Hz。较低更强调慢速轮廓，较高保留更多快速变化；默认值兼容旧行为。",
+  "t_pitch_melody_weight": "旋律轮廓损失权重，默认 1。用于平衡音准/旋律总体走向与颤音等快速变化的学习重点。",
+  "t_pitch_motion_weight": "颤音与快速音高变化损失权重，默认 1。数值越大越强调快速运动；并不等于强制校准每帧 F0。",
+
   "t_run": "训练运行目录，用来保存日志和可恢复的训练状态。启用后，之后可以尝试从该目录继续训练。",
   "t_history": "可选：将验证评分历史写入 JSON 文件，便于比较多次训练结果或进一步分析。",
   "e_new": "选择训练后生成的新声库文件。对比时会将它与第 1 步选择的原始声库进行评估。",
@@ -789,6 +820,7 @@ const FIELD_HELP = {
   "c_coda": "控制一个音节中分配给韵尾的时长比例。只在特定字典转换场景中需要调整；不确定时建议先使用默认值。"
 };
 const STATIC_HELP = {
+  "t_f0_preset": "按常见音域快速填入 F0 最低/最高频率和浊音阈值。它只设置分析范围，不会把声音移调，也不会改变声库架构。",
   "language": "选择录音所使用的语言/音素集。它必须与数据集标签采用的音素体系一致，否则可能出现声库不认识某些音素的问题。",
   "i_src": "选择素材组织方式：现有 WAV/LAB、分开放置的 WAV 与 LAB、从 WAV 文件名生成 LAB，或 TrainV6 manifest.json。",
   "i_words": "开启后，导入时会借助第 1 步选择的声库为词边界写入额外信息。若之后要训练 Timing 或 Pitch，这些信息可能是必要条件；只训练 Sound 时可以不勾选。",
@@ -948,12 +980,18 @@ function suggest(){
 /* ---------- command builders ---------- */
 function lang(){return val("language")||"ja"}
 function trainedModels(){const m=MODELS.filter(x=>chk("m_"+x));return m.length?m:["acoustic"]}
+function addPitchArgs(a,p){
+  [["--f0-floor","t_f0_floor"],["--f0-ceiling","t_f0_ceiling"],["--f0-voicing-threshold","t_f0_voicing"],
+   ["--f0-reference-cents","t_f0_correction"],["--pitch-smoothing-hz","t_pitch_smoothing"],
+   ["--pitch-melody-weight","t_pitch_melody_weight"],["--pitch-motion-weight","t_pitch_motion_weight"]]
+    .forEach(([flag,id])=>addOpt(a,p,flag,id));
+}
 const B={
   inspect(){const p=[];if(!val("voice"))p.push("Choose a voice file.");
     return{cmd:"inspect",label:"Looking inside the voice",args:["--voice",val("voice")],p,log:true}},
   score(){const p=[];if(!val("voice"))p.push("Choose a voice (step 1).");dsNeed(p,"Choose a dataset first.");
     const a=["--voice",val("voice"),"--data",val("dataset"),"--language",lang(),"--models",trainedModels().join(",")];
-    addOpt(a,p,"--validation","t_val");addOpt(a,p,"--seed","t_seed");
+    addPitchArgs(a,p);addOpt(a,p,"--validation","t_val");addOpt(a,p,"--seed","t_seed");
     return{cmd:"evaluate",label:"Scoring the original voice",args:a,p,log:true}},
   import(){const p=[],a=[],src=val("i_src");
     if(src==="folder"){if(!val("i_corpus"))p.push("Choose the recordings folder.");a.push("--corpus",val("i_corpus"))}
@@ -971,6 +1009,7 @@ const B={
     const models=MODELS.filter(x=>chk("m_"+x));if(!models.length)p.push("Tick at least one thing to learn.");
     a.push("--voice",val("voice"),"--data",val("dataset"),"--output",val("t_output"),"--language",lang(),"--models",models.join(","),"--name",val("v_name"));
     addOpt(a,p,"--steps","t_steps",true);
+    addPitchArgs(a,p);
     if(val("t_params")&&val("t_params")!=="all")a.push("--params",val("t_params"));
     [["--lr","t_lr"],["--warmup","t_warmup"],["--lr-end","t_lrend"],["--anchor","t_anchor"],["--batch","t_batch"],["--consonant-weight","t_cons"],["--validation","t_val"],["--evaluate-every","t_evalevery"],["--log-every","t_logevery"],["--seed","t_seed"],["--gain","t_gain"]].forEach(([f,i])=>addOpt(a,p,f,i));
     [["--device","t_device"],["--phoneme-map","t_pmap"],["--vocal-modes","t_modes"],["--version","t_version"],["--final-version","t_final"],["--level-reference","t_levelref"],["--history","t_history"],["--run","t_run"]].forEach(([f,i])=>{if(val(i))a.push(f,val(i))});
@@ -980,7 +1019,7 @@ const B={
     if(!val("voice"))p.push("Choose the original voice (step 1).");if(!val("e_new"))p.push("Choose your new voice.");
     dsNeed(p,"Choose a dataset (step 2).");if(!val("e_out"))p.push("Choose where to save the comparison.");
     a.push("--voice",val("voice"),"--voice",val("e_new"),"--data",val("dataset"),"--language",lang(),"--models",trainedModels().join(","));
-    addOpt(a,p,"--validation","t_val");addOpt(a,p,"--seed","t_seed");
+    addPitchArgs(a,p);addOpt(a,p,"--validation","t_val");addOpt(a,p,"--seed","t_seed");
     if(val("t_pmap"))a.push("--phoneme-map",val("t_pmap"));
     a.push("--out",val("e_out"));addOpt(a,p,"--max-phrases","e_max");
     return{cmd:"evaluate",label:"Comparing voices",args:a,p}},
@@ -1277,6 +1316,15 @@ async function init(){
   document.addEventListener("change",e=>{
     const t=e.target;if(!t.matches)return;
     if(t.name==="preset"&&PRESETS[t.id]){Object.entries(PRESETS[t.id]).forEach(([k,v])=>{document.getElementById(k).value=v})}
+    if(t.id==="t_f0_preset"){
+      const presets={
+        balanced:{t_f0_floor:"65",t_f0_ceiling:"1100",t_f0_voicing:"0.6"},
+        low:{t_f0_floor:"45",t_f0_ceiling:"650",t_f0_voicing:"0.55"},
+        high:{t_f0_floor:"100",t_f0_ceiling:"1400",t_f0_voicing:"0.55"},
+        wide:{t_f0_floor:"40",t_f0_ceiling:"1600",t_f0_voicing:"0.5"}
+      };
+      Object.entries(presets[val("t_f0_preset")]||{}).forEach(([k,v])=>setVal(k,v));
+    }
     if(t.name==="d_mode"||t.id==="i_src"){setMode();suggest();checkSource()}
     if(t.id==="i_src")suggest();
     persist();refresh();
