@@ -63,6 +63,17 @@ SYNTHV_LEGACY_XSAMPA_ALIASES = {
     "ph": "p_h", "th": "t_h", "kh": "k_h", "tsh": "ts_h",
     "ts\\h": "ts\\_h", "ts`h": "ts`_h",
 }
+# Canonical X-SAMPA aspiration tokens mapped to the pre-2.3 Mandarin labels
+# found in older voice inventories. Exact target symbols still take priority.
+STANDARD_XSAMPA_TO_SYNTHV_LEGACY = {
+    "p_h": "ph",
+    "t_h": "th",
+    "k_h": "kh",
+    "ts_h": "tsh",
+    r"ts\_h": r"ts\h",
+    "ts`_h": "ts`h",
+}
+
 _SYNTHV_SIMPLE_MARKERS = {
     "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v", "ng",
     "-n", "iaa", "iae", "io", "b", "d", "g", "z", "c",
@@ -86,6 +97,10 @@ def _map_xsampa_mandarin(
             return [token]
         if source_system == "synthv-xsampa":
             alias = SYNTHV_LEGACY_XSAMPA_ALIASES.get(token)
+            if alias in valid:
+                return [alias]
+        elif source_system == "xsampa":
+            alias = STANDARD_XSAMPA_TO_SYNTHV_LEGACY.get(token)
             if alias in valid:
                 return [alias]
         return None

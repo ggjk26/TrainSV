@@ -328,3 +328,29 @@ def test_unmatched_report_classifies_phone_mapping_and_wav_decode_failures(tmp_p
         "badphone_0.wav": "phone_mapping",
         "Sil Sil k Sil_0.wav": "wav_decode",
     }
+
+
+def test_standard_xsampa_aspirates_map_to_legacy_synthv_phone_symbols():
+    legacy = {
+        "sil", "p", "ph", "t", "th", "k", "kh", "ts", "tsh",
+        r"ts\h", "ts" + chr(96) + "h",
+    }
+    tokens = ["p_h", "t_h", "k_h", "ts_h", r"ts\_h", "ts" + chr(96) + "_h"]
+    parsed = parse_filename_phones(
+        " ".join(tokens) + "_0.wav", legacy, source_system="xsampa"
+    )
+    assert parsed == [
+        "sil", "ph", "th", "kh", "tsh", r"ts\h", "ts" + chr(96) + "h", "sil",
+    ]
+
+
+def test_synthv_legacy_xsampa_aliases_still_map_to_new_phone_symbols():
+    simple = {
+        "sil", "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v",
+        "ng", "-n", "b", "p", "d", "t", "g", "k", "z", "c", "q", "ch",
+    }
+    tokens = ["ph", "th", "kh", "tsh", r"ts\h", "ts" + chr(96) + "h"]
+    parsed = parse_filename_phones(
+        " ".join(tokens) + "_0.wav", simple, source_system="synthv-xsampa"
+    )
+    assert parsed == ["sil", "p", "t", "k", "c", "q", "ch", "sil"]
