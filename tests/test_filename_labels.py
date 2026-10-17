@@ -419,7 +419,7 @@ def test_uei_triphthong_prefers_u_e_i_then_w_e_i():
 def test_rhoticized_vowel_uses_synthv_mandarin_er_label_without_separate_rhotic_phone():
     # In the simplified Mandarin inventory, "er" is an available native label
     # for erhua; no standalone X-SAMPA rhotic phone is required.
-    target = {"sil", "aa", "ee", "er"}
+    target = {"sil", "er"}
     assert parse_filename_phones(
         "@" + chr(96) + "_0.wav", target
     ) == ["sil", "er", "sil"]

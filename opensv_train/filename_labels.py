@@ -300,7 +300,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 continue
             # SynthV's simplified Mandarin inventory can expose erhua as the
             # dedicated Mandarin phone "er" without any separate rhotic symbol.
-            if "er" in valid and _uses_synthv_simple_mandarin(valid):
+            if "er" in valid:
                 phones.append("er")
                 continue
 
