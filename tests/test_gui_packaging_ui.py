@@ -106,7 +106,7 @@ def test_successful_comparison_opens_the_package_format_chooser():
 
 def test_training_and_evaluation_expose_f0_tracking_profiles():
     assert 'data-id="t_f0_profile"' in PAGE
-    assert 'data-options="standard|Standard (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID F0 cleanup (45–1400 Hz, threshold 0.45);low|Low register (45–650 Hz, threshold 0.60);high|High register (100–1400 Hz, threshold 0.60);wide|Wide range (40–1600 Hz, threshold 0.60)"' in PAGE
+    assert 'data-options="standard|Standard (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID F0 cleanup (45–1400 Hz, threshold 0.45);low|Low register (45–650 Hz, threshold 0.60);high|High register (100–1400 Hz, threshold 0.60);wide|Wide range (40–1600 Hz, threshold 0.60);sensitive|Sensitive (35–1800 Hz, threshold 0.30)"' in PAGE
     assert 'a.push("--f0-profile",val("t_f0_profile")||"standard")' in PAGE
     assert "F0 预设只控制输入 WAV 的基频检测范围与目标曲线清理" in PAGE
     assert 'id="f0CalibrationPanel"' in PAGE
@@ -278,3 +278,10 @@ def test_dynamic_webui_messages_translate_in_all_locales():
     assert r"source.match(/^SFPK test package created: (.+?)\. Model dependencies" in PAGE
     assert 'id="uiLanguage"' in PAGE
     assert "characterData:true" in PAGE
+
+
+def test_filename_import_exposes_explicit_phone_conventions():
+    assert 'data-id="i_source_system"' in PAGE
+    assert "Standard X-SAMPA" in PAGE
+    assert "SynthV legacy X-SAMPA" in PAGE
+    assert '"--source-phoneme-system",val("i_source_system")||"auto"' in PAGE
