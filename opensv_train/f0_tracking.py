@@ -32,7 +32,7 @@ def _empty_f0_track(audio: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _stable_f0_mask(values: np.ndarray, minimum_run: int = 3) -> np.ndarray:
-    """Mark contiguous voiced runs long enough to be a trustworthy F0 target."""
+    """Mark stable local F0 runs, allowing real glides across a longer segment."""
     source = np.asarray(values, dtype=np.float32).reshape(-1)
     valid = np.isfinite(source) & (source > 0)
     mask = np.zeros(source.shape, dtype=bool)
@@ -42,7 +42,10 @@ def _stable_f0_mask(values: np.ndarray, minimum_run: int = 3) -> np.ndarray:
         if stop - start < minimum_run:
             continue
         semitones = 12.0 * np.log2(source[start:stop].astype(np.float64))
-        if float(np.ptp(semitones)) <= 4.0:
+        # A real sung line may move by more than four semitones over a whole
+        # syllable. Detect implausible frame-to-frame jumps rather than rejecting
+        # every long glide or note change across that run.
+        if semitones.size <= 1 or float(np.max(np.abs(np.diff(semitones)))) <= 8.0:
             mask[start:stop] = True
     return mask
 
@@ -87,14 +90,16 @@ def extract_f0(
     if not times.size:
         return _empty_f0_track(audio)
 
-    # Retry only when ordinary tracking finds no reliable voiced segment.
-    # Broaden the range and reduce the threshold once, but accept only stable
-    # runs of at least 15 ms to avoid turning plosive noise into pitch.
-    if not _stable_f0_mask(values).any():
+    # Drop isolated/unreliable tracker blips, but preserve real note transitions.
+    # If reliable coverage is sparse, retry with a broader range and lower
+    # voicing threshold; fill only missing frames with stable retry estimates.
+    stable = _stable_f0_mask(values)
+    coverage = float(np.count_nonzero(stable)) / max(len(stable), 1)
+    values = np.where(stable, values, 0.0).astype(np.float32, copy=False)
+    if coverage < 0.15:
         retry_floor = max(25.0, min(float(floor), 35.0))
         retry_ceiling = min(2000.0, max(float(ceiling), 1800.0))
         retry_threshold = max(0.10, min(0.30, float(voicing_threshold) * 0.5))
-        values = np.zeros_like(values)
         try:
             retry_times, retry_values = track(
                 retry_floor, retry_ceiling, retry_threshold
@@ -105,10 +110,11 @@ def extract_f0(
         retry_stable = _stable_f0_mask(retry_values) if retry_times.size else np.array([], dtype=bool)
         if retry_stable.any():
             if retry_times.shape == times.shape and np.allclose(retry_times, times, atol=1e-7):
-                values[retry_stable] = retry_values[retry_stable]
+                fill = retry_stable & (values <= 0)
+                values[fill] = retry_values[fill]
             else:
                 nearest = np.clip(np.searchsorted(retry_times, times), 0, len(retry_times) - 1)
                 close = np.abs(retry_times[nearest] - times) <= FRAME_SECONDS * 0.5
-                recovered = retry_stable[nearest] & close
+                recovered = retry_stable[nearest] & close & (values <= 0)
                 values[recovered] = retry_values[nearest[recovered]]
     return times, values

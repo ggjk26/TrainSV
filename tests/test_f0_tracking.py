@@ -89,3 +89,46 @@ def test_silence_returns_valid_zero_f0_track(monkeypatch):
     assert times.size > 0
     assert values.shape == times.shape
     assert np.all(values == 0)
+
+
+def test_extract_f0_retries_when_primary_voiced_coverage_is_sparse(monkeypatch):
+    calls = []
+
+    class FakePitch:
+        def __init__(self, threshold):
+            primary = np.zeros(24, dtype=np.float32)
+            primary[3:6] = 220
+            retry = np.zeros(24, dtype=np.float32)
+            retry[0:15] = 220
+            self.selected_array = {
+                "frequency": primary if threshold > 0.4 else retry
+            }
+
+        def xs(self):
+            return np.arange(24, dtype=np.float64) * 0.005
+
+    class FakeSound:
+        def __init__(self, _audio, _rate):
+            pass
+
+        def to_pitch_ac(self, **kwargs):
+            calls.append(kwargs)
+            return FakePitch(kwargs["voicing_threshold"])
+
+    monkeypatch.setitem(
+        sys.modules, "parselmouth",
+        SimpleNamespace(Sound=FakeSound, PraatError=RuntimeError),
+    )
+    audio = np.sin(2 * np.pi * 220 * np.arange(24000) / 48000).astype(np.float32)
+    times, values = extract_f0(audio, 65.0, 1100.0, voicing_threshold=0.60)
+    assert len(calls) == 2
+    assert times.size == 24
+    assert np.all(values[:15] == 220)
+    assert np.all(values[15:] == 0)
+
+
+def test_stable_f0_mask_allows_a_sustained_pitch_glide():
+    from opensv_train.f0_tracking import _stable_f0_mask
+
+    glide = np.geomspace(150.0, 260.0, num=12, dtype=np.float32)
+    assert _stable_f0_mask(glide).all()
