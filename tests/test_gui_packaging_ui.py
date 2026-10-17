@@ -251,6 +251,16 @@ def test_dynamic_webui_messages_translate_in_all_locales():
         ],
         ["Sound (acoustic)", "zh-CN", "Sound（声学）"],
         ["Pitch (melody and vibrato)", "zh-CN", "Pitch（旋律与颤音）"],
+        ["Preset default, e.g. 45", "zh-CN", "预设默认值，例如 45"],
+        ["Preset default, e.g. 1400", "ja", "プリセットの既定値（例：1400）"],
+        ["0 (no correction)", "zh-CN", "0（不校正）"],
+        ["2e-5 (3e-3 for identity only)", "zh-CN", "2e-5（仅训练身份向量时使用 3e-3）"],
+        ["e.g. Artist or studio", "ja", "例：アーティスト名またはスタジオ名"],
+        [
+            "4473 utterances, 4473 phrases, 37.1 min. Getting ready: loading the voice and your data. This can take a minute the first time.",
+            "zh-CN",
+            "4473 条发声片段，4473 个短语，约 37.1 分钟。正在准备：加载声库和数据。首次运行可能需要一点时间。",
+        ],
     ]
     script = "\n".join(
         [
