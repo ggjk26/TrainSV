@@ -239,6 +239,18 @@ def test_dynamic_webui_messages_translate_in_all_locales():
         ["unknown command: probe", "ja", "不明なコマンド：probe"],
         ["Timing (duration)", "ja", "Timing（長さ）"],
         ["No permission to open this folder.", "zh-CN", "无权打开此文件夹。"],
+        [
+            "This setting affects the current operation. Choose based on your training goal.",
+            "zh-CN",
+            "此设置会影响当前操作，请根据训练目标选择。",
+        ],
+        [
+            "This setting affects the current operation. Choose based on your training goal.",
+            "ja",
+            "この設定は現在の操作に影響します。学習の目的に合わせて選択してください。",
+        ],
+        ["Sound (acoustic)", "zh-CN", "Sound（声学）"],
+        ["Pitch (melody and vibrato)", "zh-CN", "Pitch（旋律与颤音）"],
     ]
     script = "\n".join(
         [
@@ -255,3 +267,4 @@ def test_dynamic_webui_messages_translate_in_all_locales():
     assert r"source.match(/^✓ (\d+) recordings, about ([\d.]+) min" in PAGE
     assert r"source.match(/^SFPK test package created: (.+?)\. Model dependencies" in PAGE
     assert 'id="uiLanguage"' in PAGE
+    assert "characterData:true" in PAGE
