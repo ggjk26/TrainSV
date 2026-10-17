@@ -113,7 +113,7 @@ def test_training_and_evaluation_expose_f0_tracking_profiles():
 
 
 def test_webui_language_switch_supports_chinese_english_and_japanese():
-    header = PAGE.split("<header class=\\"top\\">", 1)[1].split("</header>", 1)[0]
+    header = PAGE.split('<header class="top">', 1)[1].split("</header>", 1)[0]
     assert header.index('id="uiLanguage"') < header.index('id="quitBtn"')
     for locale in ('value="zh-CN"', 'value="en"', 'value="ja"'):
         assert locale in header
