@@ -22,11 +22,19 @@ DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backend
 
 
 def finetune(arguments) -> None:
+    _validate_pitch_options(arguments)
     voice = Voice.load(arguments.voice)
     models = tuple(arguments.models.split(","))
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
-    utterances = load_dataset(arguments.data, arguments.language, read_phoneme_map(arguments.phoneme_map))
+    utterances = load_dataset(
+        arguments.data,
+        arguments.language,
+        read_phoneme_map(arguments.phoneme_map),
+        f0_range=(arguments.f0_floor, arguments.f0_ceiling),
+        voicing_threshold=arguments.f0_voicing_threshold,
+        f0_reference_cents=arguments.f0_reference_cents,
+    )
     phrases = [phrase for utterance in utterances for phrase in make_phrases(utterance)]
     problems = [phrase.problem for phrase in phrases if phrase.problem]
     print(f"{len(utterances)} utterances, {len(phrases)} phrases, {sum(p.frames for p in phrases) * 0.005 / 60:.1f} min")
@@ -63,6 +71,8 @@ def finetune(arguments) -> None:
         models=models, params=arguments.params, steps=arguments.steps, learning_rate=arguments.lr, anchor=arguments.anchor,
         evaluate_every=arguments.evaluate_every, seed=arguments.seed, device=arguments.device, rap_languages=voice.files.rap_languages, batch=arguments.batch,
         consonant_weight=arguments.consonant_weight, warmup=arguments.warmup, lr_end=arguments.lr_end, log_every=arguments.log_every,
+        pitch_melody_weight=arguments.pitch_melody_weight, pitch_motion_weight=arguments.pitch_motion_weight,
+        pitch_smoothing_hz=arguments.pitch_smoothing_hz,
     )
     calibration = random.Random(arguments.seed).sample(phrases, min(40, len(phrases)))
     models_root = Path(arguments.output).expanduser().parent.parent / "models"
@@ -104,6 +114,32 @@ def finetune(arguments) -> None:
     save()
     if arguments.history:
         Path(arguments.history).write_text(json.dumps(history, indent=2))
+
+
+def _validate_pitch_options(arguments) -> None:
+    if not 0.0 < arguments.pitch_smoothing_hz < 100.0:
+        raise SystemExit("--pitch-smoothing-hz must be greater than 0 and below 100 Hz (the F0 frame rate is 200 Hz)")
+    if arguments.pitch_melody_weight < 0 or arguments.pitch_motion_weight < 0:
+        raise SystemExit("pitch loss weights must be non-negative")
+    if arguments.pitch_melody_weight == 0 and arguments.pitch_motion_weight == 0:
+        raise SystemExit("at least one pitch loss weight must be greater than zero")
+    if not -1200.0 <= arguments.f0_reference_cents <= 1200.0:
+        raise SystemExit("--f0-reference-cents must be between -1200 and 1200")
+    try:
+        from .data import _validate_f0_settings
+        _validate_f0_settings(arguments.f0_floor, arguments.f0_ceiling, arguments.f0_voicing_threshold)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+
+
+def _add_pitch_options(command) -> None:
+    command.add_argument("--f0-floor", type=float, default=65.0, help="minimum tracked pitch in Hz (default 65)")
+    command.add_argument("--f0-ceiling", type=float, default=1100.0, help="maximum tracked pitch in Hz (default 1100)")
+    command.add_argument("--f0-voicing-threshold", type=float, default=0.6, help="Praat autocorrelation voicing threshold between 0 and 1")
+    command.add_argument("--f0-reference-cents", type=float, default=0.0, help="correction applied to measured F0 before training, in cents; negative lowers the reference")
+    command.add_argument("--pitch-smoothing-hz", type=float, default=3.0, help="low-pass cutoff for the smooth melody curve, in Hz")
+    command.add_argument("--pitch-melody-weight", type=float, default=1.0, help="loss weight for the smooth melody contour")
+    command.add_argument("--pitch-motion-weight", type=float, default=1.0, help="loss weight for vibrato and faster pitch movement")
 
 
 def _referenced_models(models_root: Path) -> set[Path]:
@@ -211,16 +247,35 @@ def convert_dict(arguments) -> None:
 
 
 def evaluate(arguments) -> None:
+    _validate_pitch_options(arguments)
     device = torch.device(arguments.device)
     output = Path(arguments.out) if arguments.out else None
     report = {}
     for index, path in enumerate(arguments.voice):
         voice = Voice.load(path).to(device)
-        phrases = [phrase for utterance in load_dataset(arguments.data, arguments.language, read_phoneme_map(arguments.phoneme_map)) for phrase in make_phrases(utterance)]
+        phrases = [
+            phrase
+            for utterance in load_dataset(
+                arguments.data,
+                arguments.language,
+                read_phoneme_map(arguments.phoneme_map),
+                f0_range=(arguments.f0_floor, arguments.f0_ceiling),
+                voicing_threshold=arguments.f0_voicing_threshold,
+                f0_reference_cents=arguments.f0_reference_cents,
+            )
+            for phrase in make_phrases(utterance)
+        ]
         _, validation = split(phrases, arguments.validation, arguments.seed)
         gain = level_gain(voice, phrases, device)
         apply_gain(phrases, gain)
-        config = TrainConfig(models=tuple(arguments.models.split(",")), device=arguments.device, rap_languages=voice.files.rap_languages)
+        config = TrainConfig(
+            models=tuple(arguments.models.split(",")),
+            device=arguments.device,
+            rap_languages=voice.files.rap_languages,
+            pitch_melody_weight=arguments.pitch_melody_weight,
+            pitch_motion_weight=arguments.pitch_motion_weight,
+            pitch_smoothing_hz=arguments.pitch_smoothing_hz,
+        )
         metrics = Trainer(voice, [], validation, config, log=lambda message: None).evaluate()
         name = voice.files.metadata.get(".name", path)
         print(f"{name} (gain {gain:.3f}): " + " ".join(f"{key}={value:.4f}" for key, value in sorted(metrics.items())))
@@ -282,6 +337,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--anchor", type=float, default=1.0, help="L2 pull towards the original weights")
     command.add_argument("--batch", type=int, default=1, help="phrases (audio: windows) averaged per step")
     command.add_argument("--consonant-weight", type=float, default=1.0, help="weight of consonant frames in the training audio loss (held-out scores stay unweighted)")
+    _add_pitch_options(command)
     command.add_argument("--validation", type=float, default=0.1, help="phrases held out: a fraction, or a count when 1 or more")
     command.add_argument("--evaluate-every", "--val-every", type=int, default=250)
     command.add_argument("--log-every", type=int, default=25)
@@ -329,6 +385,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--data", required=True)
     command.add_argument("--language", required=True, type=language_name)
     command.add_argument("--models", default="acoustic")
+    _add_pitch_options(command)
     command.add_argument("--validation", type=float, default=0.1)
     command.add_argument("--phoneme-map")
     command.add_argument("--seed", type=int, default=0)
