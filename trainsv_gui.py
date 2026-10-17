@@ -622,6 +622,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <div class="field" data-id="t_pitch_melody_weight" data-label="旋律轮廓损失权重" data-value="1" data-hint="控制 Pitch 训练对平滑旋律轮廓误差的重视程度。较大时会更强调音符中心和整体走向；0 可关闭该项。"></div>
       <div class="field" data-id="t_pitch_motion_weight" data-label="颤音 / 快速变化损失权重" data-value="1" data-hint="控制训练对颤音及快速音高运动的重视程度。较大可能保留更多细节；太大也可能把原始合成器的不稳定抖动学进去。"></div>
     </div>
+    <div class="field" data-id="t_pitch_base_model" data-kind="path" data-mode="file" data-ext="dnni" data-label="外部预训练 Pitch 权重（可选 .dnni）" data-hint="从文件系统选择外部 DNNI Pitch 模型。TrainSV 会严格检查网络结构、音素表、归一化数据和参数形状；不兼容时会中止而不是强行替换。只在首次训练时使用，继续训练请留空。当前仓库不附带通用预训练权重。"></div>
+    <p class="hint">该入口用于兼容的外部预训练权重初始化，不代表模型能自动适配不同架构或不同音素表；默认留空会使用所选声库自己的 Pitch 模型。</p>
   </fieldset>
   <div class="note" id="trainWarn" hidden></div>
   <fieldset>
@@ -804,6 +806,7 @@ const FIELD_HELP = {
   "t_pitch_smoothing": "平滑旋律曲线的低通截止频率，默认 3 Hz。较低更强调慢速轮廓，较高保留更多快速变化；默认值兼容旧行为。",
   "t_pitch_melody_weight": "旋律轮廓损失权重，默认 1。用于平衡音准/旋律总体走向与颤音等快速变化的学习重点。",
   "t_pitch_motion_weight": "颤音与快速音高变化损失权重，默认 1。数值越大越强调快速运动；并不等于强制校准每帧 F0。",
+  "t_pitch_base_model": "可选的外部 Synthesizer V Pitch DNNI 权重。只有网络架构、音素表、归一化缓冲区、稀疏结构和参数形状严格匹配时才会接收。它只初始化 Pitch 参数并保留目标声库的说话人向量；不兼容模型会报错。当前没有随 TrainSV 分发的通用权重。",
 
   "t_run": "训练运行目录，用来保存日志和可恢复的训练状态。启用后，之后可以尝试从该目录继续训练。",
   "t_history": "可选：将验证评分历史写入 JSON 文件，便于比较多次训练结果或进一步分析。",
@@ -1010,6 +1013,10 @@ const B={
     a.push("--voice",val("voice"),"--data",val("dataset"),"--output",val("t_output"),"--language",lang(),"--models",models.join(","),"--name",val("v_name"));
     addOpt(a,p,"--steps","t_steps",true);
     addPitchArgs(a,p);
+    if(val("t_pitch_base_model")){
+      if(!models.includes("pitch"))p.push("Select Pitch above to use the external pretrained Pitch weights.");
+      a.push("--pitch-base-model",val("t_pitch_base_model"));
+    }
     if(val("t_params")&&val("t_params")!=="all")a.push("--params",val("t_params"));
     [["--lr","t_lr"],["--warmup","t_warmup"],["--lr-end","t_lrend"],["--anchor","t_anchor"],["--batch","t_batch"],["--consonant-weight","t_cons"],["--validation","t_val"],["--evaluate-every","t_evalevery"],["--log-every","t_logevery"],["--seed","t_seed"],["--gain","t_gain"]].forEach(([f,i])=>addOpt(a,p,f,i));
     [["--device","t_device"],["--phoneme-map","t_pmap"],["--vocal-modes","t_modes"],["--version","t_version"],["--final-version","t_final"],["--level-reference","t_levelref"],["--history","t_history"],["--run","t_run"]].forEach(([f,i])=>{if(val(i))a.push(f,val(i))});
