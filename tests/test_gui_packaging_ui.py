@@ -111,6 +111,22 @@ def test_training_and_evaluation_expose_f0_tracking_profiles():
     assert 'id="f0CalibrationPanel"' in PAGE
 
 
+
+def test_webui_language_switch_supports_chinese_english_and_japanese():
+    header = PAGE.split("<header class=\\"top\\">", 1)[1].split("</header>", 1)[0]
+    assert header.index('id="uiLanguage"') < header.index('id="quitBtn"')
+    for locale in ('value="zh-CN"', 'value="en"', 'value="ja"'):
+        assert locale in header
+    assert "function setUiLanguage(language)" in PAGE
+    assert "function watchTranslatedContent()" in PAGE
+    assert 'if(t.id==="uiLanguage"){setUiLanguage(val("uiLanguage"));persist();return;}' in PAGE
+    assert 'setUiLanguage(val("uiLanguage")||"en");' in PAGE
+    assert "I18N_INDEX = {en:0,\"zh-CN\":1,ja:2}" in PAGE
+    assert "F0 分析与校准" in PAGE
+    assert "F0 解析と調整" in PAGE
+    assert "F0 Analysis & Calibration" in PAGE
+
+
 def test_f0_and_pitch_have_distinct_workspaces():
     assert 'id="f0CalibrationPanel"' in PAGE
     assert 'id="pitchTrainingPanel"' in PAGE
