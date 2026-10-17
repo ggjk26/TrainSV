@@ -752,7 +752,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div class="field" data-id="svpk_name" data-label="Voicebank name" data-ph="e.g. Luo Tianyi"></div>
     <div class="field" data-id="svpk_vendor" data-label="Vendor / author" data-ph="e.g. Artist or studio"></div>
     <div class="field" data-id="svpk_version" data-label="Voicebank version (integer)" data-value="101" data-ph="101" data-hint="该数值会同时写入 package-config 的 versionString 和 versionNumber；当前版本使用整数版本号，例如 101。"></div>
-    <div class="field" data-id="svpk_header_preset" data-kind="select" data-options="zero|All zero (baseline);random|Random byte test;sha256-chain|Synthetic SHA-256 chain; aes256-cbc-test|Synthetic AES-256-CBC test (unofficial)" data-value="zero" data-label="256-byte field diagnostic preset" data-hint="这些选项仅用于比较 Sharp 对不同字段字节的反应，不是官方签名或密钥，也不能生成可安装包。AES 选项使用从包内容派生的公开测试密钥和 IV。"></div>
+    <div class="field" data-id="svpk_header_preset" data-kind="select" data-options="zero|All zero (baseline);random|Random byte test;sha256-chain|Synthetic SHA-256 chain;aes256-cbc-test|Synthetic AES-256-CBC test (unofficial)" data-value="zero" data-label="256-byte field diagnostic preset" data-hint="这些选项仅用于比较 Sharp 对不同字段字节的反应，不是官方签名或密钥，也不能生成可安装包。AES 选项使用从包内容派生的公开测试密钥和 IV。"></div>
     <div class="field" data-id="svpk_profile" data-kind="path" data-mode="file" data-ext="png" data-label="Avatar image (profile.png)" data-hint="选择声库头像 PNG 文件；打包后将按样例名称存放在 profile.png。"></div>
     <div class="field" data-id="svpk_background" data-kind="path" data-mode="file" data-ext="png" data-label="Background image (background.png)" data-hint="选择声库背景 PNG 文件；当前会按样例将文件条目命名为 background.png。"></div>
     <div class="field" data-id="svpk_output" data-kind="path" data-mode="save" data-ext="svpk" data-label="SVPK output path" data-hint="输出的 .svpk 文件路径。默认与训练后的 voice.nofs 放在同一目录。"></div>
@@ -1297,8 +1297,8 @@ const DONE={
   convert(ok){if(ok){setVal("dataset",val("c_output"));JOB.next={text:"Use it: go to Train",go:"train"}}},
   async finetune(ok){if(ok){EXTRA.trained=true;persist();try{const r=await api("resolve-voice?path="+enc(val("t_output")));if(r.path)setVal("e_new",r.path)}catch(e){}JOB.next={text:"Next: check the result",go:"results"};renderJob()}},
   evaluate(ok){if(ok){EXTRA.evaluated=true;persist();loadResults();JOB.next={text:"See the comparison",go:"results",to:"#results"};renderJob();if(JOB.kind==="evaluate"){go("results");showPackageFormatDialog()}}},
-  svpk(ok){const el=$("#packageStatus");if(el){el.className="status "+(ok?"warn":"bad");el.textContent=ok?"SVPK 诊断包已生成："+val("svpk_output")+"。全零字段版本在 Sharp 中无响应；复制 Chifuyu 字段后提示数据损坏。该包不可安装或发布。":"SVPK 诊断包生成失败；请查看下方任务日志中的具体错误。"}},
-  sfpk(ok){const el=$("#packageStatus");if(el){el.className="status "+(ok?"warn":"bad");el.textContent=ok?"SFPK 测试包已生成："+val("sfpk_output")+"。模型依赖已写入本机："+val("sfpk_models_root")+"。请在 Synthesizer V Studio Flat 中安装/导入、选择声库并测试渲染；目前尚未验证运行时兼容性。":"SFPK 生成失败；请查看任务日志中的具体错误。"}}
+  svpk(ok){const el=$("#packageStatus");if(el){el.className="status "+(ok?"warn":"bad");el.textContent=ok?"SVPK diagnostic package created: "+val("svpk_output")+". This package is not installable or suitable for release.":"SVPK diagnostic package generation failed. See the job log for details."}},
+  sfpk(ok){const el=$("#packageStatus");if(el){el.className="status "+(ok?"warn":"bad");el.textContent=ok?"SFPK test package created: "+val("sfpk_output")+". Model dependencies were written to the local directory: "+val("sfpk_models_root")+". Import and test rendering in Synthesizer V Studio Flat; runtime compatibility has not yet been verified.":"SFPK generation failed. See the job log for details."}}
 };
 async function startJob(kind){
   const r=B[kind]();if(r.p.length)return;
@@ -1364,7 +1364,7 @@ function renderJob(){
     if(JOB.total)now=`Step ${JOB.step} of ${JOB.total} (${Math.round(pct*100)}%). About ${fmtTime((JOB.total-JOB.step)*JOB.sps)} left. Elapsed ${fmtTime(JOB.elapsed)}.`;
     else if(JOB.kind==="finetune")now=(JOB.dataLine?JOB.dataLine+". ":"")+"Getting ready: loading the voice and your data. This can take a minute the first time.";
     else now="Working… "+fmtTime(JOB.elapsed)+" so far.";
-  }else if(st==="done"){now=JOB.kind==="svpk"?"SVPK 诊断包已生成："+val("svpk_output")+"。全零字段无响应、移植 Chifuyu 字段则提示数据损坏；文件不可安装。":JOB.kind==="sfpk"?"SFPK 测试包已生成："+val("sfpk_output")+"。模型依赖位于本机 models 目录，需在 Flat 中验证。":JOB.kind==="finetune"&&JOB.saved?"Finished. Your new voice is saved at "+JOB.saved:"Finished in "+fmtTime(JOB.elapsed)+".";if(JOB.kind==="finetune"&&JOB.saved)now+=" ("+fmtTime(JOB.elapsed)+")"}
+  }else if(st==="done"){now=JOB.kind==="svpk"?"SVPK diagnostic package created: "+val("svpk_output")+". This package is not installable.":JOB.kind==="sfpk"?"SFPK test package created: "+val("sfpk_output")+". Its model dependencies remain in the local models directory and must be verified in Flat.":JOB.kind==="finetune"&&JOB.saved?"Finished. Your new voice is saved at "+JOB.saved:"Finished in "+fmtTime(JOB.elapsed)+".";if(JOB.kind==="finetune"&&JOB.saved)now+=" ("+fmtTime(JOB.elapsed)+")"}
   else if(st==="stopped")now="You stopped this."+(JOB.kind==="finetune"?" Training progress is kept in the run folder. Tick “Continue the previous run” in Advanced settings to carry on.":"");
   $("#actNow").textContent=now;
   $("#actSummary").textContent=st==="running"&&JOB.total?`step ${JOB.step}/${JOB.total}`:"";
@@ -1390,7 +1390,7 @@ function renderJob(){
 /* ---------- results ---------- */
 function showPackageFormatDialog(){
   const voicePath=val("e_new")||val("t_output");
-  if(!voicePath){alert("请先完成训练，并选择训练后的 voice.nofs。");return;}
+  if(!voicePath){alert("Finish training and select the resulting voice.nofs file first.");return;}
   go("results");
   $("#packageFormatDialog").showModal();
 }
@@ -1425,9 +1425,9 @@ function suggestSfpkOutput(){
 }
 function openSvpkDialog(){
   const voicePath=val("e_new")||val("t_output");
-  if(!voicePath){alert("请先选择训练后的声库文件。");return;}
-  if(isInfo(voicePath)){alert("当前结果是 info.*.nofs 共享模型声库。当前 SVPK 打包器仅支持普通单文件 voice.nofs；共享模型声库需要另一套打包方式。");return;}
-  if(!/\.nofs$/i.test(voicePath)){alert("当前路径不是 .nofs 文件，请先在 Results 中选择训练后的 voice.nofs。");return;}
+  if(!voicePath){alert("Select the trained voicebank file first.");return;}
+  if(isInfo(voicePath)){alert("This is an info.*.nofs shared-model voicebank. The current SVPK diagnostic exporter supports only a regular single-file voice.nofs.");return;}
+  if(!/\.nofs$/i.test(voicePath)){alert("The selected path is not a .nofs file. Choose the trained voice.nofs from Results.");return;}
   if(!val("svpk_name"))document.getElementById("svpk_name").value=val("v_name")||"My Singer";
   if(!val("svpk_version"))document.getElementById("svpk_version").value="101";
   suggestSvpkOutput();
@@ -1438,9 +1438,9 @@ function openSfpkDialog(){
   const voicePath=val("e_new")||val("t_output");
   $("#packageFormatDialog").close();
   $("#packageStatus").className="status warn";
-  $("#packageStatus").textContent="SFPK 是实验性本机依赖版；生成后必须在 Flat 中验证。";
-  if(!voicePath){alert("请先选择训练后的声库文件。");return;}
-  if(!/\.nofs$/i.test(voicePath)){alert("请选择训练后的 .nofs 文件或已有 info.*.nofs 文件。");return;}
+  $("#packageStatus").textContent="SFPK export is experimental and depends on local model files. Verify the package in Flat after generation.";
+  if(!voicePath){alert("Select the trained voicebank file first.");return;}
+  if(!/\.nofs$/i.test(voicePath)){alert("Choose the trained .nofs file or an existing info.*.nofs file.");return;}
   if(!val("sfpk_name")&&!isInfo(voicePath))document.getElementById("sfpk_name").value=val("v_name")||"My Singer";
   if(!val("sfpk_vendor")&&!isInfo(voicePath))document.getElementById("sfpk_vendor").value="TrainSV user";
   if(!val("sfpk_version")){
@@ -1547,10 +1547,10 @@ async function init(){
     button.disabled=true;
     try{
       const target=await api("stat?path="+enc(val("sfpk_output")));
-      if(target.isfile&&!confirm("输出文件已存在：\n"+val("sfpk_output")+"\n\n是否覆盖它？"))return;
+      if(target.isfile&&!confirm("The output file already exists:\n"+val("sfpk_output")+"\n\nOverwrite it?"))return;
       $("#sfpkDialog").close();
       startJob("sfpk");
-    }catch(e){alert("无法检查输出路径："+e.message)}
+    }catch(e){alert("Could not check the output path: "+e.message)}
     finally{button.disabled=false}
   };
   $("#buildSvpk").onclick=async()=>{
@@ -1560,10 +1560,10 @@ async function init(){
     button.disabled=true;
     try{
       const target=await api("stat?path="+enc(val("svpk_output")));
-      if(target.isfile&&!confirm("输出文件已存在：\n"+val("svpk_output")+"\n\n是否覆盖它？"))return;
+      if(target.isfile&&!confirm("The output file already exists:\n"+val("svpk_output")+"\n\nOverwrite it?"))return;
       $("#svpkDialog").close();
       startJob("svpk");
-    }catch(e){alert("无法检查输出路径："+e.message)}
+    }catch(e){alert("Could not check the output path: "+e.message)}
     finally{button.disabled=false}
   };
   // resume hint
