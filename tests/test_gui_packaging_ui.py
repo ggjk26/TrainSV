@@ -107,8 +107,8 @@ def test_training_and_evaluation_expose_f0_tracking_profiles():
     assert 'data-id="t_f0_profile"' in PAGE
     assert 'data-options="standard|Standard (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID F0 cleanup (45–1400 Hz, threshold 0.45);low|Low register (45–650 Hz, threshold 0.60);high|High register (100–1400 Hz, threshold 0.60);wide|Wide range (40–1600 Hz, threshold 0.60)"' in PAGE
     assert 'a.push("--f0-profile",val("t_f0_profile")||"standard")' in PAGE
-    assert "F0 追踪预设控制从输入 WAV 提取基频时的频率范围与浊音阈值" in PAGE
-    assert "若只有音素 LAB、没有 note_seq/note_dur，Pitch 无法有效训练" in PAGE
+    assert "F0 预设只控制输入 WAV 的基频检测范围与目标曲线清理" in PAGE
+    assert 'id="f0CalibrationPanel"' in PAGE
 
 
 def test_f0_and_pitch_have_distinct_workspaces():
@@ -258,8 +258,8 @@ def test_training_and_evaluation_expose_f0_tracking_profiles():
     assert 'data-id="t_f0_profile"' in PAGE
     assert 'data-options="standard|Standard (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID F0 cleanup (45–1400 Hz, threshold 0.45);low|Low register (45–650 Hz, threshold 0.60);high|High register (100–1400 Hz, threshold 0.60);wide|Wide range (40–1600 Hz, threshold 0.60)"' in PAGE
     assert 'a.push("--f0-profile",val("t_f0_profile")||"standard")' in PAGE
-    assert "F0 追踪预设控制从输入 WAV 提取基频时的频率范围与浊音阈值" in PAGE
-    assert "若只有音素 LAB、没有 note_seq/note_dur，Pitch 无法有效训练" in PAGE
+    assert "F0 预设只控制输入 WAV 的基频检测范围与目标曲线清理" in PAGE
+    assert 'id="f0CalibrationPanel"' in PAGE
 
 
 def test_f0_and_pitch_have_distinct_workspaces():
@@ -293,9 +293,12 @@ def test_f0_and_pitch_have_distinct_workspaces():
     assert "independent of F0 detection" in pitch_panel
 
 
-def test_vocaloid_profile_is_naturalizing_and_uses_explicit_octave_override():
-    assert 'vocaloid:{floor:"",ceiling:"",threshold:"",smoothing:"5",octave:true,pitchSmoothing:"2.5",melody:"1.2",motion:"0.8"}' in PAGE
+def test_vocaloid_f0_profile_does_not_override_pitch_loss_settings():
+    assert 'vocaloid:{floor:"",ceiling:"",threshold:"",smoothing:"5",octave:true}' in PAGE
     assert 'if(t.id==="t_f0_profile")applyF0ProfileControls(val("t_f0_profile"))' in PAGE
     assert '"--no-f0-octave-correction"' in PAGE
-    assert "VOCALOID → Natural-Smooth" in PAGE
-    assert "data-label=\"F0 median smoothing\"" in PAGE
+    assert "VOCALOID F0 cleanup" in PAGE
+    fn = PAGE.split("function applyF0ProfileControls(profile,clearOverrides=true){", 1)[1].split("\nconst B={", 1)[0]
+    assert "t_pitch_smoothing" not in fn
+    assert "t_pitch_melody_weight" not in fn
+    assert "t_pitch_motion_weight" not in fn
