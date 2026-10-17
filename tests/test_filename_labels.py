@@ -361,7 +361,7 @@ def test_vocaloid_source_also_uses_explicit_standard_xsampa_bridge_for_unlisted_
     # source alias in the filename table; it maps safely through the standard
     # Mandarin bridge when the target uses SynthV's newer inventory.
     assert parse_filename_phones(
-        "O_0.wav", {"sil", "o/"}, source_system="vocaloid-mandarin"
+        "O_0.wav", {"sil", "o/", "aa", "e/"}, source_system="vocaloid-mandarin"
     ) == ["sil", "o/", "sil"]
 
 
