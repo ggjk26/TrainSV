@@ -6,18 +6,20 @@ from opensv_train.f0 import F0_PROFILES, f0_cache_tag, resolve_f0_profile, resol
 
 
 def test_f0_profiles_have_expected_ranges():
-    assert tuple(F0_PROFILES) == ("standard", "vocaloid", "low", "high", "wide")
+    assert tuple(F0_PROFILES) == ("standard", "vocaloid", "low", "high", "wide", "sensitive")
     assert resolve_f0_profile("standard") == (65.0, 1100.0, 0.60)
     assert resolve_f0_profile("vocaloid") == (45.0, 1400.0, 0.45)
     assert resolve_f0_profile("low") == (45.0, 650.0, 0.60)
     assert resolve_f0_profile("high") == (100.0, 1400.0, 0.60)
     assert resolve_f0_profile("wide") == (40.0, 1600.0, 0.60)
+    assert resolve_f0_profile("sensitive") == (35.0, 1800.0, 0.30)
 
 
 def test_f0_presets_only_control_f0_cleanup():
     assert resolve_f0_processing("standard") == (0, False)
     assert resolve_f0_processing("vocaloid") == (5, True)
     assert resolve_f0_processing("low") == (0, False)
+    assert resolve_f0_processing("sensitive") == (3, False)
 
 
 def test_pitch_loss_defaults_and_overrides_are_independent_of_f0_profile():
