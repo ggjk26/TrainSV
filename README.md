@@ -162,6 +162,19 @@ The tests use installed voices (`OPENSV_TEST_VOICES`, separated by `:`, override
 
 Now supported Vocaloid-styled X-SAMPA dict. But something wrong with F0.
 
+## Pitch / F0 tuning
+
+The Training page includes a dedicated Pitch / F0 workspace. The existing Pitch checkbox still controls whether the voice's own pitch model is finetuned. The additional controls are:
+
+- F0 presets for default (65–1100 Hz), low (45–650 Hz), high (100–1400 Hz), and wide (40–1600 Hz) ranges.
+- Configurable pitch floor/ceiling and Praat autocorrelation voicing threshold.
+- Optional F0 reference correction in cents (negative lowers the detected pitch reference; e.g. try -25 for a measured reference that is about 25 cents sharp).
+- Smoothing cutoff for separating the slow melody contour from faster pitch motion, plus independent melody and motion loss weights.
+
+The matching CLI flags are available to both `finetune` and `evaluate`: `--f0-floor`, `--f0-ceiling`, `--f0-voicing-threshold`, `--f0-reference-cents`, `--pitch-smoothing-hz`, `--pitch-melody-weight`, and `--pitch-motion-weight`. Changing F0 range or voicing threshold invalidates and recomputes the detector cache. Reference correction is applied after cache loading.
+
+This change does **not** ship general-purpose neural Pitch weights or arbitrary model swapping. Training still starts from the selected voice's own Pitch model. A reusable pretrained model must pass checks for network layout, phoneme sets, normalization data, and speaker-vector compatibility before it can safely be imported into a voice.
+
 ## Layout
 
 - `opensv_train/`: the CLI, dataset, model, training and export code
