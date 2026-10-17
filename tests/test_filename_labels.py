@@ -425,6 +425,16 @@ def test_rhoticized_vowel_uses_synthv_mandarin_er_label_without_separate_rhotic_
     ) == ["sil", "er", "sil"]
 
 
+def test_rhoticized_vowel_uses_curated_inventory_fallback_without_source_mode():
+    token = "@" + chr(96)
+    assert parse_filename_phones(
+        token + "_0.wav", {"sil", "e/", "-r"}
+    ) == ["sil", "e/", "-r", "sil"]
+    assert parse_filename_phones(
+        token + "_0.wav", {"sil", "e/", "rr"}
+    ) == ["sil", "e/", "rr", "sil"]
+
+
 def test_unmatched_report_preserves_rhoticized_vowel_source_token(tmp_path):
     wav_dir = tmp_path / "wavs"
     wav_dir.mkdir()
