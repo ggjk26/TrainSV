@@ -31,6 +31,32 @@ def test_explicit_pitch_processing_options_override_profile():
     ) == (0, False, 3.5, 1.0, 1.0)
 
 
+def test_cli_finetune_and_evaluate_resolve_vocaloid_processing_defaults():
+    from opensv_train.__main__ import _validate_pitch_options, parser
+
+    root = parser()
+    fine = root.parse_args([
+        "finetune", "--voice", "voice.nofs", "--data", "dataset",
+        "--output", "out.nofs", "--language", "en", "--f0-profile", "vocaloid",
+    ])
+    _validate_pitch_options(fine)
+    assert (
+        fine.f0_smoothing, fine.f0_octave_correction,
+        fine.pitch_smoothing_hz, fine.pitch_melody_weight, fine.pitch_motion_weight,
+    ) == (5, True, 2.5, 1.2, 0.8)
+
+    evaluate = root.parse_args([
+        "evaluate", "--voice", "voice.nofs", "--voice", "out.nofs",
+        "--data", "dataset", "--language", "en", "--f0-profile", "vocaloid",
+        "--no-f0-octave-correction",
+    ])
+    _validate_pitch_options(evaluate)
+    assert (
+        evaluate.f0_smoothing, evaluate.f0_octave_correction,
+        evaluate.pitch_smoothing_hz, evaluate.pitch_melody_weight, evaluate.pitch_motion_weight,
+    ) == (5, False, 2.5, 1.2, 0.8)
+
+
 def test_f0_profile_numeric_overrides_and_validation():
     assert resolve_f0_profile(
         "vocaloid", floor=55, ceiling=1700, voicing_threshold=0.5
