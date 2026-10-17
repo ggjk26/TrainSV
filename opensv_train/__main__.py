@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections import Counter
 import json
 import math
 import os
@@ -248,7 +249,10 @@ def import_lab(arguments) -> None:
         report_path = Path(arguments.output).expanduser() / "unmatched_phones.csv"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         with report_path.open("w", newline="", encoding="utf-8-sig") as report_file:
-            writer = csv.DictWriter(report_file, fieldnames=("filename", "category", "error"))
+            writer = csv.DictWriter(
+                report_file,
+                fieldnames=("filename", "category", "source_token", "error"),
+            )
             writer.writeheader()
             writer.writerows(unmatched)
         wav_directory = Path(arguments.wavs).expanduser()
@@ -270,6 +274,15 @@ def import_lab(arguments) -> None:
                 f"Skipped {len(unmatched)} WAV file(s) ({summary}); "
                 f"see {report_path} for each filename and reason"
             )
+            blockers = Counter(
+                item["source_token"] for item in unmatched
+                if item.get("category") == "phone_mapping" and item.get("source_token")
+            )
+            if blockers:
+                top = ", ".join(
+                    f"{token}×{count}" for token, count in blockers.most_common(20)
+                )
+                print(f"Most frequent unmapped source tokens (first blocker per file): {top}")
         if not recordings:
             raise SystemExit(f"no WAV files could be labelled; see {report_path} for phone-mapping/audio errors")
     elif arguments.corpus:

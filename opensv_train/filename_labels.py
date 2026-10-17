@@ -7,6 +7,7 @@ All LAB timestamps are integer 100-nanosecond ticks.
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
@@ -320,6 +321,15 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             if converted is not None and (converted != [token] or token not in valid):
                 phones.extend(converted)
                 continue
+            if converted is None:
+                # VOCALOID's phone spellings include dialect-specific aliases,
+                # but some source filenames also use canonical Mandarin X-SAMPA
+                # tokens not duplicated in that alias table. Use only the explicit
+                # standard X-SAMPA bridge here; never fall back to character splitting.
+                converted = _map_xsampa_mandarin(token, valid, "xsampa")
+                if converted is not None:
+                    phones.extend(converted)
+                    continue
         if token in valid:
             phones.append(token)
             continue
@@ -441,7 +451,14 @@ def filename_recordings(
         except ValueError as error:
             if unmatched is None:
                 raise
-            unmatched.append({"filename": wav.name, "category": "phone_mapping", "error": str(error)})
+            message = str(error)
+            token_match = re.search(r"unknown phone ['\"](.+?)['\"]", message)
+            unmatched.append({
+                "filename": wav.name,
+                "category": "phone_mapping",
+                "source_token": token_match.group(1) if token_match else "",
+                "error": message,
+            })
             continue
         try:
             # Decode the file, not just its header: truncated/corrupt WAV payloads

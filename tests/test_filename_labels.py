@@ -354,3 +354,25 @@ def test_synthv_legacy_xsampa_aliases_still_map_to_new_phone_symbols():
         " ".join(tokens) + "_0.wav", simple, source_system="synthv-xsampa"
     )
     assert parsed == ["sil", "p", "t", "k", "c", "q", "ch", "sil"]
+
+
+def test_vocaloid_source_also_uses_explicit_standard_xsampa_bridge_for_unlisted_tokens():
+    # O is a canonical X-SAMPA vowel not present as an explicit VOCALOID
+    # source alias in the filename table; it maps safely through the standard
+    # Mandarin bridge when the target uses SynthV's newer inventory.
+    assert parse_filename_phones(
+        "O_0.wav", {"sil", "o/"}, source_system="vocaloid-mandarin"
+    ) == ["sil", "o/", "sil"]
+
+
+def test_unmatched_report_includes_first_unknown_source_token(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(str(wav_dir / "badphone_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    unmatched = []
+    recordings = filename_recordings(
+        wav_dir, {"sil", "a"}, source_system="vocaloid-mandarin", unmatched=unmatched
+    )
+    assert recordings == []
+    assert unmatched[0]["source_token"] == "badphone"
+    assert unmatched[0]["category"] == "phone_mapping"
