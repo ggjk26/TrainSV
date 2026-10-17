@@ -105,7 +105,7 @@ def test_successful_comparison_opens_the_package_format_chooser():
 
 def test_training_and_evaluation_expose_f0_tracking_profiles():
     assert 'data-id="t_f0_profile"' in PAGE
-    assert 'data-options="standard|Standard tracking (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID → Natural-Smooth (45–1400 Hz, threshold 0.45);low|Low register (45–650 Hz, threshold 0.60);high|High register (100–1400 Hz, threshold 0.60);wide|Wide range (40–1600 Hz, threshold 0.60)"' in PAGE
+    assert 'data-options="standard|Standard (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID F0 cleanup (45–1400 Hz, threshold 0.45);low|Low register (45–650 Hz, threshold 0.60);high|High register (100–1400 Hz, threshold 0.60);wide|Wide range (40–1600 Hz, threshold 0.60)"' in PAGE
     assert 'a.push("--f0-profile",val("t_f0_profile")||"standard")' in PAGE
     assert "F0 预设只控制输入 WAV 的基频检测范围与目标曲线清理" in PAGE
     assert 'id="f0CalibrationPanel"' in PAGE
