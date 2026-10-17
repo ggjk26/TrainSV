@@ -48,6 +48,11 @@ XSAMPA_TO_SYNTHV_SIMPLE: dict[str, tuple[str, ...]] = {
     "ts`_h": ("ch",), "x": ("h",), "s`": ("sh",), "s\\": ("x",),
     "z`": ("r",), "j": ("y",), "f": ("f",), "s": ("s",),
     "m": ("m",), "n": ("n",), "l": ("l",), "w": ("w",),
+    "y{": ("va",), "yE": ("ve",), "ua": ("ua",), "uA": ("uaa",),
+    "u@": ("ue/",), "ue": ("ue",), "uo": ("uo",),
+    ":\\i": ("-i",), r"r\`": ("-r",),
+    "ts\\h": ("q",),
+    "ts`h": ("ch",),
 }
 # Pre-2.3 SynthV Mandarin inventory spellings that were replaced by X-SAMPA
 # in the newer phone table. Map these only when the selected target uses the
