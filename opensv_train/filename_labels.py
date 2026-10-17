@@ -30,6 +30,74 @@ COMPOSITE_PHONES: dict[str, tuple[str, ...]] = {
 RHOTICIZED_VOWELS = {"@`": "@", "3`": "3"}
 RHOTIC_APPROXIMANTS = ("r\\", "ɹ", "ɻ", "r", "R", "R\\")
 PHONE_REPLACEMENTS = {"k_h": "kh", r"ts%5c": "ts\\"}
+
+# Explicit bridge from the Mandarin X-SAMPA symbols documented by Synthesizer V
+# Studio 2.3 to the newer romanized phone inventory. This is language-specific:
+# symbols such as p, z, and y do not have the same *phone-set label* in the new
+# Mandarin inventory as their generic IPA meanings suggest.
+XSAMPA_TO_SYNTHV_SIMPLE: dict[str, tuple[str, ...]] = {
+    "a": ("a",), "A": ("aa",), "O": ("o/",), "@": ("e/",),
+    "e": ("ee",), "7": ("e",), "U": ("o",), "u": ("u",), "i": ("i",),
+    "r\\": ("iz",), ":r\\`": ("ir",), "y": ("v",),
+    "au": ("ao",), "ou": ("ou",), "ia": ("ia",), "iA": ("iaa",),
+    "iau": ("iao",), "ie": ("ie",), "iE": ("iae",), "iU": ("io",),
+    "jou": ("iu",), "i^": ("-i",), ":n": ("-n",), "N": ("ng",),
+    "p": ("b",), "p_h": ("p",), "t": ("d",), "t_h": ("t",),
+    "k": ("g",), "k_h": ("k",), "ts": ("z",), "ts_h": ("c",),
+    "ts\\": ("j",), "ts\\_h": ("q",), "ts`": ("zh",),
+    "ts`_h": ("ch",), "x": ("h",), "s`": ("sh",), "s\\": ("x",),
+    "z`": ("r",), "j": ("y",), "f": ("f",), "s": ("s",),
+    "m": ("m",), "n": ("n",), "l": ("l",), "w": ("w",),
+}
+# Pre-2.3 SynthV Mandarin inventory spellings that were replaced by X-SAMPA
+# in the newer phone table. Map these only when the selected target uses the
+# simplified/new inventory; a legacy voice should keep its own exact symbols.
+SYNTHV_LEGACY_XSAMPA_ALIASES = {
+    "o": "O", "AU": "au", "@U": "ou", "iAU": "iau", "i@U": "jou",
+    "i\\": "r\\", "i`": ":r\\`", ":\\i": "i^",
+    "ph": "p_h", "th": "t_h", "kh": "k_h", "tsh": "ts_h",
+    "ts\\h": "ts\\_h", "ts`h": "ts`_h",
+}
+_SYNTHV_SIMPLE_MARKERS = {
+    "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v", "ng",
+    "-n", "iaa", "iae", "io", "b", "d", "g", "z", "c",
+}
+
+
+def _uses_synthv_simple_mandarin(valid: set[str]) -> bool:
+    """Recognize the new romanized Mandarin inventory from several markers."""
+    return len(valid & _SYNTHV_SIMPLE_MARKERS) >= 2
+
+
+def _map_xsampa_mandarin(
+    token: str, valid: set[str], source_system: str
+) -> list[str] | None:
+    """Map standard or SynthV-legacy Mandarin X-SAMPA without guessing splits."""
+    simple_target = _uses_synthv_simple_mandarin(valid)
+    if not simple_target:
+        # When the target is an X-SAMPA/legacy phone table, exact symbols keep
+        # their target-defined meaning and take priority over aliases.
+        if token in valid:
+            return [token]
+        if source_system == "synthv-xsampa":
+            alias = SYNTHV_LEGACY_XSAMPA_ALIASES.get(token)
+            if alias in valid:
+                return [alias]
+        return None
+
+    canonical = SYNTHV_LEGACY_XSAMPA_ALIASES.get(token, token) if source_system == "synthv-xsampa" else token
+    # If a known X-SAMPA symbol maps to a different simple label, never silently
+    # pass through the same spelling (e.g. X-SAMPA p vs simplified Mandarin p).
+    mapped = XSAMPA_TO_SYNTHV_SIMPLE.get(canonical)
+    if mapped is not None:
+        return list(mapped) if all(phone in valid for phone in mapped) else None
+
+    # Same symbol, same phone in both inventories for these common Mandarin phones.
+    if canonical in {"f", "m", "n", "l", "w"} and canonical in valid:
+        return [canonical]
+    return None
+
+
 # Candidate target spellings for VOCALOID Mandarin tokens. The first
 # available candidate is preferred; this supports simplified and X-SAMPA-style
 # SynthV phone inventories without a user-maintained phone_table.json.
@@ -193,7 +261,10 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
         if token.casefold() == "sil":
             phones.append("sil")
             continue
-        replacement = PHONE_REPLACEMENTS.get(token)
+        # k_h and other underscore forms are meaningful X-SAMPA aspiration
+        # markers; do not rewrite them to legacy aliases in the X-SAMPA modes.
+        replacements = {} if source_system in {"xsampa", "synthv-xsampa"} else PHONE_REPLACEMENTS
+        replacement = replacements.get(token)
         if replacement is not None:
             if replacement not in valid and source_system == "vocaloid-mandarin":
                 converted = _map_vocaloid_mandarin(replacement, valid)
@@ -207,6 +278,18 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 )
             phones.append(replacement)
             continue
+        if source_system in {"xsampa", "synthv-xsampa"}:
+            converted = _map_xsampa_mandarin(token, valid, source_system)
+            if converted is not None:
+                phones.extend(converted)
+                continue
+            # Compound legacy Mandarin syllable-final tokens are not single
+            # X-SAMPA symbols; resolve them through the explicit compound table.
+            if _uses_synthv_simple_mandarin(valid) and token in VOCALOID_MANDARIN_COMPOSITES:
+                converted = _map_vocaloid_mandarin(token, valid)
+                if converted is not None:
+                    phones.extend(converted)
+                    continue
         if source_system == "vocaloid-mandarin":
             converted = _map_vocaloid_mandarin(token, valid)
             if converted is not None and (converted != [token] or token not in valid):
@@ -247,7 +330,10 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 )
             phones.extend(composite)
             continue
-        pieces = _segment(token, valid)
+        # Explicit source conventions must never be heuristically split into
+        # plausible-looking but phonetically incorrect phones. Their valid
+        # conversions are all table-driven above.
+        pieces = None if source_system in {"xsampa", "synthv-xsampa", "vocaloid-mandarin"} else _segment(token, valid)
         if pieces is None:
             raise ValueError(
                 f"{Path(filename).name}: unknown phone {token!r}; it is not in "
