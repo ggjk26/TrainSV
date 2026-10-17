@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-import soundfile
+from .audio_io import read_wav_frames
 
 TICKS_PER_SECOND = 10_000_000
 SILENCE_FRACTION = 0.10
@@ -290,7 +290,12 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 continue
             # Compound legacy Mandarin syllable-final tokens are not single
             # X-SAMPA symbols; resolve them through the explicit compound table.
-            if _uses_synthv_simple_mandarin(valid) and token in VOCALOID_MANDARIN_COMPOSITES:
+            if _uses_synthv_simple_mandarin(valid) and (
+                token in VOCALOID_MANDARIN_COMPOSITES
+                or token in VOCALOID_MANDARIN_PHONE_CANDIDATES
+            ):
+                # Explicit curated Mandarin aliases such as aI/AU/@U/iAU/i@U;
+                # this is table-driven mapping, never character-by-character guessing.
                 converted = _map_vocaloid_mandarin(token, valid)
                 if converted is not None:
                     phones.extend(converted)
@@ -406,7 +411,11 @@ def filename_recordings(
     directory = Path(wav_directory).expanduser()
     if not directory.is_dir():
         raise ValueError(f"WAV directory does not exist: {directory}")
-    wavs = sorted(directory.glob("*.wav"), key=lambda path: path.name.casefold())
+    # Case-insensitive extension matching is needed when datasets move from Windows to Linux.
+    wavs = sorted(
+        (path for path in directory.iterdir() if path.is_file() and path.suffix.casefold() == ".wav"),
+        key=lambda path: path.name.casefold(),
+    )
     if not wavs:
         raise ValueError(f"no .wav files found in {directory}")
     recordings = []
@@ -416,13 +425,13 @@ def filename_recordings(
         except ValueError as error:
             if unmatched is None:
                 raise
-            unmatched.append({"filename": wav.name, "error": str(error)})
+            unmatched.append({"filename": wav.name, "category": "phone_mapping", "error": str(error)})
             continue
         try:
             # Decode the file, not just its header: truncated/corrupt WAV payloads
             # must be reported as bad files, while a valid unvoiced consonant WAV
             # remains a valid recording regardless of whether Praat finds F0.
-            decoded, rate = soundfile.read(str(wav), dtype="float32", always_2d=True)
+            decoded, rate = read_wav_frames(wav)
             frames = int(decoded.shape[0])
             if rate <= 0 or frames <= 0 or decoded.shape[1] <= 0:
                 raise ValueError("audio has no samples or an invalid sample rate")
@@ -430,7 +439,7 @@ def filename_recordings(
             message = f"{wav.name}: unreadable or damaged WAV: {error}"
             if unmatched is None:
                 raise ValueError(message) from error
-            unmatched.append({"filename": wav.name, "error": message})
+            unmatched.append({"filename": wav.name, "category": "wav_decode", "error": message})
             continue
         total_ticks = round(frames * TICKS_PER_SECOND / rate)
         try:
@@ -439,7 +448,7 @@ def filename_recordings(
             message = f"{wav.name}: {error}"
             if unmatched is None:
                 raise ValueError(message) from error
-            unmatched.append({"filename": wav.name, "error": message})
+            unmatched.append({"filename": wav.name, "category": "label_generation", "error": message})
             continue
         recordings.append((wav.stem, wav, labels))
     return recordings
