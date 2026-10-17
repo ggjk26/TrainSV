@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 import soundfile
 
-from opensv_train.data import import_labels, load_dataset, make_phrases, parse_note
+from opensv_train import data as data_module
+from opensv_train.data import import_labels, load_dataset, make_phrases, parse_note, resolve_f0_profile
 from opensv_train.synthetic import random_phrase, render_dataset
 from opensv_train.voice import Voice
 
@@ -63,3 +64,60 @@ def test_word_spans_follow_diffsinger():
 
     assert word_spans("n i h ao SP AP".split(), {"i", "ao"}) == [1, 2, 1, 1, 1]
     assert word_spans("SP k a N t o cl AP".split(), {"a", "o", "N"}) == [2, 1, 2, 2, 1]
+
+
+def test_f0_tracking_profiles_and_overrides():
+    assert resolve_f0_profile("standard") == (65.0, 1100.0, 0.60)
+    assert resolve_f0_profile("vocaloid") == (45.0, 1400.0, 0.45)
+    assert resolve_f0_profile(
+        "vocaloid", floor=55, ceiling=1700, voicing_threshold=0.5
+    ) == (55.0, 1700.0, 0.5)
+
+    with pytest.raises(ValueError, match="unknown F0 profile"):
+        resolve_f0_profile("guess")
+    with pytest.raises(ValueError, match="greater than the F0 floor"):
+        resolve_f0_profile("standard", floor=100, ceiling=90)
+    with pytest.raises(ValueError, match="voicing threshold"):
+        resolve_f0_profile("standard", voicing_threshold=0)
+
+
+def test_f0_profile_parameters_are_passed_to_tracker_and_cache_is_separate(tmp_path, monkeypatch):
+    dataset = tmp_path / "dataset"
+    wavs = dataset / "wavs"
+    wavs.mkdir(parents=True)
+    (wavs / "sample.wav").write_bytes(b"test wav placeholder")
+    (dataset / "transcriptions.csv").write_text(
+        "name,ph_seq,ph_dur\nsample,a,0.1\n", encoding="utf-8"
+    )
+    calls = []
+
+    def fake_read_audio(_path):
+        return np.zeros(4800, dtype=np.float32)
+
+    def fake_extract_f0(audio, floor, ceiling, *, voicing_threshold):
+        calls.append((floor, ceiling, voicing_threshold))
+        return np.array([0.0, 0.005, 0.01]), np.array([220.0, 0.0, 330.0])
+
+    monkeypatch.setattr(data_module, "read_audio", fake_read_audio)
+    monkeypatch.setattr(data_module, "extract_f0", fake_extract_f0)
+    cache = dataset / ".cache"
+
+    synthetic_voice = load_dataset(
+        dataset, "japanese", cache=cache,
+        f0_range=(45.0, 1400.0), f0_voicing_threshold=0.45,
+    )
+    assert calls == [(45.0, 1400.0, 0.45)]
+    assert synthetic_voice[0].f0_values.tolist() == [220.0, 0.0, 330.0]
+    assert (cache / "sample.f0-45-1400-v0.45.npz").is_file()
+
+    # Same settings reuse the matching cache rather than re-extracting F0.
+    load_dataset(
+        dataset, "japanese", cache=cache,
+        f0_range=(45.0, 1400.0), f0_voicing_threshold=0.45,
+    )
+    assert len(calls) == 1
+
+    # Standard settings have a distinct cache key and trigger a new analysis.
+    load_dataset(dataset, "japanese", cache=cache)
+    assert calls[-1] == (65.0, 1100.0, 0.60)
+    assert len(calls) == 2

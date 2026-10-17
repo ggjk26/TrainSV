@@ -9,6 +9,7 @@ dependencies = [
     "torch>=2.2",
     "soundfile",
     "praat-parselmouth",
+    "cryptography>=41",
 ]
 
 [project.scripts]

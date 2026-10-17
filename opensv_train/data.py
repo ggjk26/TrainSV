@@ -12,6 +12,7 @@ from scipy.signal import resample_poly
 
 from .acoustic import TimedPhoneme
 from .duration import PhonemeDuration, Syllable
+from .f0 import F0_PROFILES, f0_cache_tag, process_f0_track, resolve_f0_profile
 from .pitch import PITCH_CONTEXT_SECONDS, PitchNote
 
 FRAME_SECONDS = 0.005
@@ -21,7 +22,6 @@ PHRASE_BREAK_SECONDS = 0.2
 SPECIAL_PHONEMES = {"SP": "sil", "AP": "br"}
 LANGUAGE_CODES = {"ja": "japanese", "zh": "mandarin", "en": "english", "yue": "cantonese", "es": "spanish"}
 NOTE_NAMES = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
-
 
 @dataclass
 class Phone:
@@ -159,7 +159,7 @@ def read_audio(path: Path) -> np.ndarray:
 
 
 def _validate_f0_settings(floor: float, ceiling: float, voicing_threshold: float) -> None:
-    """Validate the configurable pitch-tracker range before parsing audio."""
+    """Validate F0 range and Praat's autocorrelation voicing threshold."""
     if not np.isfinite(floor) or not np.isfinite(ceiling) or floor <= 0 or ceiling <= floor:
         raise ValueError("F0 range must satisfy 0 < floor < ceiling (Hz)")
     if not np.isfinite(voicing_threshold) or not 0.0 <= voicing_threshold <= 1.0:
@@ -170,7 +170,8 @@ def extract_f0(
     audio: np.ndarray,
     floor: float = 65.0,
     ceiling: float = 1100.0,
-    voicing_threshold: float = 0.6,
+    *,
+    voicing_threshold: float = 0.60,
 ) -> tuple[np.ndarray, np.ndarray]:
     import parselmouth
 
@@ -199,16 +200,20 @@ def load_dataset(
     phoneme_map: dict[str, str] | None = None,
     cache: Path | None = None,
     f0_range: tuple[float, float] = (65.0, 1100.0),
-    voicing_threshold: float = 0.6,
+    f0_voicing_threshold: float = 0.60,
+    f0_smoothing: int = 0,
+    f0_octave_correction: bool = False,
+    f0_shift_semitones: float = 0.0,
     f0_reference_cents: float = 0.0,
 ) -> list[Utterance]:
-    _validate_f0_settings(float(f0_range[0]), float(f0_range[1]), float(voicing_threshold))
-    if not np.isfinite(f0_reference_cents) or abs(f0_reference_cents) > 1200:
-        raise ValueError("F0 reference correction must be between -1200 and 1200 cents")
-    floor, ceiling = map(float, f0_range)
-    voicing_threshold = float(voicing_threshold)
+    if not np.isfinite(f0_reference_cents) or abs(f0_reference_cents) > 1200.0:
+        raise ValueError("F0 reference correction must be finite and between -1200 and +1200 cents")
     directory = Path(directory)
     mapping = phoneme_map or {}
+    floor, ceiling, threshold = resolve_f0_profile(
+        "standard", floor=f0_range[0], ceiling=f0_range[1], voicing_threshold=f0_voicing_threshold
+    )
+    _validate_f0_settings(floor, ceiling, threshold)
     cache = cache or directory / ".opensv-cache"
     cache.mkdir(exist_ok=True)
     utterances = []
@@ -238,41 +243,38 @@ def load_dataset(
                     notes.append(Note(float(note_bounds[index]), float(note_bounds[index + 1]), parse_note(symbol), slur, word))
                 if word + 1 != len(counts):
                     raise ValueError(f"{name}: {word + 1} note groups for {len(counts)} ph_num words")
-            cached = cache / f"{name}.npz"
-            cache_keys = ("f0_floor", "f0_ceiling", "f0_voicing_threshold")
-            requested = (floor, ceiling, voicing_threshold)
-            cache_matches = False
+            # Include analysis parameters in the cache key: switching to a
+            # different F0 preset must never silently reuse an old contour.
+            cache_tag = f0_cache_tag(floor, ceiling, threshold)
+            cached = cache / f"{name}.{cache_tag}.npz"
             if cached.exists():
                 with np.load(cached) as stored:
-                    audio = stored["audio"]
-                    if all(key in stored.files for key in cache_keys):
-                        existing = tuple(float(stored[key]) for key in cache_keys)
-                        cache_matches = all(np.isclose(old, new, rtol=0.0, atol=1e-6) for old, new in zip(existing, requested))
-                        if cache_matches:
-                            times, values = stored["f0_times"], stored["f0_values"]
+                    audio, times, values = stored["audio"], stored["f0_times"], stored["f0_values"]
             else:
                 audio = read_audio(directory / "wavs" / f"{name}.wav")
-            if not cache_matches:
-                times, values = extract_f0(audio, floor, ceiling, voicing_threshold)
-                np.savez(
-                    cached,
-                    audio=audio,
-                    f0_times=times,
-                    f0_values=values,
-                    f0_floor=floor,
-                    f0_ceiling=ceiling,
-                    f0_voicing_threshold=voicing_threshold,
-                )
-            # Keep raw detector output in the cache so a correction can be changed
-            # without re-reading audio or contaminating subsequent settings.
-            if f0_reference_cents:
-                values = values * np.float32(2.0 ** (f0_reference_cents / 1200.0))
+                times, values = extract_f0(audio, floor, ceiling, voicing_threshold=threshold)
+                np.savez(cached, audio=audio, f0_times=times, f0_values=values)
             tuning = 0.0
             if notes is not None:
                 tuning = tuning_offset(notes)
                 for note in notes:
                     note.pitch = None if note.rest else note.pitch - tuning
-            utterances.append(Utterance(name, audio, phones, notes, times, values, tuning, (row.get("style") or "").strip() or None))
+            processed_values = process_f0_track(
+                values,
+                smoothing_frames=f0_smoothing,
+                correct_octave=f0_octave_correction,
+                shift_semitones=f0_shift_semitones,
+            )
+            # Apply the reference calibration after loading raw F0 from cache;
+            # changing a cents offset does not require re-running audio analysis.
+            if f0_reference_cents:
+                processed_values = processed_values * np.float32(2.0 ** (f0_reference_cents / 1200.0))
+            utterances.append(
+                Utterance(
+                    name, audio, phones, notes, times, processed_values, tuning,
+                    (row.get("style") or "").strip() or None,
+                )
+            )
     return utterances
 
 

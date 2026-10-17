@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-import struct
 import json
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -145,6 +145,8 @@ class Voice(torch.nn.Module):
             return write_nofs_voice(files, output, name)
         return write_info_voice(files, output, version or files.info.info.get("version", "100"), name)
 
+
+
 def initialize_pitch_from_file(voice: Voice, source_path) -> int:
     """Initialize a voice's Pitch network from a strictly compatible DNNI model.
 
@@ -152,6 +154,12 @@ def initialize_pitch_from_file(voice: Voice, source_path) -> int:
     accepted only when its model layout, phone tables, normalization buffers,
     non-parameter node payloads, and parameter shapes match.
     """
+    model_path = Path(source_path).expanduser()
+    if not model_path.is_file():
+        raise FileNotFoundError(f"pretrained Pitch DNNI not found: {model_path}")
+    if model_path.suffix.lower() != ".dnni":
+        raise ValueError("pretrained Pitch model must be a .dnni file")
+
     from .pitch import PitchModel
 
     target_file = voice.files.models["pitch"]
@@ -221,3 +229,10 @@ def _phone_set_signature(phone_sets) -> tuple:
          tuple(phone_set.unified), tuple(phone_set.classes))
         for phone_set in phone_sets
     )
+
+
+def initialize_pitch_model(voice: Voice, model_path: str | Path) -> Path:
+    """Backward-compatible wrapper returning the resolved model path."""
+    resolved = Path(model_path).expanduser().resolve()
+    initialize_pitch_from_file(voice, resolved)
+    return resolved

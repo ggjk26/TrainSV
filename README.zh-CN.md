@@ -198,6 +198,12 @@ CSV 必需列：
 
 训练步数更多不代表效果一定更好。请结合验证结果和试听判断，不能只看训练损失。
 
+#### F0 / 音高追踪预设
+
+WebUI 的“高级设置”里可以选择 F0 tracking preset，命令行也支持 `--f0-profile standard` 或 `--f0-profile vocaloid`。`standard` 沿用原默认设置：65–1100 Hz、清浊音门槛 0.60；`vocaloid` 使用较宽的 45–1400 Hz 范围和 0.45 门槛，可能帮助检测默认范围外的低音/高音，但也可能增加错误音高候选。切换后程序会自动使用独立缓存，并在训练日志中输出有声帧比例和检测到的中位 F0。
+
+这不是整体升降调或音准补偿开关。如果数据只有按 WAV 文件名生成的音素 LAB、没有 `note_seq` / 音符时长，Pitch 模型无法从这些数据学习音符到 F0 的关系；此时应先训练 Sound / Acoustic。若输出持续整体偏高/偏低，或仍有错八度，应检查输入 WAV 的 F0 追踪和音符标注，再用同一预设比较验证集的 `pitch_semitones`、`pitch_melody` 指标，不要直接靠增加步数来修正。
+
 ### 5. 评估并试听
 
 训练完成后，进入结果页面，选择刚生成的声库并点击“比较声库”。工具会在留出的验证短语上比较原始声库和新声库，并可输出试听文件与 `metrics.json`。
@@ -245,6 +251,7 @@ trainsv finetune \
   --data /path/to/my-dataset \
   --language ja \
   --models acoustic \
+  --f0-profile vocaloid \
   --steps 2000 \
   --output out/voice.nofs \
   --name "我的声库" \
@@ -261,6 +268,7 @@ trainsv evaluate \
   --voice out/voice.nofs \
   --data /path/to/my-dataset \
   --language ja \
+  --f0-profile vocaloid \
   --out out/evaluation
 ```
 
@@ -306,6 +314,46 @@ my-dataset/
 - `--history`：将验证指标保存为 JSON。
 - `--save-best`：验证结果改善时额外保存声库。
 
+## WebUI 声库打包（SVPK 实验版）
+
+在 WebUI 的 Results 页面完成“Compare voices”后，会弹出格式选择窗口。选择“使用 SVPK 格式打包”，在弹窗中填写声库名称、供应商/作者、整数版本，选择 `profile.png` 头像与背景 PNG，然后点击“开始打包”。不需要手动创建或导入 JSON。当前 SVPK 打包仅支持普通单文件 `voice.nofs`，共享模型 `info.*.nofs` 暂不支持该流程。弹窗还提供四种 **仅用于诊断** 的 256 字节字段预设：`zero`（默认）、`random`、`sha256-chain`、`aes256-cbc-test`。命令行也可通过 `--header-preset zero|random|sha256-chain|aes256-cbc-test` 选择（默认 `zero`）。AES 选项使用合成、可公开推导的测试密钥/IV，并非 Synthesizer V 的密钥或官方格式。
+
+SFPK 现在提供**实验性本机依赖版导出**。选择普通二进制 `voice.nofs` 时，`trainsv package-sfpk` 会把四类 DNNI 模型写入你指定的 Synthesizer V `models` 目录，以模型内容 MD5 作为 ID，并从原声库提取 32 个 float32 的声学风格/F0 向量，以及 128 个 float32 的 `duration_style` 向量，生成 `info.nofs` JSON 描述与 `config.json`，最后将这两个文件按样本结构打入 SFPK。SFPK **不包含模型二进制**，因此目标安装必须已有对应的模型依赖。Flat 中的导入、歌手选择和实际渲染尚未验证；通过手动测试之前，请勿把生成文件视为可用声库。
+
+命令行也可使用 `trainsv package-svpk`：
+
+```powershell
+trainsv package-svpk `
+  --voice "out\voice.nofs" `
+  --profile "assets\profile.png" `
+  --background "assets\background.png" `
+  --output "out\MySinger.svpk" `
+  --name "My Singer" `
+  --vendor "作者或工作室" `
+  --version-string 101 `
+  --version-number 101
+```
+
+**已知限制：当前输出不可安装。** 已实测：当前工具将 256 字节外层字段置零后，Sharp 导入没有反应；将 Hanakuma Chifuyu 的 256 字节字段复制到自制包后，Sharp 能识别该包，但提示数据损坏。这强烈暗示字段可能参与包专属完整性/认证校验。用户提供的 STARDUST_INFINITY 样本也在偏移量 264 处开始 ZIP；其 256 字节字段包含 162 种不同字节、没有零字节，与 Teto 字段按位置仅有 1 个字节相同，观察到的字节熵约为 7.17 bit/byte。这符合高熵数据的表现，却不能识别具体算法。仅凭 256 字节长度，无法区分 RSA-2048 签名、任意数据或 16 个 AES-CBC 密文块；算法、签名覆盖范围和官方校验流程仍未确认。当前输出只能用于研究内部 ZIP 和元数据，不能当作可安装声库或发布；不能直接复制其他官方包的字段来解决。`random`、`sha256-chain` 和 `aes256-cbc-test` 只用于比较应用对不同合成字节的反应，不会重现官方认证数据，也不代表能够生成有效安装包。命令行的 `--license` 参数可选；若未提供，打包器会生成包含 `!language en-us` 与 `!language zh-cn` 区块的 `license.txt` 占位文本（按样本中观察到的语言标记格式）。它只说明尚未指定正式许可条款，并不会替你声明授权；实际发布前应填写你有权发布的真实许可条款。
+
+包内文件名与顺序按已检查的 `KASANE_TETO_AI_104.svpk` 样例设置：`voice.nofs`、`license.txt`、`profile.png`、`background.png`、`package-config`。
+
+### 实验性 SFPK 导出
+
+```powershell
+trainsv package-sfpk `
+  --voice "out\voice.nofs" `
+  --models-root "C:\path\to\Synthesizer V Studio\models" `
+  --output "out\我的声库.sfpk" `
+  --name "我的声库" `
+  --vendor "作者或工作室" `
+  --version 101 `
+  --profile "assets\profile.png" `
+  --background "assets\background.png"
+```
+
+也可以将从 Flat 包中提取的 `info.nofs` JSON 传给 `--voice`；其引用的所有模型 ID 必须已存在于所选 models 目录。普通 `voice.nofs` 则会导出 acoustic、vocoder、duration、F0 四类模型到相应子目录，并以模型内容的 MD5 作为 ID。SFPK 基本包含 `config.json` 和 `info.nofs`；指定 `--profile` 和/或 `--background` 后，会把 PNG 以 `profile.png`、`background.png` 的名称额外放入包根目录。两个图片参数都是可选的。不像模型依赖一样，图片会随 SFPK 一起打包；四类模型二进制仍在本机 `models` 目录，不包含在包内，因此它不是可独立迁移的完整包。请选择 Synthesizer V Studio Flat 实际使用的 `models` 目录，并在测试前备份。当前实现参照一个已检查的 SFPK 样本，仍需在 Flat 中导入、选择歌手并实际渲染验证。
+
 ## 常见问题
 
 **导入后没有生成 CSV？** 检查 LAB 是否存在、是否与 WAV 同名、标注区间是否连续，以及输出目录是否可写。
@@ -338,7 +386,6 @@ cmake --build build --target OpenSVParity
 
 项目采用 GPL-3.0。感谢 [OpenSV](https://github.com/cubeww/OpenSV) 项目提供的参考实现。请通过当前仓库的 [Issues](https://github.com/ggjk26/TrainSV/issues) 提交复现步骤、底模类型和完整日志。
 现在支持输入Vocaloid音频样本的X-SAMPA音素，不会因为不匹配Synthesizer V的而报错退出。目前F0预测器的清浊音部分处理有问题（如“Sil k_01.wav”会识别损坏的wav从而终止训练）
-
 
 ## Pitch / F0 专项调校
 
