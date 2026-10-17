@@ -7,6 +7,18 @@ from opensv_train.synthetic import random_phrase, render_dataset
 from opensv_train.voice import Voice
 
 
+def test_f0_tracking_settings_are_validated():
+    from opensv_train.data import _validate_f0_settings
+
+    _validate_f0_settings(45.0, 650.0, 0.55)
+    with pytest.raises(ValueError, match="F0 range"):
+        _validate_f0_settings(0.0, 650.0, 0.55)
+    with pytest.raises(ValueError, match="F0 range"):
+        _validate_f0_settings(700.0, 650.0, 0.55)
+    with pytest.raises(ValueError, match="threshold"):
+        _validate_f0_settings(45.0, 650.0, 1.5)
+
+
 def test_note_names():
     assert [parse_note(n) for n in ("C4", "A4", "D#5", "Eb3", "A4+50", "rest")] == [60, 69, 75, 51, 69.5, None]
 
