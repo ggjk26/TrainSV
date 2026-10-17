@@ -200,8 +200,11 @@ def load_dataset(
     cache: Path | None = None,
     f0_range: tuple[float, float] = (65.0, 1100.0),
     voicing_threshold: float = 0.6,
+    f0_reference_cents: float = 0.0,
 ) -> list[Utterance]:
     _validate_f0_settings(float(f0_range[0]), float(f0_range[1]), float(voicing_threshold))
+    if not np.isfinite(f0_reference_cents) or abs(f0_reference_cents) > 1200:
+        raise ValueError("F0 reference correction must be between -1200 and 1200 cents")
     floor, ceiling = map(float, f0_range)
     voicing_threshold = float(voicing_threshold)
     directory = Path(directory)
@@ -260,6 +263,10 @@ def load_dataset(
                     f0_ceiling=ceiling,
                     f0_voicing_threshold=voicing_threshold,
                 )
+            # Keep raw detector output in the cache so a correction can be changed
+            # without re-reading audio or contaminating subsequent settings.
+            if f0_reference_cents:
+                values = values * np.float32(2.0 ** (f0_reference_cents / 1200.0))
             tuning = 0.0
             if notes is not None:
                 tuning = tuning_offset(notes)
