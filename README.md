@@ -117,7 +117,7 @@ my-dataset/
 
 `ph_seq` uses the voice's phonemes (`trainsv inspect --voice …` lists them). `SP` and `AP` mean silence and breath respectively.. A `lang/ph` prefix (`ja/a`, `zh/…`, `en/…`) sets the language per phoneme; `--phoneme-map map.json` renames dataset phonemes. `ph_dur` alone is enough for acoustic training. Duration and pitch training also need `ph_num` (DiffSinger words: each starts at a vowel, consonants belong to the previous word), `note_seq`/`note_dur` and, ideally, `note_slur`. The optional `style` column names the vocal mode a recording was sung in; empty means the default style.
 
-Notes with cents (as GAME writes them) are shifted by each song's overall tuning offset before rounding to semitones, and the pitch targets move with them, so a recording tuned away from A440 still trains in-key. F0 is extracted with Praat and cached in `my-dataset/.opensv-cache/`.
+Notes with cents (as GAME writes them) are shifted by each song's overall tuning offset before rounding to semitones, and the pitch targets move with them, so a recording tuned away from A440 still trains in-key. F0 is extracted with Praat and cached in `my-dataset/.opensv-cache/`. The default `--f0-profile standard` uses 65–1100 Hz and a voicing threshold of 0.60; `--f0-profile vocaloid` widens this to 45–1400 Hz and uses 0.45, which can help when synthetic source voices have low/high notes that the default tracker misses. These settings affect WAV pitch analysis, not a global tuning correction. The cache key includes the resolved F0 settings, so switching profiles triggers a fresh extraction.
 
 Datasets spelled with another syllable dictionary convert with `convert-dict`: `trainsv convert-dict --data src --output dst --source-dict opencpop-extension.txt --target-dict clf-data/mandarin-xsampa-dict.txt --voice <voice> --language zh`. The source stays untouched and `wavs/` is linked.
 
@@ -130,6 +130,8 @@ Datasets spelled with another syllable dictionary convert with `convert-dict`: `
 Held-out phrases (`--validation`: a fraction, or a count when 1 or more) are scored every `--val-every` steps (also spelled `--evaluate-every`, default 250). Each model keeps its own best checkpoint (audio models by log-mel distance plus voicing), and those are what is saved. `--save-best` also saves on every improvement; `--final-version` additionally saves the last step's weights as another version.
 
 `--run <directory>` keeps a run directory: `log.jsonl` holds every logged step (`--log-every`, default 25) with its seconds per step and learning rate, and every validation, and `state.pt` is saved at each validation. `--resume` continues from `state.pt` with the same `--models` and `--params`; raise `--steps` to train further. `--history` writes the validation metrics alone as one JSON file.
+
+The F0 options are also available in the WebUI's Advanced settings. Compare the startup summary (voiced-frame percentage and median detected F0) and held-out `pitch_semitones` / `pitch_melody` metrics rather than assuming the wider preset is better. If the dataset has only phoneme LABs without `note_seq` and note durations, the Pitch model cannot be trained; a tracking preset alone will not fix a uniform pitch offset in Synthesizer V.
 
 The audio loss ignores everything 50 dB below each target's peak, so a recording's noise floor is not learned. The pitch loss matches the melody (below 3 Hz) frame by frame but vibrato only by its spectrum, so the model keeps its expression; `pitch_motion` reports its fast motion relative to the singer's (1.0 matches). `--consonant-weight` scales consonant frames in the training audio loss (held-out scores stay unweighted). 
 
@@ -147,6 +149,46 @@ Other commands:
 ## Voice output
 
 A `voice.nofs` voice is written as a `voice.nofs` with its model entries patched in place. An `info.<version>.nofs` voice (shared models) is written to the `databases/<name>/` directory given by `--output`, with changed models added to the sibling `models/<kind>/<md5>.dnni` tree. `--name` sets the singer name and `--version` the info voice's version.
+
+## WebUI packaging (experimental SVPK)
+
+After “Compare voices” finishes in the WebUI Results stage, a format-choice dialog appears. Choose “使用 SVPK 格式打包” to enter the singer name, vendor/author, integer version, avatar PNG and background PNG. The WebUI creates the metadata JSON internally; you do not need to author or import it. This SVPK packager currently accepts a regular single-file `voice.nofs`, not a shared-model `info.*.nofs`. A header-preset selector lets you compare four **diagnostic-only** 256-byte fields: `zero` (default), `random`, `sha256-chain`, and `aes256-cbc-test`. The same choice is available on the CLI as `--header-preset zero|random|sha256-chain|aes256-cbc-test` (default `zero`). The AES option uses a synthetic, publicly derivable test key/IV; it is not the Synthesizer V key or official format.
+
+SFPK export is now an **experimental local-dependency build**. For a regular `voice.nofs`, `trainsv package-sfpk` extracts the four DNNI model payloads to a selected existing Synthesizer V `models` directory using content MD5 IDs, derives the 32-float acoustic style/F0 vectors and the 128-float `duration_style` embedding for an `info.nofs` JSON descriptor, and creates an SFPK ZIP with `config.json` and `info.nofs` (the two entries found in the inspected sample). The SFPK does **not** embed model binaries, so the referenced model files must exist in the target installation. Runtime import, singer selection and rendering in Synthesizer V Studio Flat are not yet verified; do not rely on the file until that manual test passes.
+
+The CLI entry point is also available:
+
+```powershell
+trainsv package-svpk `
+  --voice "out\voice.nofs" `
+  --profile "assets\profile.png" `
+  --background "assets\background.png" `
+  --output "out\MySinger.svpk" `
+  --name "My Singer" `
+  --vendor "Your name or studio" `
+  --version-string 101 `
+  --version-number 101
+```
+
+**Known limitation: the current output is not installable.** Testing confirmed that Sharp ignores a package with a zero-filled 256-byte field. Copying the 256-byte field from Hanakuma Chifuyu makes Sharp recognize the custom package but then report corrupted data. The user-provided STARDUST_INFINITY sample also places the ZIP signature at offset 264: its 256-byte field contains 162 distinct byte values, no zero bytes, and shares only one same-position byte with the Teto field. Its observed byte entropy is about 7.17 bits/byte, consistent with high-entropy data but not diagnostic of a particular algorithm. A 256-byte field alone cannot distinguish an RSA-2048 signature from arbitrary data or 16 AES-CBC blocks; the algorithm, signed payload, and official validation process are unconfirmed. The current output is diagnostic only; do not treat it as an installable or distributable voicebank, and do not assume transplanting another package’s field can work. The `random`, `sha256-chain`, and `aes256-cbc-test` presets merely let you compare the application's response to different synthetic field bytes. None is intended to produce a valid installer or reproduce official authentication. The CLI `--license` argument is optional. If omitted, the packager includes a clearly marked placeholder `license.txt` with `!language en-us` and `!language zh-cn` sections (matching the directive-based format observed in the sample). It does not invent license terms; replace it with actual terms you have the right to distribute before publication.
+
+The archive entries and order match the inspected `KASANE_TETO_AI_104.svpk` sample: `voice.nofs`, `license.txt`, `profile.png`, `background.png`, `package-config`.
+
+### Experimental Flat SFPK export
+
+```powershell
+trainsv package-sfpk `
+  --voice "out\voice.nofs" `
+  --models-root "C:\path\to\Synthesizer V Studio\models" `
+  --output "out\MySinger.sfpk" `
+  --name "My Singer" `
+  --vendor "Your name or studio" `
+  --version 101 `
+  --profile "assets\profile.png" `
+  --background "assets\background.png"
+```
+
+You can also provide an extracted Flat `info.nofs` JSON file as `--voice`; its model ID dependencies must already exist under the selected models root. For a regular binary `voice.nofs`, TrainSV writes acoustic, vocoder, duration, and F0 model files into their corresponding subfolders, then refers to their content MD5 IDs from `info.nofs`. The SFPK contains `config.json` and `info.nofs`; when supplied, `--profile` and `--background` add the selected PNG files at the archive root as `profile.png` and `background.png`. Both artwork flags are optional. Model binaries are not included, so this is not a portable, self-contained package. Choose the actual `models` folder used by Synthesizer V Studio Flat, and make a backup before testing. This format writer follows one inspected SFPK sample and remains experimental until it imports, selects and renders correctly in Flat.
 
 Each 16-bit weight matrix stores a word that OpenSV reads as the original engine's input-quantization setting. Every stock matrix's inputs fit `|x| < 2^(15 - word)`, so before saving, the toolkit measures inputs on the training data and widens that range where finetuning outgrew it.
 

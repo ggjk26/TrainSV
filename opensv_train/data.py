@@ -12,6 +12,7 @@ from scipy.signal import resample_poly
 
 from .acoustic import TimedPhoneme
 from .duration import PhonemeDuration, Syllable
+from .f0 import F0_PROFILES, f0_cache_tag, process_f0_track, resolve_f0_profile
 from .pitch import PITCH_CONTEXT_SECONDS, PitchNote
 
 FRAME_SECONDS = 0.005
@@ -21,7 +22,6 @@ PHRASE_BREAK_SECONDS = 0.2
 SPECIAL_PHONEMES = {"SP": "sil", "AP": "br"}
 LANGUAGE_CODES = {"ja": "japanese", "zh": "mandarin", "en": "english", "yue": "cantonese", "es": "spanish"}
 NOTE_NAMES = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
-
 
 @dataclass
 class Phone:
@@ -158,10 +158,21 @@ def read_audio(path: Path) -> np.ndarray:
     return audio
 
 
-def extract_f0(audio: np.ndarray, floor: float = 65.0, ceiling: float = 1100.0) -> tuple[np.ndarray, np.ndarray]:
+def extract_f0(
+    audio: np.ndarray,
+    floor: float = 65.0,
+    ceiling: float = 1100.0,
+    *,
+    voicing_threshold: float = 0.60,
+) -> tuple[np.ndarray, np.ndarray]:
     import parselmouth
 
-    pitch = parselmouth.Sound(audio.astype(np.float64), SAMPLE_RATE).to_pitch_ac(time_step=FRAME_SECONDS, voicing_threshold=0.6, pitch_floor=floor, pitch_ceiling=ceiling)
+    pitch = parselmouth.Sound(audio.astype(np.float64), SAMPLE_RATE).to_pitch_ac(
+        time_step=FRAME_SECONDS,
+        voicing_threshold=voicing_threshold,
+        pitch_floor=floor,
+        pitch_ceiling=ceiling,
+    )
     return np.asarray(pitch.xs()), np.nan_to_num(pitch.selected_array["frequency"])
 
 
@@ -174,9 +185,22 @@ def map_phoneme(token: str, language: str, mapping: dict[str, str]) -> tuple[str
     return language, SPECIAL_PHONEMES.get(token, token)
 
 
-def load_dataset(directory, language: str, phoneme_map: dict[str, str] | None = None, cache: Path | None = None, f0_range: tuple[float, float] = (65.0, 1100.0)) -> list[Utterance]:
+def load_dataset(
+    directory,
+    language: str,
+    phoneme_map: dict[str, str] | None = None,
+    cache: Path | None = None,
+    f0_range: tuple[float, float] = (65.0, 1100.0),
+    f0_voicing_threshold: float = 0.60,
+    f0_smoothing: int = 0,
+    f0_octave_correction: bool = False,
+    f0_shift_semitones: float = 0.0,
+) -> list[Utterance]:
     directory = Path(directory)
     mapping = phoneme_map or {}
+    floor, ceiling, threshold = resolve_f0_profile(
+        "standard", floor=f0_range[0], ceiling=f0_range[1], voicing_threshold=f0_voicing_threshold
+    )
     cache = cache or directory / ".opensv-cache"
     cache.mkdir(exist_ok=True)
     utterances = []
@@ -206,20 +230,34 @@ def load_dataset(directory, language: str, phoneme_map: dict[str, str] | None = 
                     notes.append(Note(float(note_bounds[index]), float(note_bounds[index + 1]), parse_note(symbol), slur, word))
                 if word + 1 != len(counts):
                     raise ValueError(f"{name}: {word + 1} note groups for {len(counts)} ph_num words")
-            cached = cache / f"{name}.npz"
+            # Include analysis parameters in the cache key: switching to a
+            # different F0 preset must never silently reuse an old contour.
+            cache_tag = f0_cache_tag(floor, ceiling, threshold)
+            cached = cache / f"{name}.{cache_tag}.npz"
             if cached.exists():
-                stored = np.load(cached)
-                audio, times, values = stored["audio"], stored["f0_times"], stored["f0_values"]
+                with np.load(cached) as stored:
+                    audio, times, values = stored["audio"], stored["f0_times"], stored["f0_values"]
             else:
                 audio = read_audio(directory / "wavs" / f"{name}.wav")
-                times, values = extract_f0(audio, *f0_range)
+                times, values = extract_f0(audio, floor, ceiling, voicing_threshold=threshold)
                 np.savez(cached, audio=audio, f0_times=times, f0_values=values)
             tuning = 0.0
             if notes is not None:
                 tuning = tuning_offset(notes)
                 for note in notes:
                     note.pitch = None if note.rest else note.pitch - tuning
-            utterances.append(Utterance(name, audio, phones, notes, times, values, tuning, (row.get("style") or "").strip() or None))
+            processed_values = process_f0_track(
+                values,
+                smoothing_frames=f0_smoothing,
+                correct_octave=f0_octave_correction,
+                shift_semitones=f0_shift_semitones,
+            )
+            utterances.append(
+                Utterance(
+                    name, audio, phones, notes, times, processed_values, tuning,
+                    (row.get("style") or "").strip() or None,
+                )
+            )
     return utterances
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -143,3 +144,72 @@ class Voice(torch.nn.Module):
         if files.info is None:
             return write_nofs_voice(files, output, name)
         return write_info_voice(files, output, version or files.info.info.get("version", "100"), name)
+
+
+
+def initialize_pitch_model(voice: Voice, model_path: str | Path) -> Path:
+    """Replace the voice's Pitch network with a compatible pretrained DNNI.
+
+    The current voice's speaker embedding is retained. The candidate must load
+    as a supported PitchModel, have the same phone-table definitions, and
+    expose a speaker vector of the same shape. This deliberately rejects
+    arbitrary DNNI files and models for a different phoneme frontend.
+    """
+    model_path = Path(model_path).expanduser()
+    if not model_path.is_file():
+        raise FileNotFoundError(f"pretrained Pitch DNNI not found: {model_path}")
+    if model_path.suffix.lower() != ".dnni":
+        raise ValueError("pretrained Pitch model must be a .dnni file")
+
+    candidate_data = DnniFile.load(model_path)
+    from .pitch import PitchModel
+
+    try:
+        candidate_pitch = PitchModel(candidate_data)
+    except (ValueError, IndexError, KeyError, struct.error) as error:
+        raise ValueError(
+            f"{model_path} is not a Pitch DNNI architecture supported by this TrainSV build: {error}"
+        ) from error
+
+    def phone_set_signature(phone_set):
+        return (
+            phone_set.name,
+            tuple(phone_set.symbols),
+            tuple(phone_set.categories),
+            tuple(phone_set.unified),
+            tuple(phone_set.classes),
+        )
+
+    current_pitch = voice.pitch
+    current_tables = tuple(phone_set_signature(table) for table in current_pitch.phone_sets)
+    candidate_tables = tuple(phone_set_signature(table) for table in candidate_pitch.phone_sets)
+    if current_tables != candidate_tables or phone_set_signature(current_pitch.unified) != phone_set_signature(candidate_pitch.unified):
+        raise ValueError(
+            "pretrained Pitch model uses different phone tables from the selected base voice; "
+            "choose a model exported from a voice with matching language/phoneme definitions"
+        )
+
+    current_speaker = current_pitch.speaker_vector().detach().cpu().numpy()
+    candidate_speaker = candidate_pitch.speaker_vector().detach().cpu().numpy()
+    if current_speaker.shape != candidate_speaker.shape:
+        raise ValueError(
+            f"pretrained Pitch speaker vector has shape {candidate_speaker.shape}, "
+            f"but the selected base voice requires {current_speaker.shape}"
+        )
+
+    if voice.files.info is None:
+        # Keep the VectorParameter wrapper so Voice.export() writes the retained
+        # speaker vector into the replacement DNNI for single-file NOFS voices.
+        speaker = getattr(candidate_pitch, "speaker", None)
+        value = getattr(speaker, "value", None)
+        if value is None or tuple(value.shape) != tuple(current_speaker.shape):
+            raise ValueError("pretrained Pitch model speaker embedding cannot be exported into a voice.nofs")
+        with torch.no_grad():
+            value.copy_(torch.from_numpy(current_speaker).to(value.device, value.dtype))
+    else:
+        # Shared-model info voices store this voice-specific embedding in info.nofs.
+        candidate_pitch = PitchModel(candidate_data, speaker=current_speaker)
+
+    voice.pitch = candidate_pitch
+    voice.files.models["pitch"] = candidate_data
+    return model_path.resolve()

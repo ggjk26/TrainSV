@@ -14,9 +14,12 @@ import torch
 
 from .acoustic import TimedPhoneme
 from .calibration import fit_input_ranges
-from .data import LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, split
+from .data import F0_PROFILES, LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, resolve_f0_profile, split
+from .f0 import F0_SMOOTHING_OPTIONS
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
-from .voice import ROLES, Voice
+from .voice import ROLES, Voice, initialize_pitch_model
+from .packaging import build_svpk
+from .sfpk import build_sfpk
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -26,10 +29,53 @@ def finetune(arguments) -> None:
     models = tuple(arguments.models.split(","))
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
-    utterances = load_dataset(arguments.data, arguments.language, read_phoneme_map(arguments.phoneme_map))
+    if arguments.pitch_model:
+        try:
+            pitch_path = initialize_pitch_model(voice, arguments.pitch_model)
+        except (ValueError, FileNotFoundError) as error:
+            raise SystemExit(f"cannot use pretrained Pitch model: {error}") from error
+        print(f"initialized Pitch network from compatible DNNI: {pitch_path}")
+        print("kept the selected base voice's Pitch speaker embedding")
+    f0_floor, f0_ceiling, f0_threshold = resolve_f0_profile(
+        arguments.f0_profile,
+        floor=arguments.f0_floor,
+        ceiling=arguments.f0_ceiling,
+        voicing_threshold=arguments.f0_voicing_threshold,
+    )
+    utterances = load_dataset(
+        arguments.data,
+        arguments.language,
+        read_phoneme_map(arguments.phoneme_map),
+        f0_range=(f0_floor, f0_ceiling),
+        f0_voicing_threshold=f0_threshold,
+        f0_smoothing=arguments.f0_smoothing,
+        f0_octave_correction=arguments.f0_octave_correction,
+        f0_shift_semitones=arguments.f0_shift_semitones,
+    )
     phrases = [phrase for utterance in utterances for phrase in make_phrases(utterance)]
     problems = [phrase.problem for phrase in phrases if phrase.problem]
     print(f"{len(utterances)} utterances, {len(phrases)} phrases, {sum(p.frames for p in phrases) * 0.005 / 60:.1f} min")
+    total_f0_frames = sum(len(utterance.f0_values) for utterance in utterances)
+    voiced_f0 = np.concatenate(
+        [utterance.f0_values[utterance.f0_values > 0] for utterance in utterances if np.any(utterance.f0_values > 0)]
+    ) if any(np.any(utterance.f0_values > 0) for utterance in utterances) else np.empty(0, dtype=np.float32)
+    voiced_percent = 100.0 * sum(int(np.count_nonzero(utterance.f0_values > 0)) for utterance in utterances) / max(total_f0_frames, 1)
+    median_f0 = float(np.median(voiced_f0)) if voiced_f0.size else 0.0
+    print(
+        f"F0 tracking: {arguments.f0_profile} preset, {f0_floor:g}-{f0_ceiling:g} Hz, "
+        f"voicing threshold {f0_threshold:g}; voiced {voiced_percent:.1f}% of frames"
+        + (f", median voiced F0 {median_f0:.1f} Hz" if median_f0 else ", no voiced F0 frames detected")
+    )
+    print(
+        f"F0 processing: median smoothing={arguments.f0_smoothing} frames, "
+        f"isolated-octave correction={'on' if arguments.f0_octave_correction else 'off'}, "
+        f"target shift={arguments.f0_shift_semitones:+g} semitones"
+    )
+    if "pitch" in models and not any(phrase.pitch_example() is not None for phrase in phrases):
+        raise SystemExit(
+            "Pitch training requires note_seq/note_dur (and usable ph_num word boundaries); "
+            "phoneme-only LAB labels cannot train a Pitch model. Train acoustic only, or import note-labelled data."
+        )
     if problems and set(models) & {"duration", "pitch"}:
         print(f"{len(problems)} phrases lack usable notes and train the acoustic model only; first: {problems[0]}")
     _check_phonemes(voice, phrases)
@@ -214,9 +260,28 @@ def evaluate(arguments) -> None:
     device = torch.device(arguments.device)
     output = Path(arguments.out) if arguments.out else None
     report = {}
+    f0_floor, f0_ceiling, f0_threshold = resolve_f0_profile(
+        arguments.f0_profile,
+        floor=arguments.f0_floor,
+        ceiling=arguments.f0_ceiling,
+        voicing_threshold=arguments.f0_voicing_threshold,
+    )
     for index, path in enumerate(arguments.voice):
         voice = Voice.load(path).to(device)
-        phrases = [phrase for utterance in load_dataset(arguments.data, arguments.language, read_phoneme_map(arguments.phoneme_map)) for phrase in make_phrases(utterance)]
+        phrases = [
+            phrase
+            for utterance in load_dataset(
+                arguments.data,
+                arguments.language,
+                read_phoneme_map(arguments.phoneme_map),
+                f0_range=(f0_floor, f0_ceiling),
+                f0_voicing_threshold=f0_threshold,
+                f0_smoothing=arguments.f0_smoothing,
+                f0_octave_correction=arguments.f0_octave_correction,
+                f0_shift_semitones=arguments.f0_shift_semitones,
+            )
+            for phrase in make_phrases(utterance)
+        ]
         _, validation = split(phrases, arguments.validation, arguments.seed)
         gain = level_gain(voice, phrases, device)
         apply_gain(phrases, gain)
@@ -263,6 +328,40 @@ def inspect(arguments) -> None:
         print(f"  {phone_set.name}: {' '.join(phone_set.symbols)}")
 
 
+def package_svpk_command(arguments) -> None:
+    output = build_svpk(
+        voice=arguments.voice,
+        license_file=arguments.license_file,
+        profile=arguments.profile,
+        background=arguments.background,
+        output=arguments.output,
+        product_name=arguments.name,
+        vendor_name=arguments.vendor,
+        version_string=arguments.version_string,
+        version_number=arguments.version_number,
+        depending_version_number=arguments.depending_version_number,
+        header_preset=arguments.header_preset,
+    )
+    print(f"wrote {output} ({output.stat().st_size:,} bytes)")
+    print(f"SVPK diagnostic header preset: {arguments.header_preset}")
+    print("Warning: synthetic header fields are not official signatures. This file remains diagnostic-only, is not installable, and is not suitable for distribution.")
+
+def package_sfpk_command(arguments) -> None:
+    output = build_sfpk(
+        voice=arguments.voice,
+        models_root=arguments.models_root,
+        output=arguments.output,
+        name=arguments.name,
+        vendor=arguments.vendor,
+        version=arguments.version,
+        profile=arguments.profile,
+        background=arguments.background,
+    )
+    print(f"wrote {output} ({output.stat().st_size:,} bytes)")
+    print("Warning: this SFPK references DNNI files in the selected local models directory; it does not embed model dependencies.")
+    print("Test importing, selecting, and rendering this voice in Synthesizer V Studio Flat before relying on it.")
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trainsv")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -276,6 +375,19 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--params", choices=("all", "embeddings"), default="all", help="train every weight, or only the per-voice speaker/style/vocal-mode vectors")
     command.add_argument("--vocal-modes", help="comma-separated vocal modes of the finetuned voice (info voices): existing ones are kept, new ones start from the default style, others are dropped")
     command.add_argument("--steps", type=int, default=2000)
+    command.add_argument(
+        "--f0-profile",
+        choices=tuple(F0_PROFILES),
+        default="standard",
+        help="WAV pitch tracking preset: standard (65-1100 Hz, threshold 0.60) or vocaloid (45-1400 Hz, threshold 0.45)",
+    )
+    command.add_argument("--f0-floor", type=float, help="override the selected F0 preset's minimum frequency in Hz")
+    command.add_argument("--f0-ceiling", type=float, help="override the selected F0 preset's maximum frequency in Hz")
+    command.add_argument("--f0-voicing-threshold", type=float, help="override the selected F0 preset's voicing threshold (0, 1]")
+    command.add_argument("--f0-smoothing", type=int, choices=F0_SMOOTHING_OPTIONS, default=0, help="median smoothing width in 5 ms frames: 0/off, 3/light, 5/medium, 7/strong")
+    command.add_argument("--f0-octave-correction", action="store_true", help="correct isolated 1-2 octave tracker jumps only when adjacent voiced frames agree")
+    command.add_argument("--f0-shift-semitones", type=float, default=0.0, help="add this semitone offset to measured F0 targets, range -24 to +24")
+    command.add_argument("--pitch-model", help="initialize the Pitch network from a compatible pretrained Pitch .dnni; current voice speaker embedding is retained")
     command.add_argument("--lr", type=float, help="learning rate (default 2e-5 for all, 3e-3 for embeddings)")
     command.add_argument("--warmup", type=int, default=0, help="steps of linear learning-rate warmup")
     command.add_argument("--lr-end", type=float, help="cosine-decay the learning rate to this by the last step; constant without it")
@@ -329,6 +441,18 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--data", required=True)
     command.add_argument("--language", required=True, type=language_name)
     command.add_argument("--models", default="acoustic")
+    command.add_argument(
+        "--f0-profile",
+        choices=tuple(F0_PROFILES),
+        default="standard",
+        help="WAV pitch tracking preset; should match the profile used during finetuning",
+    )
+    command.add_argument("--f0-floor", type=float, help="override the selected F0 preset's minimum frequency in Hz")
+    command.add_argument("--f0-ceiling", type=float, help="override the selected F0 preset's maximum frequency in Hz")
+    command.add_argument("--f0-voicing-threshold", type=float, help="override the selected F0 preset's voicing threshold (0, 1]")
+    command.add_argument("--f0-smoothing", type=int, choices=F0_SMOOTHING_OPTIONS, default=0, help="median smoothing width in 5 ms frames")
+    command.add_argument("--f0-octave-correction", action="store_true", help="correct isolated octave errors in tracked F0")
+    command.add_argument("--f0-shift-semitones", type=float, default=0.0, help="semitone offset added to measured F0 targets")
     command.add_argument("--validation", type=float, default=0.1)
     command.add_argument("--phoneme-map")
     command.add_argument("--seed", type=int, default=0)
@@ -349,6 +473,36 @@ def parser() -> argparse.ArgumentParser:
     command = commands.add_parser("inspect", help="summarise a voice's models and phone sets")
     command.add_argument("--voice", required=True)
     command.set_defaults(handler=inspect)
+    command = commands.add_parser("package-svpk", help="build a diagnostic-only SVPK container with a selectable synthetic header field (not installable in Sharp)")
+    command.add_argument("--voice", required=True, help="trained voice.nofs file")
+    command.add_argument("--license", dest="license_file", help="optional license text file to include")
+    command.add_argument("--profile", required=True, help="voicebank avatar PNG")
+    command.add_argument("--background", required=True, help="voicebank background PNG")
+    command.add_argument("--output", required=True, help="output .svpk path")
+    command.add_argument("--name", required=True, help="product / singer name")
+    command.add_argument("--vendor", required=True, help="publisher or author name")
+    command.add_argument("--version-string", default="101")
+    command.add_argument("--version-number", type=int, default=101)
+    command.add_argument("--depending-version-number", type=int, default=0)
+    command.add_argument(
+        "--header-preset",
+        choices=("zero", "random", "sha256-chain", "aes256-cbc-test"),
+        default="zero",
+        help="diagnostic-only 256-byte field generator; none of these presets recreates the official signing/authentication data",
+    )
+    command.set_defaults(handler=package_svpk_command)
+
+    command = commands.add_parser("package-sfpk", help="build an experimental Flat SFPK that references local DNNI dependencies")
+    command.add_argument("--voice", required=True, help="trained binary voice.nofs or existing info.nofs JSON")
+    command.add_argument("--models-root", required=True, help="existing Synthesizer V models directory containing/written with <kind>/<model-id>.dnni")
+    command.add_argument("--output", required=True, help="output .sfpk path")
+    command.add_argument("--name", help="optional singer name override")
+    command.add_argument("--vendor", help="optional vendor override")
+    command.add_argument("--version", help="optional version override, for example 101 or 106b1")
+    command.add_argument("--profile", help="optional avatar PNG to include as profile.png in the SFPK")
+    command.add_argument("--background", help="optional background PNG to include as background.png in the SFPK")
+    command.set_defaults(handler=package_sfpk_command)
+
     for command in commands.choices.values():
         command.add_argument("--config", action="append", default=[], metavar="FILE", help="JSON file of option values; repeat for several, later files win and command-line options override them")
     return parser
