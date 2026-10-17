@@ -230,13 +230,15 @@ def test_dynamic_webui_messages_translate_in_all_locales():
         ],
         ["Choose a voice (step 1).", "ja", "音声ライブラリを選択してください（手順 1）。"],
     ]
-    script = (
-        "const I18N_ROWS = " + rows_match.group(1) + ";\\n"
-        + "const I18N_MAP = new Map(); for (const row of I18N_ROWS) for (const source of row) if (source && !I18N_MAP.has(source)) I18N_MAP.set(source, row);\\n"
-        + 'const I18N_INDEX = {en:0,"zh-CN":1,ja:2}; const UI_LANG = "en";\\n'
-        + function_match.group(0)
-        + "\\nconst cases = " + json.dumps(cases, ensure_ascii=False) + ";\\n"
-        + "for (const [source, language, expected] of cases) { const actual = translateString(source, language); if (actual !== expected) { console.error(JSON.stringify({source, language, expected, actual})); process.exit(1); } }\\n"
+    script = "\n".join(
+        [
+            "const I18N_ROWS = " + rows_match.group(1) + ";",
+            "const I18N_MAP = new Map(); for (const row of I18N_ROWS) for (const source of row) if (source && !I18N_MAP.has(source)) I18N_MAP.set(source, row);",
+            'const I18N_INDEX = {en:0,"zh-CN":1,ja:2}; const UI_LANG = "en";',
+            function_match.group(0),
+            "const cases = " + json.dumps(cases, ensure_ascii=False) + ";",
+            "for (const [source, language, expected] of cases) { const actual = translateString(source, language); if (actual !== expected) { console.error(JSON.stringify({source, language, expected, actual})); process.exit(1); } }",
+        ]
     )
     result = subprocess.run([node, "-e", script], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr or result.stdout
