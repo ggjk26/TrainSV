@@ -210,23 +210,30 @@ Now supported Vocaloid-styled X-SAMPA dict. But something wrong with F0.
 - `parity/`: the vendored OpenSV engine and the harness the tests compare against
 - `tests/`: parity and training tests
 
-## Pitch / F0 tuning
+## F0 analysis & calibration
 
-The Training page includes a dedicated Pitch / F0 workspace. Control labels and preset choices are in English; explanatory hints intentionally remain in Chinese for now. The existing Pitch checkbox controls whether the voice's own Pitch network is finetuned, while the F0 preset selects both analysis range and (for VOCALOID) target-contour cleanup defaults.
+The Training page has a dedicated **F0 Analysis & Calibration** panel. These controls process the fundamental-frequency targets measured from the recorded WAV; they are separate from the Pitch network's training objective.
 
-- **Standard** keeps the original 65–1100 Hz range and 0.60 voicing threshold.
-- **VOCALOID → Natural-Smooth** uses 45–1400 Hz and a 0.45 threshold, plus a 25 ms median filter within voiced runs, conservative correction of isolated octave spikes, a 2.5 Hz smooth-melody cutoff, and 1.2 / 0.8 melody-versus-fast-motion Pitch loss weights.
-- Low, high and wide presets select the tracking range without enabling extra smoothing by default.
-- Floor, ceiling and voicing threshold remain individually overridable. The smoothing, octave correction, F0 reference correction in cents, melody cutoff, and two loss weights can also be adjusted explicitly.
+- **Standard** uses 65–1100 Hz and a 0.60 voicing threshold.
+- **VOCALOID F0 cleanup** uses 45–1400 Hz and a 0.45 threshold, enables a 25 ms median filter within voiced runs, and conservatively repairs isolated one/two-octave tracker spikes.
+- **Low / High / Wide** select alternative tracking ranges without enabling extra cleanup by default.
+- Floor, ceiling, voicing threshold, median smoothing, isolated-octave correction, and reference correction in cents can be adjusted independently.
 
-The processing presets are intended to reduce brief F0 jumps and overly jagged target contours sometimes seen in synthetic VOCALOID recordings. They affect the F0 targets used during training/evaluation, **not** the final WAV as a post-processing filter. They may improve continuity and pitch smoothness, but cannot guarantee removal of metallic timbre that comes from the acoustic/vocoder model or source signal itself. To benefit from the Pitch loss controls, the dataset must contain usable note and word-boundary labels; for the broader timbral character, train and validate the Sound/Acoustic model as well.
+The F0 cleanup aims to reduce short tracking outliers and jagged target contours. It affects F0 targets used in training/evaluation, **not** the final WAV as a post-processing filter, and cannot guarantee removal of metallic timbre caused by the source recording or acoustic/vocoder model.
 
-The matching CLI flags are available to both `finetune` and `evaluate`: `--f0-profile`, `--f0-floor`, `--f0-ceiling`, `--f0-voicing-threshold`, `--f0-smoothing`, `--f0-octave-correction` / `--no-f0-octave-correction`, `--f0-reference-cents`, `--pitch-smoothing-hz`, `--pitch-melody-weight`, and `--pitch-motion-weight`. Explicit numeric/boolean options override the selected profile. F0 range/threshold changes use a separate cache key; a cents reference correction is applied after loading cached analysis.
+The matching flags for both `finetune` and `evaluate` are `--f0-profile`, `--f0-floor`, `--f0-ceiling`, `--f0-voicing-threshold`, `--f0-smoothing`, `--f0-octave-correction` / `--no-f0-octave-correction`, and `--f0-reference-cents`. Changes to tracking range/threshold use a separate cache key; a cents reference correction is applied after cached analysis.
 
-The Training page also accepts an optional external pretrained Pitch DNNI file. The CLI equivalent is `trainsv finetune --pitch-base-model <path-to-pitch.dnni>`. TrainSV strictly checks the network tree, phoneme tables, normalization buffers, sparse masks, and trainable tensor shapes before copying the source model's non-speaker parameters. The target voice's own speaker vector is preserved; an incompatible file is rejected rather than force-written.
+## Pitch model training
 
-The repository does **not** yet bundle a tested general-purpose Pitch weight file. This option lets a user initialize from a locally available compatible pretrained model; it does not make different Pitch architectures or phone sets automatically compatible. For VOCALOID/UTAU sources, first check the F0 range/voicing settings and small reference correction, then compare listening results on recordings held out from training.
+The separate **Pitch Model & Training** panel contains options for training the Pitch network itself:
 
+- Choose the Pitch model from the selected base voice, or import a compatible pretrained `.dnni` file.
+- **Melody smoothing cutoff**, **Smooth melody loss weight**, and **Vibrato / fast-motion loss weight** change the Pitch model's training objective; they do not clean or re-detect the source WAV.
+- These Pitch settings are independent of the selected F0 analysis preset. Changing the F0 preset will not modify Pitch loss parameters.
+
+The corresponding flags for both `finetune` and `evaluate` are `--pitch-smoothing-hz`, `--pitch-melody-weight`, and `--pitch-motion-weight`. Explicit values override the defaults of 3 Hz and 1.0 / 1.0. For useful Pitch training, the dataset needs valid note and word-boundary labels; for overall timbre, also train and validate the Sound/Acoustic model.
+
+The CLI also accepts `trainsv finetune --pitch-base-model <path-to-pitch.dnni>`. TrainSV strictly checks the network tree, phoneme tables, normalization buffers, sparse masks, and trainable tensor shapes before copying the source model's non-speaker parameters. The target voice's own speaker vector is preserved; incompatible files are rejected. The repository does **not** yet bundle a tested general-purpose Pitch weight file.
 ## Layout
 
 - `opensv_train/`: the CLI, dataset, model, training and export code
