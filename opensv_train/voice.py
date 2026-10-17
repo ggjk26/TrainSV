@@ -143,3 +143,80 @@ class Voice(torch.nn.Module):
         if files.info is None:
             return write_nofs_voice(files, output, name)
         return write_info_voice(files, output, version or files.info.info.get("version", "100"), name)
+
+def initialize_pitch_from_file(voice: Voice, source_path) -> int:
+    """Initialize a voice's Pitch network from a strictly compatible DNNI model.
+
+    The target voice's speaker vector is deliberately preserved. A source is
+    accepted only when its model layout, phone tables, normalization buffers,
+    non-parameter node payloads, and parameter shapes match.
+    """
+    from .pitch import PitchModel
+
+    source_file = DnniFile.load(source_path)
+    target_file = voice.files.models["pitch"]
+    target = voice.pitch
+    try:
+        source = PitchModel(source_file)
+    except (ValueError, KeyError, struct.error) as error:
+        raise ValueError(f"the selected file is not a supported Synthesizer V Pitch DNNI model: {error}") from error
+
+    if _phone_set_signature(target.phone_sets) != _phone_set_signature(source.phone_sets):
+        raise ValueError("Pitch model phoneme tables do not match the selected voice")
+    if _phone_set_signature([target.unified]) != _phone_set_signature([source.unified]):
+        raise ValueError("Pitch model unified phoneme tables do not match the selected voice")
+
+    def same_tree(a, b, root=False):
+        if a.type_id != b.type_id or len(a.children) != len(b.children):
+            return False
+        parameter_nodes = {"prim0", "prim1", "prim2", "prim3", "prim4", "prim5"}
+        if not root and a.type not in parameter_nodes and a.payload != b.payload:
+            return False
+        return all(same_tree(x, y) for x, y in zip(a.children, b.children))
+
+    if not same_tree(target_file.root, source_file.root, root=True):
+        raise ValueError("Pitch model network layout/configuration is not an exact match")
+
+    target_buffers = dict(target.named_buffers())
+    source_buffers = dict(source.named_buffers())
+    if target_buffers.keys() != source_buffers.keys():
+        raise ValueError("Pitch model normalization/mask layout does not match")
+    for name, target_value in target_buffers.items():
+        source_value = source_buffers[name]
+        if target_value.shape != source_value.shape or not torch.equal(
+            target_value.detach().cpu(), source_value.detach().cpu()
+        ):
+            raise ValueError(f"Pitch model normalization or sparsity mask differs at {name}")
+
+    def trainable_parameters(model):
+        # Keep the target singer identity. Its parameter can be stored inside the
+        # DNNI file or in the info voice's metadata, depending on voice format.
+        return {
+            name: value for name, value in model.named_parameters()
+            if not name.startswith("speaker")
+        }
+
+    target_params = trainable_parameters(target)
+    source_params = trainable_parameters(source)
+    if target_params.keys() != source_params.keys():
+        raise ValueError("Pitch model trainable parameter layout does not match")
+    for name, target_value in target_params.items():
+        if target_value.shape != source_params[name].shape:
+            raise ValueError(f"Pitch model parameter shape differs at {name}")
+
+    with torch.no_grad():
+        for name, target_value in target_params.items():
+            target_value.copy_(source_params[name].detach().to(target_value.device))
+    target.expression = source.expression
+    target.expression_strength = source.expression_strength
+    target.rap_expression = source.rap_expression
+    target_file.root.payload = source_file.root.payload[:12] + target_file.root.payload[12:]
+    return len(target_params)
+
+
+def _phone_set_signature(phone_sets) -> tuple:
+    return tuple(
+        (phone_set.name, tuple(phone_set.symbols), tuple(phone_set.categories),
+         tuple(phone_set.unified), tuple(phone_set.classes))
+        for phone_set in phone_sets
+    )
