@@ -7,11 +7,12 @@ All LAB timestamps are integer 100-nanosecond ticks.
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-import soundfile
+from .audio_io import read_wav_frames
 
 TICKS_PER_SECOND = 10_000_000
 SILENCE_FRACTION = 0.10
@@ -30,6 +31,94 @@ COMPOSITE_PHONES: dict[str, tuple[str, ...]] = {
 RHOTICIZED_VOWELS = {"@`": "@", "3`": "3"}
 RHOTIC_APPROXIMANTS = ("r\\", "ɹ", "ɻ", "r", "R", "R\\")
 PHONE_REPLACEMENTS = {"k_h": "kh", r"ts%5c": "ts\\"}
+
+# Explicit bridge from the Mandarin X-SAMPA symbols documented by Synthesizer V
+# Studio 2.3 to the newer romanized phone inventory. This is language-specific:
+# symbols such as p, z, and y do not have the same *phone-set label* in the new
+# Mandarin inventory as their generic IPA meanings suggest.
+XSAMPA_TO_SYNTHV_SIMPLE: dict[str, tuple[str, ...]] = {
+    "a": ("a",), "A": ("aa",), "O": ("o/",), "@": ("e/",),
+    "e": ("ee",), "7": ("e",), "U": ("o",), "u": ("u",), "i": ("i",),
+    "r\\": ("iz",), ":r\\`": ("ir",), "y": ("v",),
+    "au": ("ao",), "ou": ("ou",), "ia": ("ia",), "iA": ("iaa",),
+    "iau": ("iao",), "ie": ("ie",), "iE": ("iae",), "iU": ("io",),
+    "jou": ("iu",), "i^": ("-i",), ":n": ("-n",), "N": ("ng",),
+    "p": ("b",), "p_h": ("p",), "t": ("d",), "t_h": ("t",),
+    "k": ("g",), "k_h": ("k",), "ts": ("z",), "ts_h": ("c",),
+    "ts\\": ("j",), "ts\\_h": ("q",), "ts`": ("zh",),
+    "ts`_h": ("ch",), "x": ("h",), "s`": ("sh",), "s\\": ("x",),
+    "z`": ("r",), "j": ("y",), "f": ("f",), "s": ("s",),
+    "m": ("m",), "n": ("n",), "l": ("l",), "w": ("w",),
+    "y{": ("va",), "yE": ("ve",), "ua": ("ua",), "uA": ("uaa",),
+    "u@": ("ue/",), "ue": ("ue",), "uo": ("uo",),
+    ":\\i": ("-i",), r"r\`": ("-r",),
+    "ts\\h": ("q",),
+    "ts`h": ("ch",),
+}
+# Pre-2.3 SynthV Mandarin inventory spellings that were replaced by X-SAMPA
+# in the newer phone table. Map these only when the selected target uses the
+# simplified/new inventory; a legacy voice should keep its own exact symbols.
+SYNTHV_LEGACY_XSAMPA_ALIASES = {
+    "o": "O", "AU": "au", "@U": "ou", "iAU": "iau", "i@U": "jou",
+    "i\\": "r\\", "i`": ":r\\`", ":\\i": "i^",
+    "ph": "p_h", "th": "t_h", "kh": "k_h", "tsh": "ts_h",
+    "ts\\h": "ts\\_h", "ts`h": "ts`_h",
+}
+# Canonical X-SAMPA aspiration tokens mapped to the pre-2.3 Mandarin labels
+# found in older voice inventories. Exact target symbols still take priority.
+STANDARD_XSAMPA_TO_SYNTHV_LEGACY = {
+    "p_h": "ph",
+    "t_h": "th",
+    "k_h": "kh",
+    "ts_h": "tsh",
+    r"ts\_h": r"ts\h",
+    "ts`_h": "ts`h",
+}
+
+_SYNTHV_SIMPLE_MARKERS = {
+    "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v", "ng",
+    "-n", "iaa", "iae", "io", "b", "d", "g", "z", "c",
+}
+
+
+def _uses_synthv_simple_mandarin(valid: set[str]) -> bool:
+    """Recognize the new romanized Mandarin inventory from several markers."""
+    return len(valid & _SYNTHV_SIMPLE_MARKERS) >= 2
+
+
+def _map_xsampa_mandarin(
+    token: str, valid: set[str], source_system: str
+) -> list[str] | None:
+    """Map standard or SynthV-legacy Mandarin X-SAMPA without guessing splits."""
+    simple_target = _uses_synthv_simple_mandarin(valid)
+    if not simple_target:
+        # When the target is an X-SAMPA/legacy phone table, exact symbols keep
+        # their target-defined meaning and take priority over aliases.
+        if token in valid:
+            return [token]
+        if source_system == "synthv-xsampa":
+            alias = SYNTHV_LEGACY_XSAMPA_ALIASES.get(token)
+            if alias in valid:
+                return [alias]
+        elif source_system == "xsampa":
+            alias = STANDARD_XSAMPA_TO_SYNTHV_LEGACY.get(token)
+            if alias in valid:
+                return [alias]
+        return None
+
+    canonical = SYNTHV_LEGACY_XSAMPA_ALIASES.get(token, token) if source_system == "synthv-xsampa" else token
+    # If a known X-SAMPA symbol maps to a different simple label, never silently
+    # pass through the same spelling (e.g. X-SAMPA p vs simplified Mandarin p).
+    mapped = XSAMPA_TO_SYNTHV_SIMPLE.get(canonical)
+    if mapped is not None:
+        return list(mapped) if all(phone in valid for phone in mapped) else None
+
+    # Same symbol, same phone in both inventories for these common Mandarin phones.
+    if canonical in {"f", "m", "n", "l", "w"} and canonical in valid:
+        return [canonical]
+    return None
+
+
 # Candidate target spellings for VOCALOID Mandarin tokens. The first
 # available candidate is preferred; this supports simplified and X-SAMPA-style
 # SynthV phone inventories without a user-maintained phone_table.json.
@@ -53,7 +142,9 @@ VOCALOID_MANDARIN_PHONE_CANDIDATES: dict[str, tuple[tuple[str, ...], ...]] = {
     "yE": (("ve",), ("vE",), ("yE",), ("v", "e")),
     "iE_r": (("iae",), ("iE",), ("ie",)),
     "yE_r": (("ve",), ("vE",), ("yE",), ("y{",), ("v", "e")),
-    "uaI": (("uai",), ("uaI",)), "uei": (("uei",), ("ueI",)),
+    # Expand Mandarin triphthongs into target-supported phone sequences first.
+    "uaI": (("u", "a", "I"), ("w", "a", "I"), ("u", "a", "i"), ("w", "a", "i"), ("uai",), ("uaI",)),
+    "uei": (("u", "e", "i"), ("w", "e", "i"), ("uei",), ("ueI",)),
     "@`": (("er",), ("e/", "-r"), ("e/", "r"), ("e/", "rr"), ("e/", ":r\\`"), ("@", ":r\\`"), ("@`",)),
     "p": (("b",), ("p",)), "ph": (("p",), ("ph",)),
     "t": (("d",), ("t",)), "th": (("t",), ("th",)),
@@ -184,6 +275,9 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
     stem = Path(filename).stem
     if stem.endswith(("_0", "_1")):
         stem = stem[:-2]
+    # Some VOCALOID exports percent-encode literal backslashes in phone names.
+    # Normalize every occurrence before mapping, independent of hex-letter case.
+    stem = re.sub(r"%5c", lambda _match: chr(92), stem, flags=re.IGNORECASE)
     raw_phones = stem.split()
     if not raw_phones:
         raise ValueError(f"{Path(filename).name}: filename contains no space-separated phonemes")
@@ -193,7 +287,41 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
         if token.casefold() == "sil":
             phones.append("sil")
             continue
-        replacement = PHONE_REPLACEMENTS.get(token)
+
+        # For the rhoticized at-vowel, prefer the explicit X-SAMPA sequence
+        # @ + r\ when supported, otherwise use the compatible 3 phone.
+        if token == "@" + chr(96) and token not in valid:
+            rhotic = "r" + chr(92)
+            if "@" in valid and rhotic in valid:
+                phones.extend(("@", rhotic))
+                continue
+            if "3" in valid:
+                phones.append("3")
+                continue
+            # SynthV's simplified Mandarin inventory can expose erhua as the
+            # dedicated Mandarin phone "er" without any separate rhotic symbol.
+            if "er" in valid:
+                phones.append("er")
+                continue
+            # Fall back only to curated, inventory-checked Mandarin erhua
+            # representations. This also covers callers that do not specify
+            # source_system; it never splits an unknown token heuristically.
+            converted = _map_vocaloid_mandarin(token, valid)
+            if converted is not None and converted != [token]:
+                phones.extend(converted)
+                continue
+
+        # Force known Mandarin triphthongs to the explicit inventory-aware
+        # phone sequence before any exact-token pass-through can swallow them.
+        if token in {"uaI", "uei"}:
+            converted = _map_vocaloid_mandarin(token, valid)
+            if converted is not None and converted != [token]:
+                phones.extend(converted)
+                continue
+        # k_h and other underscore forms are meaningful X-SAMPA aspiration
+        # markers; do not rewrite them to legacy aliases in the X-SAMPA modes.
+        replacements = {} if source_system in {"xsampa", "synthv-xsampa"} else PHONE_REPLACEMENTS
+        replacement = replacements.get(token)
         if replacement is not None:
             if replacement not in valid and source_system == "vocaloid-mandarin":
                 converted = _map_vocaloid_mandarin(replacement, valid)
@@ -207,11 +335,37 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 )
             phones.append(replacement)
             continue
+        if source_system in {"xsampa", "synthv-xsampa"}:
+            converted = _map_xsampa_mandarin(token, valid, source_system)
+            if converted is not None:
+                phones.extend(converted)
+                continue
+            # Compound legacy Mandarin syllable-final tokens are not single
+            # X-SAMPA symbols; resolve them through the explicit compound table.
+            if _uses_synthv_simple_mandarin(valid) and (
+                token in VOCALOID_MANDARIN_COMPOSITES
+                or token in VOCALOID_MANDARIN_PHONE_CANDIDATES
+            ):
+                # Explicit curated Mandarin aliases such as aI/AU/@U/iAU/i@U;
+                # this is table-driven mapping, never character-by-character guessing.
+                converted = _map_vocaloid_mandarin(token, valid)
+                if converted is not None:
+                    phones.extend(converted)
+                    continue
         if source_system == "vocaloid-mandarin":
             converted = _map_vocaloid_mandarin(token, valid)
             if converted is not None and (converted != [token] or token not in valid):
                 phones.extend(converted)
                 continue
+            if converted is None:
+                # VOCALOID's phone spellings include dialect-specific aliases,
+                # but some source filenames also use canonical Mandarin X-SAMPA
+                # tokens not duplicated in that alias table. Use only the explicit
+                # standard X-SAMPA bridge here; never fall back to character splitting.
+                converted = _map_xsampa_mandarin(token, valid, "xsampa")
+                if converted is not None:
+                    phones.extend(converted)
+                    continue
         if token in valid:
             phones.append(token)
             continue
@@ -247,7 +401,10 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 )
             phones.extend(composite)
             continue
-        pieces = _segment(token, valid)
+        # Explicit source conventions must never be heuristically split into
+        # plausible-looking but phonetically incorrect phones. Their valid
+        # conversions are all table-driven above.
+        pieces = None if source_system in {"xsampa", "synthv-xsampa", "vocaloid-mandarin"} else _segment(token, valid)
         if pieces is None:
             raise ValueError(
                 f"{Path(filename).name}: unknown phone {token!r}; it is not in "
@@ -315,7 +472,12 @@ def filename_recordings(
     directory = Path(wav_directory).expanduser()
     if not directory.is_dir():
         raise ValueError(f"WAV directory does not exist: {directory}")
-    wavs = sorted(directory.glob("*.wav"), key=lambda path: path.name.casefold())
+    # Case-insensitive extension matching prevents .WAV/.Wav files from being
+    # silently missed when a Windows dataset is processed on Linux.
+    wavs = sorted(
+        (path for path in directory.iterdir() if path.is_file() and path.suffix.casefold() == ".wav"),
+        key=lambda path: path.name.casefold(),
+    )
     if not wavs:
         raise ValueError(f"no .wav files found in {directory}")
     recordings = []
@@ -325,16 +487,44 @@ def filename_recordings(
         except ValueError as error:
             if unmatched is None:
                 raise
-            unmatched.append({"filename": wav.name, "error": str(error)})
+            message = str(error)
+            token_match = re.search(r"unknown phone ['\"](.+?)['\"]", message)
+            if token_match is None:
+                # Preserve the blocking token for errors such as a rhoticized
+                # vowel that cannot be represented by the selected inventory.
+                token_match = re.search(r": ['\"]([^'\"]+)['\"]", message)
+
+            unmatched.append({
+                "filename": wav.name,
+                "category": "phone_mapping",
+                "source_token": token_match.group(1) if token_match else "",
+                "error": message,
+            })
             continue
         try:
-            info = soundfile.info(str(wav))
-        except (OSError, RuntimeError) as error:
-            raise ValueError(f"{wav.name}: could not read audio duration: {error}") from error
-        if info.samplerate <= 0 or info.frames <= 0:
-            raise ValueError(f"{wav.name}: audio has no samples or an invalid sample rate")
-        total_ticks = round(info.frames * TICKS_PER_SECOND / info.samplerate)
-        recordings.append((wav.stem, wav, labels_from_phones(phones, total_ticks)))
+            # Decode the file, not just its header: truncated/corrupt WAV payloads
+            # must be reported as bad files, while a valid unvoiced consonant WAV
+            # remains a valid recording regardless of whether Praat finds F0.
+            decoded, rate = read_wav_frames(wav)
+            frames = int(decoded.shape[0])
+            if rate <= 0 or frames <= 0 or decoded.shape[1] <= 0:
+                raise ValueError("audio has no samples or an invalid sample rate")
+        except (OSError, RuntimeError, ValueError) as error:
+            message = f"{wav.name}: unreadable or damaged WAV: {error}"
+            if unmatched is None:
+                raise ValueError(message) from error
+            unmatched.append({"filename": wav.name, "category": "wav_decode", "error": message})
+            continue
+        total_ticks = round(frames * TICKS_PER_SECOND / rate)
+        try:
+            labels = labels_from_phones(phones, total_ticks)
+        except ValueError as error:
+            message = f"{wav.name}: {error}"
+            if unmatched is None:
+                raise ValueError(message) from error
+            unmatched.append({"filename": wav.name, "category": "label_generation", "error": message})
+            continue
+        recordings.append((wav.stem, wav, labels))
     return recordings
 
 

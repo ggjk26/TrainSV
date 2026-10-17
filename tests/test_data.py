@@ -108,7 +108,7 @@ def test_f0_profile_parameters_are_passed_to_tracker_and_cache_is_separate(tmp_p
     )
     assert calls == [(45.0, 1400.0, 0.45)]
     assert synthetic_voice[0].f0_values.tolist() == [220.0, 0.0, 330.0]
-    assert (cache / "sample.f0-45-1400-v0.45.npz").is_file()
+    assert (cache / "sample.f0-v2-45-1400-v0.45.npz").is_file()
 
     # Same settings reuse the matching cache rather than re-extracting F0.
     load_dataset(
@@ -121,3 +121,63 @@ def test_f0_profile_parameters_are_passed_to_tracker_and_cache_is_separate(tmp_p
     load_dataset(dataset, "japanese", cache=cache)
     assert calls[-1] == (65.0, 1100.0, 0.60)
     assert len(calls) == 2
+
+
+def test_sensitive_f0_preset_is_available():
+    assert resolve_f0_profile("sensitive") == (35.0, 1800.0, 0.30)
+
+
+def test_silent_audio_returns_zero_f0_track_instead_of_analysis_error():
+    times, values = data_module.extract_f0(np.zeros(4800, dtype=np.float32))
+    assert times.size > 0
+    assert values.shape == times.shape
+    assert np.all(values == 0)
+
+
+def test_utterance_with_empty_f0_cache_uses_neutral_pitch_and_unvoiced_mask():
+    from opensv_train.data import Utterance
+
+    utterance = Utterance(
+        name="Sil Sil k Sil_0",
+        audio=np.zeros(4800, dtype=np.float32),
+        phones=[],
+        notes=None,
+        f0_times=np.array([], dtype=np.float64),
+        f0_values=np.array([], dtype=np.float32),
+    )
+    hz, voiced = utterance.f0_at(np.array([0.0025, 0.0075]))
+    assert np.allclose(hz, [150.0, 150.0])
+    assert not voiced.any()
+
+
+def test_unvoiced_silence_and_consonant_sample_is_kept_when_f0_is_empty(tmp_path, monkeypatch):
+    dataset = tmp_path / "dataset"
+    (dataset / "wavs").mkdir(parents=True)
+    soundfile.write(
+        str(dataset / "wavs" / "Sil Sil k Sil_0.wav"),
+        np.zeros(4800, dtype=np.float32),
+        48000,
+    )
+    (dataset / "transcriptions.csv").write_text(
+        'name,ph_seq,ph_dur\n"Sil Sil k Sil_0",SP SP k SP,0.025 0.025 0.025 0.025\n',
+        encoding="utf-8",
+    )
+    # No measurable pitch is expected here, but the valid WAV must survive
+    # dataset loading and phrase generation for acoustic training.
+    monkeypatch.setattr(
+        data_module, "extract_f0",
+        lambda *_args, **_kwargs: (
+            np.array([], dtype=np.float64), np.array([], dtype=np.float32)
+        ),
+    )
+    utterances = load_dataset(dataset, "mandarin")
+    assert len(utterances) == 1
+    assert utterances[0].name == "Sil Sil k Sil_0"
+    phrases = make_phrases(utterances[0])
+    assert len(phrases) == 1
+    assert any(phone.symbol == "k" for phone in phrases[0].phones)
+    hz, voiced = utterances[0].f0_at(np.array([0.01, 0.03]))
+    assert np.allclose(hz, [150.0, 150.0])
+    assert not voiced.any()
+
+

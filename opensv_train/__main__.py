@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections import Counter
 import json
 import math
 import os
@@ -16,7 +17,7 @@ import torch
 from .acoustic import TimedPhoneme
 from .calibration import fit_input_ranges
 from .data import F0_PROFILES, LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, resolve_f0_profile, split
-from .f0 import F0_SMOOTHING_OPTIONS, resolve_f0_processing
+from .f0 import F0_SMOOTHING_OPTIONS, resolve_f0_processing, resolve_pitch_loss_options
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
 from .voice import ROLES, Voice, initialize_pitch_from_file
 from .packaging import build_svpk
@@ -30,13 +31,16 @@ def _validate_pitch_options(arguments) -> None:
         (
             arguments.f0_smoothing,
             arguments.f0_octave_correction,
-            arguments.pitch_smoothing_hz,
-            arguments.pitch_melody_weight,
-            arguments.pitch_motion_weight,
         ) = resolve_f0_processing(
             arguments.f0_profile,
             smoothing_frames=arguments.f0_smoothing,
             correct_octave=arguments.f0_octave_correction,
+        )
+        (
+            arguments.pitch_smoothing_hz,
+            arguments.pitch_melody_weight,
+            arguments.pitch_motion_weight,
+        ) = resolve_pitch_loss_options(
             pitch_smoothing_hz=arguments.pitch_smoothing_hz,
             pitch_melody_weight=arguments.pitch_melody_weight,
             pitch_motion_weight=arguments.pitch_motion_weight,
@@ -84,6 +88,13 @@ def finetune(arguments) -> None:
     )
     phrases = [phrase for utterance in utterances for phrase in make_phrases(utterance)]
     problems = [phrase.problem for phrase in phrases if phrase.problem]
+    no_f0 = [utterance.name for utterance in utterances if not np.any(np.isfinite(utterance.f0_values) & (utterance.f0_values > 0))]
+    if no_f0:
+        print(
+            f"F0 note: {len(no_f0)} utterance(s) have no measurable voiced frames; "
+            "they are retained for acoustic training and are not counted as damaged WAVs. "
+            f"Examples: {', '.join(no_f0[:5])}"
+        )
     print(f"{len(utterances)} utterances, {len(phrases)} phrases, {sum(p.frames for p in phrases) * 0.005 / 60:.1f} min")
     total_f0_frames = sum(len(utterance.f0_values) for utterance in utterances)
     voiced_f0 = np.concatenate(
@@ -238,13 +249,42 @@ def import_lab(arguments) -> None:
         report_path = Path(arguments.output).expanduser() / "unmatched_phones.csv"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         with report_path.open("w", newline="", encoding="utf-8-sig") as report_file:
-            writer = csv.DictWriter(report_file, fieldnames=("filename", "error"))
+            writer = csv.DictWriter(
+                report_file,
+                fieldnames=("filename", "category", "source_token", "error"),
+            )
             writer.writeheader()
             writer.writerows(unmatched)
+        wav_directory = Path(arguments.wavs).expanduser()
+        discovered_wavs = [
+            path for path in wav_directory.iterdir()
+            if path.is_file() and path.suffix.casefold() == ".wav"
+        ] if wav_directory.is_dir() else []
+        print(
+            f"WAV label generation: retained {len(recordings)} of {len(discovered_wavs)} "
+            f"files; skipped {len(unmatched)}"
+        )
         if unmatched:
-            print(f"skipped {len(unmatched)} WAV file(s) with unmapped phones; see {report_path}")
+            category_counts = {
+                category: sum(item.get("category") == category for item in unmatched)
+                for category in sorted({item.get("category", "other") for item in unmatched})
+            }
+            summary = ", ".join(f"{category}={count}" for category, count in category_counts.items())
+            print(
+                f"Skipped {len(unmatched)} WAV file(s) ({summary}); "
+                f"see {report_path} for each filename and reason"
+            )
+            blockers = Counter(
+                item["source_token"] for item in unmatched
+                if item.get("category") == "phone_mapping" and item.get("source_token")
+            )
+            if blockers:
+                top = ", ".join(
+                    f"{token}×{count}" for token, count in blockers.most_common(20)
+                )
+                print(f"Most frequent unmapped source tokens (first blocker per file): {top}")
         if not recordings:
-            raise SystemExit(f"no WAV files could be labelled; see {report_path} for unmapped phones")
+            raise SystemExit(f"no WAV files could be labelled; see {report_path} for phone-mapping/audio errors")
     elif arguments.corpus:
         recordings = corpus_recordings(arguments.corpus)
     elif arguments.labs and arguments.wavs:
@@ -430,9 +470,9 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--f0-octave-correction", action=argparse.BooleanOptionalAction, default=None, help="override the profile's isolated 1-2 octave tracker-spike correction")
     command.add_argument("--f0-shift-semitones", type=float, default=0.0, help="add this semitone offset to measured F0 targets, range -24 to +24")
     command.add_argument("--f0-reference-cents", type=float, default=0.0, help="fine-tune measured F0 reference by cents after cache loading, range -1200 to +1200")
-    command.add_argument("--pitch-smoothing-hz", type=float, default=None, help="override profile's low-pass cutoff for the smooth melody contour, 0 < cutoff < 100 Hz")
-    command.add_argument("--pitch-melody-weight", type=float, default=None, help="override profile's smooth-melody loss weight")
-    command.add_argument("--pitch-motion-weight", type=float, default=None, help="override profile's fast-motion/vibrato loss weight")
+    command.add_argument("--pitch-smoothing-hz", type=float, default=None, help="override the default low-pass cutoff for the Pitch model's smooth melody contour, 0 < cutoff < 100 Hz")
+    command.add_argument("--pitch-melody-weight", type=float, default=None, help="override the default Pitch model smooth-melody loss weight")
+    command.add_argument("--pitch-motion-weight", type=float, default=None, help="override the default Pitch model fast-motion/vibrato loss weight")
     command.add_argument("--pitch-model", "--pitch-base-model", dest="pitch_model", help="initialize Pitch from a compatible pretrained .dnni; target speaker embedding is preserved")
     command.add_argument("--lr", type=float, help="learning rate (default 2e-5 for all, 3e-3 for embeddings)")
     command.add_argument("--warmup", type=int, default=0, help="steps of linear learning-rate warmup")
@@ -469,7 +509,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--language", default="japanese", type=language_name, help="language phone set for --voice")
     command.add_argument("--from-filenames", action="store_true", help="generate approximate LAB labels from space-separated phones in WAV filenames")
     command.add_argument("--phone-table", help="JSON phone table used to validate and split custom phoneme names")
-    command.add_argument("--source-phoneme-system", choices=("auto", "vocaloid-mandarin", "none"), default="auto", help="source filename phone convention; auto applies the VOCALOID Mandarin map for --language mandarin")
+    command.add_argument("--source-phoneme-system", choices=("auto", "vocaloid-mandarin", "xsampa", "synthv-xsampa", "none"), default="auto", help="source filename phone convention: auto uses VOCALOID Mandarin for Mandarin; xsampa uses standard X-SAMPA; synthv-xsampa uses legacy SynthV Mandarin X-SAMPA labels")
     command.set_defaults(handler=import_lab)
 
     command = commands.add_parser("convert-dict", help="re-spell a DiffSinger dataset with SV's dictionary for its language")
@@ -500,9 +540,9 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--f0-octave-correction", action=argparse.BooleanOptionalAction, default=None, help="override the selected profile's isolated octave-spike correction")
     command.add_argument("--f0-shift-semitones", type=float, default=0.0, help="semitone offset added to measured F0 targets")
     command.add_argument("--f0-reference-cents", type=float, default=0.0, help="fine-tune measured F0 reference in cents")
-    command.add_argument("--pitch-smoothing-hz", type=float, default=None, help="override profile's low-pass cutoff for smooth melody contour")
-    command.add_argument("--pitch-melody-weight", type=float, default=None, help="override profile's smooth-melody loss weight")
-    command.add_argument("--pitch-motion-weight", type=float, default=None, help="override profile's fast-motion/vibrato loss weight")
+    command.add_argument("--pitch-smoothing-hz", type=float, default=None, help="override the default low-pass cutoff for the Pitch model's smooth melody contour")
+    command.add_argument("--pitch-melody-weight", type=float, default=None, help="override the default Pitch model smooth-melody loss weight")
+    command.add_argument("--pitch-motion-weight", type=float, default=None, help="override the default Pitch model fast-motion/vibrato loss weight")
     command.add_argument("--validation", type=float, default=0.1)
     command.add_argument("--phoneme-map")
     command.add_argument("--seed", type=int, default=0)

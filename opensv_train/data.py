@@ -7,16 +7,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-import soundfile
 from scipy.signal import resample_poly
 
 from .acoustic import TimedPhoneme
+from .audio_io import read_wav_frames
 from .duration import PhonemeDuration, Syllable
 from .f0 import F0_PROFILES, f0_cache_tag, process_f0_track, resolve_f0_profile
+from .f0_tracking import (
+    FRAME_SECONDS,
+    SAMPLE_RATE,
+    _empty_f0_track,
+    _stable_f0_mask,
+    _validate_f0_settings,
+    extract_f0,
+)
 from .pitch import PITCH_CONTEXT_SECONDS, PitchNote
 
-FRAME_SECONDS = 0.005
-SAMPLE_RATE = 48000
 REST_CONTEXT_SECONDS = 0.1
 PHRASE_BREAK_SECONDS = 0.2
 SPECIAL_PHONEMES = {"SP": "sil", "AP": "br"}
@@ -61,15 +67,18 @@ class Utterance:
     style: str | None = None
 
     def f0_at(self, times: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        voiced = self.f0_values > 0
-        if not voiced.any():
+        times = np.asarray(times, dtype=np.float64)
+        values = np.asarray(self.f0_values, dtype=np.float32).reshape(-1)
+        track_times = np.asarray(self.f0_times, dtype=np.float64).reshape(-1)
+        voiced = np.isfinite(values) & (values > 0)
+        if not values.size or not track_times.size or values.size != track_times.size or not voiced.any():
             # Valid consonant-only and silence recordings can have no measurable
             # F0 at all. Keep a neutral conditioning pitch for the acoustic model,
             # while marking every frame unvoiced so the voicing target stays zero.
             return np.full(times.shape, 150.0, dtype=np.float32), np.zeros(times.shape, dtype=bool)
-        log_f0 = np.interp(times, self.f0_times[voiced], np.log(self.f0_values[voiced]))
-        nearest = np.clip(np.searchsorted(self.f0_times, times), 0, len(self.f0_times) - 1)
-        return np.exp(log_f0), voiced[nearest] & (np.abs(self.f0_times[nearest] - times) < 2 * FRAME_SECONDS)
+        log_f0 = np.interp(times, track_times[voiced], np.log(values[voiced]))
+        nearest = np.clip(np.searchsorted(track_times, times), 0, len(track_times) - 1)
+        return np.exp(log_f0).astype(np.float32), voiced[nearest] & (np.abs(track_times[nearest] - times) < 2 * FRAME_SECONDS)
 
 
 @dataclass
@@ -150,39 +159,14 @@ def parse_note(name: str) -> float | None:
 
 
 def read_audio(path: Path) -> np.ndarray:
-    audio, rate = soundfile.read(str(path), dtype="float32", always_2d=True)
+    # Share decoding policy with LAB generation so preprocessing and training
+    # cannot disagree about whether the same WAV is readable.
+    audio, rate = read_wav_frames(path)
     audio = audio.mean(axis=1)
     if rate != SAMPLE_RATE:
         divisor = math.gcd(rate, SAMPLE_RATE)
         audio = resample_poly(audio, SAMPLE_RATE // divisor, rate // divisor).astype(np.float32)
     return audio
-
-
-def _validate_f0_settings(floor: float, ceiling: float, voicing_threshold: float) -> None:
-    """Validate F0 range and Praat's autocorrelation voicing threshold."""
-    if not np.isfinite(floor) or not np.isfinite(ceiling) or floor <= 0 or ceiling <= floor:
-        raise ValueError("F0 range must satisfy 0 < floor < ceiling (Hz)")
-    if not np.isfinite(voicing_threshold) or not 0.0 <= voicing_threshold <= 1.0:
-        raise ValueError("F0 voicing threshold must be between 0 and 1")
-
-
-def extract_f0(
-    audio: np.ndarray,
-    floor: float = 65.0,
-    ceiling: float = 1100.0,
-    *,
-    voicing_threshold: float = 0.60,
-) -> tuple[np.ndarray, np.ndarray]:
-    import parselmouth
-
-    _validate_f0_settings(floor, ceiling, voicing_threshold)
-    pitch = parselmouth.Sound(audio.astype(np.float64), SAMPLE_RATE).to_pitch_ac(
-        time_step=FRAME_SECONDS,
-        voicing_threshold=voicing_threshold,
-        pitch_floor=floor,
-        pitch_ceiling=ceiling,
-    )
-    return np.asarray(pitch.xs()), np.nan_to_num(pitch.selected_array["frequency"])
 
 
 def map_phoneme(token: str, language: str, mapping: dict[str, str]) -> tuple[str, str]:
@@ -250,6 +234,12 @@ def load_dataset(
             if cached.exists():
                 with np.load(cached) as stored:
                     audio, times, values = stored["audio"], stored["f0_times"], stored["f0_values"]
+                if not times.size or not values.size or times.size != values.size:
+                    # Discard incomplete legacy cache entries rather than turning
+                    # a valid WAV into an IndexError during F0 conditioning.
+                    audio = read_audio(directory / "wavs" / f"{name}.wav")
+                    times, values = extract_f0(audio, floor, ceiling, voicing_threshold=threshold)
+                    np.savez(cached, audio=audio, f0_times=times, f0_values=values)
             else:
                 audio = read_audio(directory / "wavs" / f"{name}.wav")
                 times, values = extract_f0(audio, floor, ceiling, voicing_threshold=threshold)
