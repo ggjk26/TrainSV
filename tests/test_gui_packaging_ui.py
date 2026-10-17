@@ -16,9 +16,9 @@ from trainsv_gui import PAGE
 def test_results_page_exposes_both_package_choices():
     assert 'id="openPackageFormat"' in PAGE
     assert 'id="chooseSvpk"' in PAGE
-    assert "生成 SVPK 诊断包（当前不可安装）" in PAGE
+    assert "Build SVPK Diagnostic Package (Not Installable)" in PAGE
     assert 'id="chooseSfpk"' in PAGE
-    assert "使用 SFPK 格式打包（实验）" in PAGE
+    assert "Export SFPK Package (Experimental)" in PAGE
 
 
 def test_svpk_dialog_collects_required_metadata_and_assets():
@@ -37,12 +37,12 @@ def test_svpk_dialog_collects_required_metadata_and_assets():
     assert "Hanakuma Chifuyu" in PAGE
     assert "复制 Chifuyu 字段后提示数据损坏" in PAGE
     assert "完整性/认证校验" in PAGE
-    assert "生成诊断包（当前不可安装）" in PAGE
+    assert "Build Diagnostic Package (Not Installable)" in PAGE
     assert "startJob(\"svpk\")" in PAGE
     assert '"--version-string",version' in PAGE
     assert '"--version-number",String(Number(version))' in PAGE
     assert '"--header-preset",val("svpk_header_preset")||"zero"' in PAGE
-    assert "aes256-cbc-test|AES-256-CBC 合成测试（非官方）" in PAGE
+    assert "aes256-cbc-test|Synthetic AES-256-CBC test (unofficial)" in PAGE
     assert "不是官方签名或密钥" in PAGE
 
 
@@ -62,8 +62,8 @@ def test_sfpk_dialog_collects_local_model_dependencies_and_starts_job():
     assert "info(?:\\..*)?" in PAGE
     assert 'cmd:"package-sfpk"' in PAGE
     assert '"--models-root",val("sfpk_models_root")' in PAGE
-    assert 'data-ext="png" data-label="头像图片 profile.png（可留空）"' in PAGE
-    assert 'data-ext="png" data-label="背景图片 background.png（可留空）"' in PAGE
+    assert 'data-ext="png" data-label="Avatar image profile.png (optional)"' in PAGE
+    assert 'data-ext="png" data-label="Background image background.png (optional)"' in PAGE
     assert 'if(val("sfpk_profile"))a.push("--profile",val("sfpk_profile"))' in PAGE
     assert 'if(val("sfpk_background"))a.push("--background",val("sfpk_background"))' in PAGE
     assert 'startJob("sfpk")' in PAGE
@@ -100,12 +100,12 @@ def test_svpk_output_suggestion_preserves_unicode_name_and_manual_paths():
 
 def test_successful_comparison_opens_the_package_format_chooser():
     assert 'if(JOB.kind==="evaluate"){go("results");showPackageFormatDialog()}' in PAGE
-    assert 'if(target.isfile&&!confirm("输出文件已存在：\\n"+val("svpk_output")+"\\n\\n是否覆盖它？"))return;' in PAGE
+    assert 'if(target.isfile&&!confirm("The output file already exists:\\n"+val("svpk_output")+"\\n\\nOverwrite it?"))return;' in PAGE
 
 
 def test_training_and_evaluation_expose_f0_tracking_profiles():
     assert 'data-id="t_f0_profile"' in PAGE
-    assert 'data-options="standard|通用默认（65–1100 Hz，阈值 0.60）;vocaloid|VOCALOID 合成声（45–1400 Hz，阈值 0.45）;low|低音（45–650 Hz，阈值 0.60）;high|高音（100–1400 Hz，阈值 0.60）;wide|宽音域（40–1600 Hz，阈值 0.60）"' in PAGE
+    assert 'data-options="standard|Standard tracking (65–1100 Hz, threshold 0.60);vocaloid|VOCALOID → Natural-Smooth (45–1400 Hz, threshold 0.45);low|Low register (45–650 Hz, threshold 0.60);high|High register (100–1400 Hz, threshold 0.60);wide|Wide range (40–1600 Hz, threshold 0.60)"' in PAGE
     assert 'a.push("--f0-profile",val("t_f0_profile")||"standard")' in PAGE
     assert "F0 追踪预设控制从输入 WAV 提取基频时的频率范围与浊音阈值" in PAGE
     assert "若只有音素 LAB、没有 note_seq/note_dur，Pitch 无法有效训练" in PAGE
@@ -127,12 +127,21 @@ def test_training_pitch_workspace_exposes_full_f0_and_pretrained_controls():
         "t_pitch_motion_weight",
     ):
         assert f'data-id="{field}"' in PAGE
-    assert 'value="low|低音（45–650 Hz，阈值 0.60）"' in PAGE or "low|低音（45–650 Hz，阈值 0.60）" in PAGE
-    assert "high|高音（100–1400 Hz，阈值 0.60）" in PAGE
-    assert "wide|宽音域（40–1600 Hz，阈值 0.60）" in PAGE
+    assert "low|Low register (45–650 Hz, threshold 0.60)" in PAGE
+    assert "high|High register (100–1400 Hz, threshold 0.60)" in PAGE
+    assert "wide|Wide range (40–1600 Hz, threshold 0.60)" in PAGE
     assert 'a.push("--pitch-base-model",val("t_pitch_model"))' in PAGE
     assert '["--f0-reference-cents","t_f0_correction"]' in PAGE
     assert '["--pitch-smoothing-hz","t_pitch_smoothing"]' in PAGE
     assert '["--pitch-melody-weight","t_pitch_melody_weight"]' in PAGE
     assert '["--pitch-motion-weight","t_pitch_motion_weight"]' in PAGE
     assert 'pitch(){return this.finetune(true)}' in PAGE
+
+
+
+def test_vocaloid_profile_is_naturalizing_and_uses_explicit_octave_override():
+    assert 'vocaloid:{floor:"",ceiling:"",threshold:"",smoothing:"5",octave:true,pitchSmoothing:"2.5",melody:"1.2",motion:"0.8"}' in PAGE
+    assert 'if(t.id==="t_f0_profile")applyF0ProfileControls(val("t_f0_profile"))' in PAGE
+    assert '"--no-f0-octave-correction"' in PAGE
+    assert "VOCALOID → Natural-Smooth" in PAGE
+    assert "data-label=\"F0 median smoothing\"" in PAGE
