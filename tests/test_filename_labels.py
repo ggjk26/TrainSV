@@ -415,3 +415,28 @@ def test_uei_triphthong_prefers_u_e_i_then_w_e_i():
     assert parse_filename_phones(
         "uei_0.wav", {"sil", "w", "e", "i"}, source_system="vocaloid-mandarin"
     ) == ["sil", "w", "e", "i", "sil"]
+
+def test_rhoticized_vowel_uses_synthv_mandarin_er_label_without_separate_rhotic_phone():
+    # In the simplified Mandarin inventory, "er" is an available native label
+    # for erhua; no standalone X-SAMPA rhotic phone is required.
+    target = {"sil", "aa", "ee", "er"}
+    assert parse_filename_phones(
+        "@" + chr(96) + "_0.wav", target
+    ) == ["sil", "er", "sil"]
+
+
+def test_unmatched_report_preserves_rhoticized_vowel_source_token(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(
+        str(wav_dir / ("@" + chr(96) + "_0.wav")),
+        np.zeros(4800, dtype=np.float32),
+        48000,
+    )
+    unmatched = []
+    recordings = filename_recordings(
+        wav_dir, {"sil", "@"}, unmatched=unmatched
+    )
+    assert recordings == []
+    assert unmatched[0]["source_token"] == "@" + chr(96)
+

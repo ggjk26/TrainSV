@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import re
-import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
@@ -299,6 +298,11 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             if "3" in valid:
                 phones.append("3")
                 continue
+            # SynthV's simplified Mandarin inventory can expose erhua as the
+            # dedicated Mandarin phone "er" without any separate rhotic symbol.
+            if "er" in valid and _uses_synthv_simple_mandarin(valid):
+                phones.append("er")
+                continue
 
         # Force known Mandarin triphthongs to the explicit inventory-aware
         # phone sequence before any exact-token pass-through can swallow them.
@@ -478,6 +482,11 @@ def filename_recordings(
                 raise
             message = str(error)
             token_match = re.search(r"unknown phone ['\"](.+?)['\"]", message)
+            if token_match is None:
+                # Preserve the blocking token for errors such as a rhoticized
+                # vowel that cannot be represented by the selected inventory.
+                token_match = re.search(r": ['\"]([^'\"]+)['\"]", message)
+
             unmatched.append({
                 "filename": wav.name,
                 "category": "phone_mapping",
