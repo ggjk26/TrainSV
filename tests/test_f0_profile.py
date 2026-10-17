@@ -67,6 +67,6 @@ def test_f0_profile_numeric_overrides_and_validation():
 
 
 def test_f0_cache_tag_changes_with_analysis_settings():
-    assert f0_cache_tag(45, 1400, 0.45) == "f0-45-1400-v0.45"
-    assert f0_cache_tag(65, 1100, 0.6) == "f0-65-1100-v0.6"
+    assert f0_cache_tag(45, 1400, 0.45) == "f0-v2-45-1400-v0.45"
+    assert f0_cache_tag(65, 1100, 0.6) == "f0-v2-65-1100-v0.6"
     assert f0_cache_tag(45, 1400, 0.45) != f0_cache_tag(65, 1100, 0.6)

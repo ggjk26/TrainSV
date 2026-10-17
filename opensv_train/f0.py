@@ -49,7 +49,8 @@ def f0_cache_tag(floor: float, ceiling: float, voicing_threshold: float) -> str:
     floor, ceiling, voicing_threshold = resolve_f0_profile(
         "standard", floor=floor, ceiling=ceiling, voicing_threshold=voicing_threshold
     )
-    return f"f0-{floor:g}-{ceiling:g}-v{voicing_threshold:g}"
+    # v2 invalidates caches made before stable-run recovery was introduced.
+    return f"f0-v2-{floor:g}-{ceiling:g}-v{voicing_threshold:g}"
 
 F0_SMOOTHING_OPTIONS = (0, 3, 5, 7)
 

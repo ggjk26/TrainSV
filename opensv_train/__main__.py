@@ -248,11 +248,28 @@ def import_lab(arguments) -> None:
         report_path = Path(arguments.output).expanduser() / "unmatched_phones.csv"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         with report_path.open("w", newline="", encoding="utf-8-sig") as report_file:
-            writer = csv.DictWriter(report_file, fieldnames=("filename", "error"))
+            writer = csv.DictWriter(report_file, fieldnames=("filename", "category", "error"))
             writer.writeheader()
             writer.writerows(unmatched)
+        wav_directory = Path(arguments.wavs).expanduser()
+        discovered_wavs = [
+            path for path in wav_directory.iterdir()
+            if path.is_file() and path.suffix.casefold() == ".wav"
+        ] if wav_directory.is_dir() else []
+        print(
+            f"WAV label generation: retained {len(recordings)} of {len(discovered_wavs)} "
+            f"files; skipped {len(unmatched)}"
+        )
         if unmatched:
-            print(f"skipped {len(unmatched)} WAV file(s) with unmappable phone labels or unreadable WAV audio; see {report_path}")
+            category_counts = {
+                category: sum(item.get("category") == category for item in unmatched)
+                for category in sorted({item.get("category", "other") for item in unmatched})
+            }
+            summary = ", ".join(f"{category}={count}" for category, count in category_counts.items())
+            print(
+                f"Skipped {len(unmatched)} WAV file(s) ({summary}); "
+                f"see {report_path} for each filename and reason"
+            )
         if not recordings:
             raise SystemExit(f"no WAV files could be labelled; see {report_path} for phone-mapping/audio errors")
     elif arguments.corpus:
