@@ -16,7 +16,7 @@ import torch
 from .acoustic import TimedPhoneme
 from .calibration import fit_input_ranges
 from .data import F0_PROFILES, LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, resolve_f0_profile, split
-from .f0 import F0_SMOOTHING_OPTIONS
+from .f0 import F0_SMOOTHING_OPTIONS, resolve_f0_processing
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
 from .voice import ROLES, Voice, initialize_pitch_from_file
 from .packaging import build_svpk
@@ -26,14 +26,23 @@ DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backend
 
 
 def _validate_pitch_options(arguments) -> None:
-    if not math.isfinite(arguments.pitch_smoothing_hz) or not 0.0 < arguments.pitch_smoothing_hz < 100.0:
-        raise SystemExit("--pitch-smoothing-hz must be finite, greater than 0 and below 100 Hz")
-    if not math.isfinite(arguments.pitch_melody_weight) or not math.isfinite(arguments.pitch_motion_weight):
-        raise SystemExit("Pitch loss weights must be finite numbers")
-    if arguments.pitch_melody_weight < 0 or arguments.pitch_motion_weight < 0:
-        raise SystemExit("Pitch loss weights must be non-negative")
-    if arguments.pitch_melody_weight == 0 and arguments.pitch_motion_weight == 0:
-        raise SystemExit("at least one Pitch loss weight must be greater than zero")
+    try:
+        (
+            arguments.f0_smoothing,
+            arguments.f0_octave_correction,
+            arguments.pitch_smoothing_hz,
+            arguments.pitch_melody_weight,
+            arguments.pitch_motion_weight,
+        ) = resolve_f0_processing(
+            arguments.f0_profile,
+            smoothing_frames=arguments.f0_smoothing,
+            correct_octave=arguments.f0_octave_correction,
+            pitch_smoothing_hz=arguments.pitch_smoothing_hz,
+            pitch_melody_weight=arguments.pitch_melody_weight,
+            pitch_motion_weight=arguments.pitch_motion_weight,
+        )
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
     if not math.isfinite(arguments.f0_reference_cents) or not -1200.0 <= arguments.f0_reference_cents <= 1200.0:
         raise SystemExit("--f0-reference-cents must be finite and between -1200 and +1200 cents")
     if not math.isfinite(arguments.f0_shift_semitones) or not -24.0 <= arguments.f0_shift_semitones <= 24.0:
@@ -417,13 +426,13 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--f0-floor", type=float, help="override the selected F0 preset's minimum frequency in Hz")
     command.add_argument("--f0-ceiling", type=float, help="override the selected F0 preset's maximum frequency in Hz")
     command.add_argument("--f0-voicing-threshold", type=float, help="override the selected F0 preset's voicing threshold (0, 1]")
-    command.add_argument("--f0-smoothing", type=int, choices=F0_SMOOTHING_OPTIONS, default=0, help="median smoothing width in 5 ms frames: 0/off, 3/light, 5/medium, 7/strong")
-    command.add_argument("--f0-octave-correction", action="store_true", help="correct isolated 1-2 octave tracker jumps only when adjacent voiced frames agree")
+    command.add_argument("--f0-smoothing", type=int, choices=F0_SMOOTHING_OPTIONS, default=None, help="override the selected profile's median smoothing width: 0/off, 3/light, 5/medium, 7/strong (5 ms frames)")
+    command.add_argument("--f0-octave-correction", action=argparse.BooleanOptionalAction, default=None, help="override the profile's isolated 1-2 octave tracker-spike correction")
     command.add_argument("--f0-shift-semitones", type=float, default=0.0, help="add this semitone offset to measured F0 targets, range -24 to +24")
     command.add_argument("--f0-reference-cents", type=float, default=0.0, help="fine-tune measured F0 reference by cents after cache loading, range -1200 to +1200")
-    command.add_argument("--pitch-smoothing-hz", type=float, default=3.0, help="low-pass cutoff for the smooth melody contour, 0 < cutoff < 100 Hz")
-    command.add_argument("--pitch-melody-weight", type=float, default=1.0, help="loss weight for the smooth pitch melody contour")
-    command.add_argument("--pitch-motion-weight", type=float, default=1.0, help="loss weight for vibrato and faster pitch movement")
+    command.add_argument("--pitch-smoothing-hz", type=float, default=None, help="override profile's low-pass cutoff for the smooth melody contour, 0 < cutoff < 100 Hz")
+    command.add_argument("--pitch-melody-weight", type=float, default=None, help="override profile's smooth-melody loss weight")
+    command.add_argument("--pitch-motion-weight", type=float, default=None, help="override profile's fast-motion/vibrato loss weight")
     command.add_argument("--pitch-model", "--pitch-base-model", dest="pitch_model", help="initialize Pitch from a compatible pretrained .dnni; target speaker embedding is preserved")
     command.add_argument("--lr", type=float, help="learning rate (default 2e-5 for all, 3e-3 for embeddings)")
     command.add_argument("--warmup", type=int, default=0, help="steps of linear learning-rate warmup")
@@ -487,13 +496,13 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--f0-floor", type=float, help="override the selected F0 preset's minimum frequency in Hz")
     command.add_argument("--f0-ceiling", type=float, help="override the selected F0 preset's maximum frequency in Hz")
     command.add_argument("--f0-voicing-threshold", type=float, help="override the selected F0 preset's voicing threshold (0, 1]")
-    command.add_argument("--f0-smoothing", type=int, choices=F0_SMOOTHING_OPTIONS, default=0, help="median smoothing width in 5 ms frames")
-    command.add_argument("--f0-octave-correction", action="store_true", help="correct isolated octave errors in tracked F0")
+    command.add_argument("--f0-smoothing", type=int, choices=F0_SMOOTHING_OPTIONS, default=None, help="override the selected profile's median smoothing width in 5 ms frames")
+    command.add_argument("--f0-octave-correction", action=argparse.BooleanOptionalAction, default=None, help="override the selected profile's isolated octave-spike correction")
     command.add_argument("--f0-shift-semitones", type=float, default=0.0, help="semitone offset added to measured F0 targets")
     command.add_argument("--f0-reference-cents", type=float, default=0.0, help="fine-tune measured F0 reference in cents")
-    command.add_argument("--pitch-smoothing-hz", type=float, default=3.0, help="low-pass cutoff for smooth melody contour, 0 < cutoff < 100 Hz")
-    command.add_argument("--pitch-melody-weight", type=float, default=1.0, help="loss weight for the smooth melody contour")
-    command.add_argument("--pitch-motion-weight", type=float, default=1.0, help="loss weight for vibrato and faster pitch motion")
+    command.add_argument("--pitch-smoothing-hz", type=float, default=None, help="override profile's low-pass cutoff for smooth melody contour")
+    command.add_argument("--pitch-melody-weight", type=float, default=None, help="override profile's smooth-melody loss weight")
+    command.add_argument("--pitch-motion-weight", type=float, default=None, help="override profile's fast-motion/vibrato loss weight")
     command.add_argument("--validation", type=float, default=0.1)
     command.add_argument("--phoneme-map")
     command.add_argument("--seed", type=int, default=0)
