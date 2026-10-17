@@ -198,14 +198,19 @@ CSV 必需列：
 
 训练步数更多不代表效果一定更好。请结合验证结果和试听判断，不能只看训练损失。
 
-#### F0 / Pitch tracking presets
+#### F0 分析与清理预设
 
-Training 页面里的 Pitch/F0 专项区已采用英文控件标签和英文预设名称，参数旁的帮助提示暂时保留中文。选择 `VOCALOID → Natural-Smooth` 后，除使用更宽的 F0 范围（45–1400 Hz）和 0.45 浊音阈值外，还会自动启用 **25 ms 中值平滑、孤立八度跳点修正、2.5 Hz 平滑旋律截止频率**，并把 Pitch 损失权重设为旋律轮廓 1.2、快速变化/颤音 0.8。其他预设保留轻量处理默认值；F0 floor/ceiling、阈值、平滑强度、八度修正和 Pitch 权重仍可手动覆盖。
+Training 页面将 F0 Analysis & Calibration 与 Pitch Model & Training 分成两个独立面板。F0 预设只控制从输入 WAV 检测和清理基频目标，不修改 Pitch 网络的训练损失。
 
-这项预设旨在压制合成 VOCALOID 声源 F0 曲线中的短促跳点和锯齿状抖动，让训练目标更连贯，并非对最终 WAV 做后期滤镜。它可能改善音高连续性，但**不能保证单靠 F0 就消除声学模型、声码器或源录音本身的金属音色**。如果希望音色整体更接近人声，建议在有有效 `note_seq` / `note_dur` 与词边界的情况下同时训练 Pitch 和 Sound / Acoustic，并用未参与训练的录音进行 A/B 试听。只有音素 LAB、没有音符标签时，Pitch 模型无法学习音符到 F0 的映射。
+- **Standard**：65–1100 Hz、浊音阈值 0.60。
+- **VOCALOID F0 cleanup**：45–1400 Hz、浊音阈值 0.45；额外启用有声片段内 25 ms 中值平滑与保守的孤立八度跳点修正。
+- **Low / High / Wide**：选择不同检测音域，不默认打开额外清理。
 
-CLI 的 `finetune` 与 `evaluate` 都支持 `--f0-profile`、`--f0-floor`、`--f0-ceiling`、`--f0-voicing-threshold`、`--f0-smoothing`、`--f0-octave-correction` / `--no-f0-octave-correction`、`--f0-reference-cents`、`--pitch-smoothing-hz`、`--pitch-melody-weight` 和 `--pitch-motion-weight`。明确指定的参数会覆盖所选预设。F0 分析会按音域/阈值使用独立缓存，参考音分校正会在加载缓存后应用。
+F0 的音域、阈值、中值平滑、孤立八度修正、参考音分校正均可单独调整。处理作用于训练/评估使用的 F0 目标曲线，并非对最终 WAV 做后期滤镜，也不能保证单独消除源音频、声学模型或声码器产生的金属音色。
 
+#### Pitch 模型训练
+
+Pitch 面板单独管理底模 Pitch 初始化或兼容 .dnni 导入，以及旋律平滑截止频率、旋律轮廓损失权重、快速音高运动/颤音损失权重。**切换 F0 预设不会改变 Pitch 损失参数**。有效的 Pitch 训练需要音符与词边界标注；改善整体音色还应训练并验证 Sound / Acoustic。
 ### 5. 评估并试听
 
 训练完成后，进入结果页面，选择刚生成的声库并点击“比较声库”。工具会在留出的验证短语上比较原始声库和新声库，并可输出试听文件与 `metrics.json`。
@@ -389,20 +394,27 @@ cmake --build build --target OpenSVParity
 项目采用 GPL-3.0。感谢 [OpenSV](https://github.com/cubeww/OpenSV) 项目提供的参考实现。请通过当前仓库的 [Issues](https://github.com/ggjk26/TrainSV/issues) 提交复现步骤、底模类型和完整日志。
 现在支持输入Vocaloid音频样本的X-SAMPA音素，不会因为不匹配Synthesizer V的而报错退出。目前F0预测器的清浊音部分处理有问题（如“Sil k_01.wav”会识别损坏的wav从而终止训练）
 
-## Pitch / F0 专项调校
+## F0 分析与校准
 
-Training 页面有独立的 Pitch / F0 工作区。**控件标签和预设名称已改为英文，参数旁的说明提示暂时保留中文。** Pitch 复选框控制是否训练声库自带的 Pitch 模型；F0 预设则同时控制输入音高检测范围，以及 VOCALOID 档位下的目标曲线清理和平滑默认值。
+Training 页面的 F0 Analysis & Calibration 面板专门处理输入 WAV 的基频分析和训练目标清理，与 Pitch 网络的训练设置分开。
 
-- **Standard**：65–1100 Hz、浊音阈值 0.60，沿用原有检测默认值。
-- **VOCALOID → Natural-Smooth**：45–1400 Hz、浊音阈值 0.45；额外启用有声片段内的 25 ms 中值平滑、保守的孤立八度跳点修正、2.5 Hz 平滑旋律截止频率，并将 Pitch 旋律轮廓 / 快速音高运动损失权重设为 1.2 / 0.8。
-- **Low / High / Wide**：分别选择低音、高音或宽音域的检测范围，不默认打开额外平滑。
+- **Standard**：65–1100 Hz、浊音阈值 0.60。
+- **VOCALOID F0 cleanup**：45–1400 Hz、浊音阈值 0.45；额外启用有声片段内的 25 ms 中值平滑和保守的孤立八度跳点修正。
+- **Low / High / Wide**：分别覆盖低音、高音或宽音域，默认不启用额外清理。
+- 可以单独覆盖 F0 最低/最高频率、浊音阈值、中值平滑、孤立八度修正和参考音分校正。
 
-可以单独覆盖 F0 floor/ceiling、浊音阈值、平滑强度、孤立八度修正、F0 参考校正（音分）和 Pitch 损失参数。命令行的 `finetune` 和 `evaluate` 同样支持 `--f0-profile`、`--f0-floor`、`--f0-ceiling`、`--f0-voicing-threshold`、`--f0-smoothing`、`--f0-octave-correction` / `--no-f0-octave-correction`、`--f0-reference-cents`、`--pitch-smoothing-hz`、`--pitch-melody-weight` 与 `--pitch-motion-weight`。显式指定的参数会覆盖预设默认值。
+这项处理旨在减少 F0 跟踪中的短促跳点和锯齿状抖动，作用于训练/评估的目标曲线，而不是对导出 WAV 做后期平滑；它不能保证单靠 F0 就去除全部金属感。F0 选项可在 CLI 的 finetune 和 evaluate 中使用：--f0-profile、--f0-floor、--f0-ceiling、--f0-voicing-threshold、--f0-smoothing、--f0-octave-correction / --no-f0-octave-correction 与 --f0-reference-cents。
 
-VOCALOID 预设的目标是减少训练 F0 中短促的音高跳点和锯齿状抖动，让音高曲线更连贯；这些操作**不是对导出 WAV 做后期平滑**，也不能保证单靠 F0 就去除所有金属感。金属音色可能来自源音频、声学模型或声码器。为了让整体听感更自然，建议在有有效 `note_seq` / `note_dur` 和词边界的情况下同时训练 Pitch 与 Sound / Acoustic，并在未参与训练的录音上 A/B 试听。没有音符标注时，Pitch 模型无法学习音符到 F0 的映射。
+## Pitch 模型训练
 
-### 关于预训练 / 通用 Pitch 模型
+独立的 Pitch Model & Training 面板用于管理 Pitch 网络本身：
 
-Training 页面可选导入外部预训练 Pitch 权重（`.dnni`），命令行对应 `--pitch-base-model <path-to-pitch.dnni>`。TrainSV 会严格检查网络结构、音素表、归一化缓冲区、稀疏结构和参数形状；仅在兼容时复制非 speaker 参数，同时保留目标声库自己的 speaker 向量，不兼容时会停止并说明原因。
+- **模型初始化**：使用当前底模的 Pitch 网络，或导入结构/音素表兼容的预训练 .dnni。
+- **Melody smoothing cutoff**：区分较慢的旋律轮廓和更快的音高变化；不会直接平滑最终音频。
+- **Smooth melody loss weight**：控制整体旋律轮廓在 Pitch 训练损失中的权重。
+- **Vibrato / fast-motion loss weight**：控制快速变化与颤音细节的损失权重。
+- 这些设置与 F0 预设互相独立；切换 F0 档位不会更改 Pitch 损失值。
 
-仓库**尚未随包附带经过验证的通用神经 Pitch 权重**。这个入口用于你本机已有且兼容的模型，并不意味着通用模型已内置，也不会自动让不同架构或不同音素表互相兼容。
+CLI 的 finetune 和 evaluate 支持 --pitch-smoothing-hz、--pitch-melody-weight 和 --pitch-motion-weight，默认分别为 3 Hz、1.0 和 1.0。Pitch 训练需要有效的 note_seq / note_dur 与词边界标注；如果希望改善整体音色，还需训练并验证 Sound / Acoustic。
+
+TrainSV 可导入外部预训练 Pitch 权重（.dnni），CLI 对应 --pitch-base-model <path-to-pitch.dnni>。程序会严格检查网络架构、音素表、归一化缓冲区、稀疏结构与参数形状；仅在兼容时复制非 speaker 参数，保留目标声库自己的 speaker 向量。仓库**尚未随包附带经过验证的通用神经 Pitch 权重**，不同架构或音素表也不会因此自动兼容。
