@@ -61,15 +61,18 @@ class Utterance:
     style: str | None = None
 
     def f0_at(self, times: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        voiced = self.f0_values > 0
-        if not voiced.any():
+        times = np.asarray(times, dtype=np.float64)
+        values = np.asarray(self.f0_values, dtype=np.float32).reshape(-1)
+        track_times = np.asarray(self.f0_times, dtype=np.float64).reshape(-1)
+        voiced = np.isfinite(values) & (values > 0)
+        if not values.size or not track_times.size or values.size != track_times.size or not voiced.any():
             # Valid consonant-only and silence recordings can have no measurable
             # F0 at all. Keep a neutral conditioning pitch for the acoustic model,
             # while marking every frame unvoiced so the voicing target stays zero.
             return np.full(times.shape, 150.0, dtype=np.float32), np.zeros(times.shape, dtype=bool)
-        log_f0 = np.interp(times, self.f0_times[voiced], np.log(self.f0_values[voiced]))
-        nearest = np.clip(np.searchsorted(self.f0_times, times), 0, len(self.f0_times) - 1)
-        return np.exp(log_f0), voiced[nearest] & (np.abs(self.f0_times[nearest] - times) < 2 * FRAME_SECONDS)
+        log_f0 = np.interp(times, track_times[voiced], np.log(values[voiced]))
+        nearest = np.clip(np.searchsorted(track_times, times), 0, len(track_times) - 1)
+        return np.exp(log_f0).astype(np.float32), voiced[nearest] & (np.abs(track_times[nearest] - times) < 2 * FRAME_SECONDS)
 
 
 @dataclass
@@ -151,7 +154,11 @@ def parse_note(name: str) -> float | None:
 
 def read_audio(path: Path) -> np.ndarray:
     audio, rate = soundfile.read(str(path), dtype="float32", always_2d=True)
+    if rate <= 0 or audio.shape[0] == 0 or audio.shape[1] == 0:
+        raise ValueError(f"{path.name}: WAV contains no decodable audio samples")
     audio = audio.mean(axis=1)
+    if not np.isfinite(audio).all():
+        raise ValueError(f"{path.name}: WAV contains non-finite audio samples")
     if rate != SAMPLE_RATE:
         divisor = math.gcd(rate, SAMPLE_RATE)
         audio = resample_poly(audio, SAMPLE_RATE // divisor, rate // divisor).astype(np.float32)
@@ -166,6 +173,16 @@ def _validate_f0_settings(floor: float, ceiling: float, voicing_threshold: float
         raise ValueError("F0 voicing threshold must be between 0 and 1")
 
 
+def _empty_f0_track(audio: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return a valid zero-F0 contour when audio has no measurable periodicity."""
+    samples = np.asarray(audio).reshape(-1).size
+    frame_count = max(1, int(math.ceil(samples / (SAMPLE_RATE * FRAME_SECONDS))))
+    return (
+        np.arange(frame_count, dtype=np.float64) * FRAME_SECONDS,
+        np.zeros(frame_count, dtype=np.float32),
+    )
+
+
 def extract_f0(
     audio: np.ndarray,
     floor: float = 65.0,
@@ -176,13 +193,33 @@ def extract_f0(
     import parselmouth
 
     _validate_f0_settings(floor, ceiling, voicing_threshold)
-    pitch = parselmouth.Sound(audio.astype(np.float64), SAMPLE_RATE).to_pitch_ac(
-        time_step=FRAME_SECONDS,
-        voicing_threshold=voicing_threshold,
-        pitch_floor=floor,
-        pitch_ceiling=ceiling,
-    )
-    return np.asarray(pitch.xs()), np.nan_to_num(pitch.selected_array["frequency"])
+    audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+    if not audio.size or not np.isfinite(audio).all():
+        raise ValueError("cannot extract F0 from empty or non-finite decoded audio")
+    # There is no pitch to detect in digital silence. Avoid asking Praat to
+    # analyze it, and keep the clip available to acoustic training.
+    if float(np.max(np.abs(audio))) <= 1e-8:
+        return _empty_f0_track(audio)
+    try:
+        pitch = parselmouth.Sound(audio.astype(np.float64), SAMPLE_RATE).to_pitch_ac(
+            time_step=FRAME_SECONDS,
+            voicing_threshold=voicing_threshold,
+            pitch_floor=floor,
+            pitch_ceiling=ceiling,
+        )
+        times = np.asarray(pitch.xs(), dtype=np.float64).reshape(-1)
+        values = np.nan_to_num(
+            np.asarray(pitch.selected_array["frequency"], dtype=np.float32).reshape(-1),
+            nan=0.0, posinf=0.0, neginf=0.0,
+        )
+        if not times.size or not values.size or times.size != values.size:
+            return _empty_f0_track(audio)
+        values[values < 0] = 0
+        return times, values
+    except (parselmouth.PraatError, RuntimeError, ValueError, FloatingPointError):
+        # A valid WAV may be too short, silent, or unvoiced for Praat's tracker.
+        # That is missing pitch supervision, not a corrupt WAV; keep a zero track.
+        return _empty_f0_track(audio)
 
 
 def map_phoneme(token: str, language: str, mapping: dict[str, str]) -> tuple[str, str]:
@@ -250,6 +287,12 @@ def load_dataset(
             if cached.exists():
                 with np.load(cached) as stored:
                     audio, times, values = stored["audio"], stored["f0_times"], stored["f0_values"]
+                if not times.size or not values.size or times.size != values.size:
+                    # Discard incomplete legacy cache entries rather than turning
+                    # a valid WAV into an IndexError during F0 conditioning.
+                    audio = read_audio(directory / "wavs" / f"{name}.wav")
+                    times, values = extract_f0(audio, floor, ceiling, voicing_threshold=threshold)
+                    np.savez(cached, audio=audio, f0_times=times, f0_values=values)
             else:
                 audio = read_audio(directory / "wavs" / f"{name}.wav")
                 times, values = extract_f0(audio, floor, ceiling, voicing_threshold=threshold)
