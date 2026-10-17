@@ -410,7 +410,7 @@ Training 页面的 F0 Analysis & Calibration 面板专门处理输入 WAV 的基
 - **Low / High / Wide**：分别覆盖低音、高音或宽音域，默认不启用额外清理。
 - 可以单独覆盖 F0 最低/最高频率、浊音阈值、中值平滑、孤立八度修正和参考音分校正。
 
-Sensitive 预设使用 35–1800 Hz 和 0.30 阈值，并以 15 ms 轻度平滑尝试找回较弱的有声帧。有效 WAV 即使没有测得 F0 也会保留用于声学训练，但没有有声帧的样本不会提供有效 Pitch 监督。若导入数量从 5177 降到约 4472，应先检查导入摘要与 `unmatched_phones.csv`：当前数据加载逻辑不会仅因 F0 全零就剔除有效 WAV，音素映射失败或无法解码的音频才可能在生成数据集时被跳过。这项处理作用于训练/评估的目标曲线，而不是对导出 WAV 做后期平滑；它不能保证单靠 F0 就去除全部金属感。F0 选项可在 CLI 的 finetune 和 evaluate 中使用：--f0-profile、--f0-floor、--f0-ceiling、--f0-voicing-threshold、--f0-smoothing、--f0-octave-correction / --no-f0-octave-correction 与 --f0-reference-cents。
+Sensitive 预设使用 35–1800 Hz 和 0.30 阈值，并以 15 ms 轻度平滑尝试找回较弱的有声帧。有效 WAV 即使没有测得 F0 也会保留用于声学训练，但没有有声帧的样本不会提供有效 Pitch 监督。若导入后样本数明显减少，应先检查导入摘要与 `unmatched_phones.csv`：数据加载逻辑不会仅因 F0 全零就剔除有效 WAV，音素映射失败或无法解码的音频才可能在生成数据集时被跳过。这项处理作用于训练/评估的目标曲线，而不是对导出 WAV 做后期平滑；它不能保证单靠 F0 就去除全部金属感。F0 选项可在 CLI 的 finetune 和 evaluate 中使用：--f0-profile、--f0-floor、--f0-ceiling、--f0-voicing-threshold、--f0-smoothing、--f0-octave-correction / --no-f0-octave-correction 与 --f0-reference-cents。
 
 ## Pitch 模型训练
 
