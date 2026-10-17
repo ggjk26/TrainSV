@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from opensv_train.f0 import F0_PROFILES, f0_cache_tag, resolve_f0_profile
+from opensv_train.f0 import F0_PROFILES, f0_cache_tag, resolve_f0_profile, resolve_f0_processing
 
 
 def test_f0_profiles_have_expected_ranges():
@@ -12,6 +12,23 @@ def test_f0_profiles_have_expected_ranges():
     assert resolve_f0_profile("low") == (45.0, 650.0, 0.60)
     assert resolve_f0_profile("high") == (100.0, 1400.0, 0.60)
     assert resolve_f0_profile("wide") == (40.0, 1600.0, 0.60)
+
+
+def test_vocaloid_profile_enables_naturalizing_pitch_defaults():
+    assert resolve_f0_processing("standard") == (0, False, 3.0, 1.0, 1.0)
+    assert resolve_f0_processing("vocaloid") == (5, True, 2.5, 1.2, 0.8)
+    assert resolve_f0_processing("low") == (0, False, 3.0, 1.0, 1.0)
+
+
+def test_explicit_pitch_processing_options_override_profile():
+    assert resolve_f0_processing(
+        "vocaloid",
+        smoothing_frames=0,
+        correct_octave=False,
+        pitch_smoothing_hz=3.5,
+        pitch_melody_weight=1.0,
+        pitch_motion_weight=1.0,
+    ) == (0, False, 3.5, 1.0, 1.0)
 
 
 def test_f0_profile_numeric_overrides_and_validation():
