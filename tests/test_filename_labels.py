@@ -376,3 +376,42 @@ def test_unmatched_report_includes_first_unknown_source_token(tmp_path):
     assert recordings == []
     assert unmatched[0]["source_token"] == "badphone"
     assert unmatched[0]["category"] == "phone_mapping"
+
+
+def test_percent5c_sequences_are_normalized_before_phone_mapping():
+    target = {
+        "sil", "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v",
+        "ng", "-n", "b", "p", "d", "t", "g", "k", "z", "c", "q", "ch", "x",
+    }
+    parsed = parse_filename_phones(
+        "s%5c ts%5c_h i%5c_0.wav", target, source_system="xsampa"
+    )
+    assert parsed == ["sil", "x", "q", "iz", "sil"]
+
+
+def test_erhua_at_grave_uses_target_xsampa_inventory():
+    rhotic = "r" + chr(92)
+    assert parse_filename_phones(
+        "@" + chr(96) + "_0.wav", {"sil", "@", rhotic}, source_system="xsampa"
+    ) == ["sil", "@", rhotic, "sil"]
+    assert parse_filename_phones(
+        "@" + chr(96) + "_0.wav", {"sil", "3"}, source_system="xsampa"
+    ) == ["sil", "3", "sil"]
+
+
+def test_uaI_triphthong_prefers_u_a_capital_i_then_w_a_capital_i():
+    assert parse_filename_phones(
+        "uaI_0.wav", {"sil", "u", "a", "I"}, source_system="vocaloid-mandarin"
+    ) == ["sil", "u", "a", "I", "sil"]
+    assert parse_filename_phones(
+        "uaI_0.wav", {"sil", "w", "a", "I"}, source_system="vocaloid-mandarin"
+    ) == ["sil", "w", "a", "I", "sil"]
+
+
+def test_uei_triphthong_prefers_u_e_i_then_w_e_i():
+    assert parse_filename_phones(
+        "uei_0.wav", {"sil", "u", "e", "i"}, source_system="vocaloid-mandarin"
+    ) == ["sil", "u", "e", "i", "sil"]
+    assert parse_filename_phones(
+        "uei_0.wav", {"sil", "w", "e", "i"}, source_system="vocaloid-mandarin"
+    ) == ["sil", "w", "e", "i", "sil"]

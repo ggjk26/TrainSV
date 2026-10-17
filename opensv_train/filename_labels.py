@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
@@ -142,7 +143,9 @@ VOCALOID_MANDARIN_PHONE_CANDIDATES: dict[str, tuple[tuple[str, ...], ...]] = {
     "yE": (("ve",), ("vE",), ("yE",), ("v", "e")),
     "iE_r": (("iae",), ("iE",), ("ie",)),
     "yE_r": (("ve",), ("vE",), ("yE",), ("y{",), ("v", "e")),
-    "uaI": (("uai",), ("uaI",)), "uei": (("uei",), ("ueI",)),
+    # Expand Mandarin triphthongs into target-supported phone sequences first.
+    "uaI": (("u", "a", "I"), ("w", "a", "I"), ("u", "a", "i"), ("w", "a", "i"), ("uai",), ("uaI",)),
+    "uei": (("u", "e", "i"), ("w", "e", "i"), ("uei",), ("ueI",)),
     "@`": (("er",), ("e/", "-r"), ("e/", "r"), ("e/", "rr"), ("e/", ":r\\`"), ("@", ":r\\`"), ("@`",)),
     "p": (("b",), ("p",)), "ph": (("p",), ("ph",)),
     "t": (("d",), ("t",)), "th": (("t",), ("th",)),
@@ -273,6 +276,9 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
     stem = Path(filename).stem
     if stem.endswith(("_0", "_1")):
         stem = stem[:-2]
+    # Some VOCALOID exports percent-encode literal backslashes in phone names.
+    # Normalize every occurrence before mapping, independent of hex-letter case.
+    stem = re.sub(r"%5c", lambda _match: chr(92), stem, flags=re.IGNORECASE)
     raw_phones = stem.split()
     if not raw_phones:
         raise ValueError(f"{Path(filename).name}: filename contains no space-separated phonemes")
@@ -282,6 +288,25 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
         if token.casefold() == "sil":
             phones.append("sil")
             continue
+
+        # For the rhoticized at-vowel, prefer the explicit X-SAMPA sequence
+        # @ + r\ when supported, otherwise use the compatible 3 phone.
+        if token == "@" + chr(96) and token not in valid:
+            rhotic = "r" + chr(92)
+            if "@" in valid and rhotic in valid:
+                phones.extend(("@", rhotic))
+                continue
+            if "3" in valid:
+                phones.append("3")
+                continue
+
+        # Force known Mandarin triphthongs to the explicit inventory-aware
+        # phone sequence before any exact-token pass-through can swallow them.
+        if token in {"uaI", "uei"}:
+            converted = _map_vocaloid_mandarin(token, valid)
+            if converted is not None and converted != [token]:
+                phones.extend(converted)
+                continue
         # k_h and other underscore forms are meaningful X-SAMPA aspiration
         # markers; do not rewrite them to legacy aliases in the X-SAMPA modes.
         replacements = {} if source_system in {"xsampa", "synthv-xsampa"} else PHONE_REPLACEMENTS
