@@ -381,6 +381,11 @@ cmake --build build --target OpenSVParity
 
 部分测试需要可用的声库样本，可通过 `OPENSV_TEST_VOICES` 指定。
 
+
+## WebUI 三语切换
+
+页面最上方新增 **简体中文 / English / 日本語** 语言选择器。选择会保存到本机 WebUI 设置，并在下次启动时恢复。导航、控件、参数帮助、动态状态提示、文件选择器和打包弹窗会随界面语言切换；录音本身使用的训练语言仍是独立设置。
+
 ## 项目结构
 
 - `opensv_train/`：CLI、数据集、模型、训练和导出
