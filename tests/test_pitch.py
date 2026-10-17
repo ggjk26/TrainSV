@@ -7,7 +7,7 @@ import parity
 from opensv_train.pitch import PitchModel, PitchNote, pad_pitch_notes
 from opensv_train.train import _low_pass
 from opensv_train.synthetic import random_phrase
-from opensv_train.voice import load_voice
+from opensv_train.voice import Voice, initialize_pitch_from_file, load_voice
 from test_duration import duration_model
 
 
@@ -51,6 +51,25 @@ def test_pitch_matches_engine(voice_path):
         assert actual.shape == expected.shape
         np.testing.assert_allclose(actual, expected, atol=5e-3)
 
+
+
+def test_pitch_import_preserves_target_speaker_and_accepts_identical_model(voice_path, tmp_path):
+    voice = Voice.load(voice_path)
+    source = tmp_path / "pitch.dnni"
+    source.write_bytes(voice.files.models["pitch"].serialize())
+    speaker_before = voice.pitch.speaker_vector().detach().clone()
+    parameters_before = {
+        key: value.detach().clone()
+        for key, value in voice.pitch.named_parameters()
+        if not key.startswith("speaker")
+    }
+
+    count = initialize_pitch_from_file(voice, source)
+
+    assert count == len(parameters_before)
+    torch.testing.assert_close(voice.pitch.speaker_vector(), speaker_before, rtol=0, atol=0)
+    for key, expected in parameters_before.items():
+        torch.testing.assert_close(dict(voice.pitch.named_parameters())[key], expected, rtol=0, atol=0)
 
 
 def test_pitch_smoothing_cutoff_is_configurable():
