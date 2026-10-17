@@ -46,7 +46,7 @@ def test_cli_wires_f0_profile_defaults_to_finetune_and_evaluate():
     assert "resolve_pitch_loss_options(" in cli_source
     assert cli_source.count('action=argparse.BooleanOptionalAction, default=None') == 2
     assert cli_source.count('type=int, choices=F0_SMOOTHING_OPTIONS, default=None') == 2
-    assert cli_source.count('type=float, default=None, help="override profile\'s low-pass cutoff') == 2
+    assert cli_source.count('type=float, default=None, help="override the default low-pass cutoff') == 2
 
 
 def test_f0_profile_numeric_overrides_and_validation():
