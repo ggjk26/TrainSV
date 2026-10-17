@@ -147,7 +147,7 @@ def test_vocaloid_f0_profile_does_not_override_pitch_loss_settings():
     assert 'if(t.id==="t_f0_profile")applyF0ProfileControls(val("t_f0_profile"))' in PAGE
     assert '"--no-f0-octave-correction"' in PAGE
     assert "VOCALOID F0 cleanup" in PAGE
-    fn = PAGE.split("function applyF0ProfileControls(profile,clearOverrides=true){", 1)[1].split("\\nconst B={", 1)[0]
+    fn = PAGE.split("function applyF0ProfileControls(profile,clearOverrides=true){", 1)[1].split("\nconst B={", 1)[0]
     assert "t_pitch_smoothing" not in fn
     assert "t_pitch_melody_weight" not in fn
     assert "t_pitch_motion_weight" not in fn
