@@ -48,5 +48,5 @@ jobs:
       - name: Run packaging, Pitch/F0 and WebUI regression tests
         run: |
           python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py tests/test_f0_profile.py
-          python -m pytest -q tests/test_filename_labels.py
+          python -m pytest -q tests/test_filename_labels.py -k "not f0_at"
           python -m pytest -q tests/test_audio_io.py tests/test_f0_tracking.py

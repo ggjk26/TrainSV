@@ -117,7 +117,7 @@ def test_user_vocaloid_mandarin_filename_tokens_are_convertible():
 
 
 def test_vocaloid6_underscored_aspirates_map_by_target_inventory():
-    simplified = {"sil", "a", "p", "t", "k", "c", "q", "b", "d", "g", "z", "ng", "e/", "-n"}
+    simplified = {"sil", "a", "p", "t", "k", "c", "q", "ch", "b", "d", "g", "z", "ng", "e/", "-n"}
     assert parse_filename_phones("p_h t_h k_h ts_h ts\\_h ts`_h_0.wav", simplified, source_system="vocaloid-mandarin") == [
         "sil", "p", "t", "k", "c", "q", "ch", "sil"
     ]
