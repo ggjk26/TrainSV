@@ -198,11 +198,13 @@ CSV 必需列：
 
 训练步数更多不代表效果一定更好。请结合验证结果和试听判断，不能只看训练损失。
 
-#### F0 / 音高追踪预设
+#### F0 / Pitch tracking presets
 
-WebUI 的“高级设置”里可以选择 F0 tracking preset，命令行也支持 `--f0-profile standard` 或 `--f0-profile vocaloid`。`standard` 沿用原默认设置：65–1100 Hz、清浊音门槛 0.60；`vocaloid` 使用较宽的 45–1400 Hz 范围和 0.45 门槛，可能帮助检测默认范围外的低音/高音，但也可能增加错误音高候选。切换后程序会自动使用独立缓存，并在训练日志中输出有声帧比例和检测到的中位 F0。
+Training 页面里的 Pitch/F0 专项区已采用英文控件标签和英文预设名称，参数旁的帮助提示暂时保留中文。选择 `VOCALOID → Natural-Smooth` 后，除使用更宽的 F0 范围（45–1400 Hz）和 0.45 浊音阈值外，还会自动启用 **25 ms 中值平滑、孤立八度跳点修正、2.5 Hz 平滑旋律截止频率**，并把 Pitch 损失权重设为旋律轮廓 1.2、快速变化/颤音 0.8。其他预设保留轻量处理默认值；F0 floor/ceiling、阈值、平滑强度、八度修正和 Pitch 权重仍可手动覆盖。
 
-这不是整体升降调或音准补偿开关。如果数据只有按 WAV 文件名生成的音素 LAB、没有 `note_seq` / 音符时长，Pitch 模型无法从这些数据学习音符到 F0 的关系；此时应先训练 Sound / Acoustic。若输出持续整体偏高/偏低，或仍有错八度，应检查输入 WAV 的 F0 追踪和音符标注，再用同一预设比较验证集的 `pitch_semitones`、`pitch_melody` 指标，不要直接靠增加步数来修正。
+这项预设旨在压制合成 VOCALOID 声源 F0 曲线中的短促跳点和锯齿状抖动，让训练目标更连贯，并非对最终 WAV 做后期滤镜。它可能改善音高连续性，但**不能保证单靠 F0 就消除声学模型、声码器或源录音本身的金属音色**。如果希望音色整体更接近人声，建议在有有效 `note_seq` / `note_dur` 与词边界的情况下同时训练 Pitch 和 Sound / Acoustic，并用未参与训练的录音进行 A/B 试听。只有音素 LAB、没有音符标签时，Pitch 模型无法学习音符到 F0 的映射。
+
+CLI 的 `finetune` 与 `evaluate` 都支持 `--f0-profile`、`--f0-floor`、`--f0-ceiling`、`--f0-voicing-threshold`、`--f0-smoothing`、`--f0-octave-correction` / `--no-f0-octave-correction`、`--f0-reference-cents`、`--pitch-smoothing-hz`、`--pitch-melody-weight` 和 `--pitch-motion-weight`。明确指定的参数会覆盖所选预设。F0 分析会按音域/阈值使用独立缓存，参考音分校正会在加载缓存后应用。
 
 ### 5. 评估并试听
 
