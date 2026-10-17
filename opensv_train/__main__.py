@@ -16,7 +16,7 @@ from .acoustic import TimedPhoneme
 from .calibration import fit_input_ranges
 from .data import LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, split
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
-from .voice import ROLES, Voice
+from .voice import ROLES, Voice, initialize_pitch_from_file
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -27,6 +27,16 @@ def finetune(arguments) -> None:
     models = tuple(arguments.models.split(","))
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
+    if arguments.pitch_base_model:
+        if "pitch" not in models:
+            raise SystemExit("--pitch-base-model requires --models to include pitch")
+        if arguments.resume:
+            raise SystemExit("--pitch-base-model initializes a new run; omit it when resuming a saved run")
+        try:
+            copied = initialize_pitch_from_file(voice, arguments.pitch_base_model)
+        except (OSError, ValueError) as error:
+            raise SystemExit(f"cannot initialize Pitch from {arguments.pitch_base_model}: {error}") from error
+        print(f"initialized Pitch from compatible base model ({copied} parameter tensors); target speaker vector preserved")
     utterances = load_dataset(
         arguments.data,
         arguments.language,
@@ -328,6 +338,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--output", required=True, help="voice.nofs path, or databases/<name>/ directory for info voices")
     command.add_argument("--language", required=True, type=language_name, help="default phoneme language, e.g. japanese or ja")
     command.add_argument("--models", default="acoustic", help=f"comma-separated subset of {','.join(MODELS)}")
+    command.add_argument("--pitch-base-model", help="optional compatible pretrained Pitch .dnni used to initialize the target Pitch network; strict compatibility checks apply")
     command.add_argument("--params", choices=("all", "embeddings"), default="all", help="train every weight, or only the per-voice speaker/style/vocal-mode vectors")
     command.add_argument("--vocal-modes", help="comma-separated vocal modes of the finetuned voice (info voices): existing ones are kept, new ones start from the default style, others are dropped")
     command.add_argument("--steps", type=int, default=2000)
