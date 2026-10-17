@@ -8,6 +8,7 @@ on:
       - "opensv_train/__main__.py"
       - "opensv_train/data.py"
       - "opensv_train/f0.py"
+      - "opensv_train/filename_labels.py"
       - "opensv_train/train.py"
       - "opensv_train/voice.py"
       - "trainsv_gui.py"
@@ -19,6 +20,7 @@ on:
       - "tests/test_sfpk_packaging.py"
       - "tests/test_gui_packaging_ui.py"
       - "tests/test_f0_profile.py"
+      - "tests/test_filename_labels.py"
       - ".github/workflows/packaging-ui-tests.yml"
   push:
     branches:
@@ -36,8 +38,10 @@ jobs:
         with:
           node-version: "22"
       - name: Install test dependency
-        run: python -m pip install pytest cryptography
+        run: python -m pip install pytest cryptography numpy soundfile
       - name: Check Python syntax
         run: python -m compileall -q opensv_train tests
       - name: Run packaging, Pitch/F0 and WebUI regression tests
-        run: python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py tests/test_f0_profile.py
+        run: |
+          python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py tests/test_f0_profile.py
+          python -m pytest -q tests/test_filename_labels.py -k "standard_xsampa or legacy_synthv_xsampa or explicit_xsampa or unreadable_wav"
