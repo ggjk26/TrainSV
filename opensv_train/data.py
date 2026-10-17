@@ -158,10 +158,29 @@ def read_audio(path: Path) -> np.ndarray:
     return audio
 
 
-def extract_f0(audio: np.ndarray, floor: float = 65.0, ceiling: float = 1100.0) -> tuple[np.ndarray, np.ndarray]:
+def _validate_f0_settings(floor: float, ceiling: float, voicing_threshold: float) -> None:
+    """Validate the configurable pitch-tracker range before parsing audio."""
+    if not np.isfinite(floor) or not np.isfinite(ceiling) or floor <= 0 or ceiling <= floor:
+        raise ValueError("F0 range must satisfy 0 < floor < ceiling (Hz)")
+    if not np.isfinite(voicing_threshold) or not 0.0 <= voicing_threshold <= 1.0:
+        raise ValueError("F0 voicing threshold must be between 0 and 1")
+
+
+def extract_f0(
+    audio: np.ndarray,
+    floor: float = 65.0,
+    ceiling: float = 1100.0,
+    voicing_threshold: float = 0.6,
+) -> tuple[np.ndarray, np.ndarray]:
     import parselmouth
 
-    pitch = parselmouth.Sound(audio.astype(np.float64), SAMPLE_RATE).to_pitch_ac(time_step=FRAME_SECONDS, voicing_threshold=0.6, pitch_floor=floor, pitch_ceiling=ceiling)
+    _validate_f0_settings(floor, ceiling, voicing_threshold)
+    pitch = parselmouth.Sound(audio.astype(np.float64), SAMPLE_RATE).to_pitch_ac(
+        time_step=FRAME_SECONDS,
+        voicing_threshold=voicing_threshold,
+        pitch_floor=floor,
+        pitch_ceiling=ceiling,
+    )
     return np.asarray(pitch.xs()), np.nan_to_num(pitch.selected_array["frequency"])
 
 
@@ -174,7 +193,17 @@ def map_phoneme(token: str, language: str, mapping: dict[str, str]) -> tuple[str
     return language, SPECIAL_PHONEMES.get(token, token)
 
 
-def load_dataset(directory, language: str, phoneme_map: dict[str, str] | None = None, cache: Path | None = None, f0_range: tuple[float, float] = (65.0, 1100.0)) -> list[Utterance]:
+def load_dataset(
+    directory,
+    language: str,
+    phoneme_map: dict[str, str] | None = None,
+    cache: Path | None = None,
+    f0_range: tuple[float, float] = (65.0, 1100.0),
+    voicing_threshold: float = 0.6,
+) -> list[Utterance]:
+    _validate_f0_settings(float(f0_range[0]), float(f0_range[1]), float(voicing_threshold))
+    floor, ceiling = map(float, f0_range)
+    voicing_threshold = float(voicing_threshold)
     directory = Path(directory)
     mapping = phoneme_map or {}
     cache = cache or directory / ".opensv-cache"
@@ -207,13 +236,30 @@ def load_dataset(directory, language: str, phoneme_map: dict[str, str] | None = 
                 if word + 1 != len(counts):
                     raise ValueError(f"{name}: {word + 1} note groups for {len(counts)} ph_num words")
             cached = cache / f"{name}.npz"
+            cache_keys = ("f0_floor", "f0_ceiling", "f0_voicing_threshold")
+            requested = (floor, ceiling, voicing_threshold)
+            cache_matches = False
             if cached.exists():
-                stored = np.load(cached)
-                audio, times, values = stored["audio"], stored["f0_times"], stored["f0_values"]
+                with np.load(cached) as stored:
+                    audio = stored["audio"]
+                    if all(key in stored.files for key in cache_keys):
+                        existing = tuple(float(stored[key]) for key in cache_keys)
+                        cache_matches = all(np.isclose(old, new, rtol=0.0, atol=1e-6) for old, new in zip(existing, requested))
+                        if cache_matches:
+                            times, values = stored["f0_times"], stored["f0_values"]
             else:
                 audio = read_audio(directory / "wavs" / f"{name}.wav")
-                times, values = extract_f0(audio, *f0_range)
-                np.savez(cached, audio=audio, f0_times=times, f0_values=values)
+            if not cache_matches:
+                times, values = extract_f0(audio, floor, ceiling, voicing_threshold)
+                np.savez(
+                    cached,
+                    audio=audio,
+                    f0_times=times,
+                    f0_values=values,
+                    f0_floor=floor,
+                    f0_ceiling=ceiling,
+                    f0_voicing_threshold=voicing_threshold,
+                )
             tuning = 0.0
             if notes is not None:
                 tuning = tuning_offset(notes)
