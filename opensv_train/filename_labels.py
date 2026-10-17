@@ -303,6 +303,13 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             if "er" in valid:
                 phones.append("er")
                 continue
+            # Fall back only to curated, inventory-checked Mandarin erhua
+            # representations. This also covers callers that do not specify
+            # source_system; it never splits an unknown token heuristically.
+            converted = _map_vocaloid_mandarin(token, valid)
+            if converted is not None and converted != [token]:
+                phones.extend(converted)
+                continue
 
         # Force known Mandarin triphthongs to the explicit inventory-aware
         # phone sequence before any exact-token pass-through can swallow them.
