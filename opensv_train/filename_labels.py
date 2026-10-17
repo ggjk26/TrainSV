@@ -414,13 +414,29 @@ def filename_recordings(
             unmatched.append({"filename": wav.name, "error": str(error)})
             continue
         try:
-            info = soundfile.info(str(wav))
-        except (OSError, RuntimeError) as error:
-            raise ValueError(f"{wav.name}: could not read audio duration: {error}") from error
-        if info.samplerate <= 0 or info.frames <= 0:
-            raise ValueError(f"{wav.name}: audio has no samples or an invalid sample rate")
-        total_ticks = round(info.frames * TICKS_PER_SECOND / info.samplerate)
-        recordings.append((wav.stem, wav, labels_from_phones(phones, total_ticks)))
+            # Decode the file, not just its header: truncated/corrupt WAV payloads
+            # must be reported as bad files, while a valid unvoiced consonant WAV
+            # remains a valid recording regardless of whether Praat finds F0.
+            decoded, rate = soundfile.read(str(wav), dtype="float32", always_2d=True)
+            frames = int(decoded.shape[0])
+            if rate <= 0 or frames <= 0 or decoded.shape[1] <= 0:
+                raise ValueError("audio has no samples or an invalid sample rate")
+        except (OSError, RuntimeError, ValueError) as error:
+            message = f"{wav.name}: unreadable or damaged WAV: {error}"
+            if unmatched is None:
+                raise ValueError(message) from error
+            unmatched.append({"filename": wav.name, "error": message})
+            continue
+        total_ticks = round(frames * TICKS_PER_SECOND / rate)
+        try:
+            labels = labels_from_phones(phones, total_ticks)
+        except ValueError as error:
+            message = f"{wav.name}: {error}"
+            if unmatched is None:
+                raise ValueError(message) from error
+            unmatched.append({"filename": wav.name, "error": message})
+            continue
+        recordings.append((wav.stem, wav, labels))
     return recordings
 
 
