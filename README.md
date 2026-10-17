@@ -204,6 +204,11 @@ The tests use installed voices (`OPENSV_TEST_VOICES`, separated by `:`, override
 
 Now supported Vocaloid-styled X-SAMPA dict. But something wrong with F0.
 
+
+## WebUI languages
+
+The top toolbar now includes a language selector for **English**, **简体中文**, and **日本語**. The choice is saved in the local WebUI settings and restored on the next launch. Page navigation, controls, parameter help, dynamic status messages, file picker, and packaging dialogs share the selected language; the language used by the recordings remains a separate Training setting.
+
 ## Layout
 
 - `opensv_train/`: the CLI, dataset, model, training and export code
