@@ -198,3 +198,70 @@ def test_f0_at_keeps_voicing_mask_for_utterance_with_voiced_frames():
 
     assert np.allclose(hz, [220.0, 220.0])
     assert voiced.all()
+
+
+def test_standard_xsampa_maps_to_synthv_mandarin_labels_without_guessing():
+    target = {
+        "sil", "a", "aa", "o/", "e/", "ee", "e", "o", "u", "i", "iz", "ir", "v",
+        "ao", "ou", "ia", "iaa", "iao", "ie", "iae", "io", "iu", "va", "ve",
+        "ua", "uaa", "ue/", "ue", "uo", "-i", "-r", "-n", "ng", "b", "p",
+        "d", "t", "g", "k", "z", "c", "j", "q", "zh", "ch", "h", "f", "s",
+        "sh", "x", "r", "m", "n", "l", "w", "y",
+    }
+    slash, grave = chr(92), chr(96)
+    tokens = [
+        "A", "O", "@", "e", "7", "U", "r" + slash, ":r" + slash + grave, "y",
+        "au", "ou", "ia", "iA", "iau", "ie", "iE", "iU", "jou", "y{", "yE",
+        "ua", "uA", "u@", "ue", "uo", ":" + slash + "i", "r" + slash + grave,
+        ":n", "N", "p", "p_h", "t", "t_h", "k", "k_h", "ts", "ts_h",
+        "ts" + slash, "ts" + slash + "h", "ts" + grave, "ts" + grave + "h",
+        "x", "f", "s", "s" + grave, "s" + slash, "z" + grave, "w", "j",
+    ]
+    parsed = parse_filename_phones(" ".join(tokens) + "_0.wav", target, source_system="xsampa")
+    assert parsed == [
+        "sil", "aa", "o/", "e/", "ee", "e", "o", "iz", "ir", "v", "ao", "ou",
+        "ia", "iaa", "iao", "ie", "iae", "io", "iu", "va", "ve", "ua", "uaa",
+        "ue/", "ue", "uo", "-i", "-r", "-n", "ng", "b", "p", "d", "t", "g",
+        "k", "z", "c", "j", "q", "zh", "ch", "h", "f", "s", "sh", "x", "r",
+        "w", "y", "sil",
+    ]
+
+
+def test_legacy_synthv_xsampa_spellings_map_to_new_mandarin_inventory():
+    target = {
+        "sil", "o/", "ao", "ou", "iao", "iu", "iz", "ir", "-i", "p", "t", "k",
+        "c", "q", "ch",
+    }
+    slash, grave = chr(92), chr(96)
+    tokens = [
+        "o", "AU", "@U", "iAU", "i@U", "i" + slash, "i" + grave,
+        ":" + slash + "i", "ph", "th", "kh", "tsh",
+        "ts" + slash + "h", "ts" + grave + "h",
+    ]
+    assert parse_filename_phones(
+        " ".join(tokens) + "_0.wav", target, source_system="synthv-xsampa"
+    ) == [
+        "sil", "o/", "ao", "ou", "iao", "iu", "iz", "ir", "-i", "p", "t", "k",
+        "c", "q", "ch", "sil",
+    ]
+
+
+def test_explicit_xsampa_mode_does_not_split_unknown_token_into_wrong_phones():
+    with pytest.raises(ValueError, match="unknown phone"):
+        parse_filename_phones("xyz_0.wav", {"sil", "x", "y", "z"}, source_system="xsampa")
+
+
+def test_unreadable_wav_is_reported_without_dropping_other_valid_recordings(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(str(wav_dir / "Sil Sil k Sil_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    (wav_dir / "broken_0.wav").write_bytes(b"this is not a WAV")
+    unmatched = []
+    recordings = filename_recordings(wav_dir, {"sil", "k"}, unmatched=unmatched)
+    assert [name for name, _, _ in recordings] == ["Sil Sil k Sil_0"]
+    assert [phone for _, _, entries in recordings for _, _, phone in entries] == [
+        "sil", "sil", "sil", "k", "sil", "sil",
+    ]
+    assert len(unmatched) == 1
+    assert unmatched[0]["filename"] == "broken_0.wav"
+    assert "unreadable or damaged WAV" in unmatched[0]["error"]
