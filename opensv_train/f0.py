@@ -50,17 +50,16 @@ def f0_cache_tag(floor: float, ceiling: float, voicing_threshold: float) -> str:
 
 F0_SMOOTHING_OPTIONS = (0, 3, 5, 7)
 
-# profile -> (median-filter width in 5 ms frames, isolated-octave correction,
-#             smooth-melody cutoff Hz, melody-loss weight, fast-motion-loss weight)
-# The VOCALOID preset intentionally combines broader tracking with conservative
-# track cleanup and a bias toward the smooth contour. This only conditions the
-# F0 target used in training; it does not post-process the final waveform.
-F0_PROCESSING_PROFILES: dict[str, tuple[int, bool, float, float, float]] = {
-    "standard": (0, False, 3.0, 1.0, 1.0),
-    "vocaloid": (5, True, 2.5, 1.2, 0.8),
-    "low": (0, False, 3.0, 1.0, 1.0),
-    "high": (0, False, 3.0, 1.0, 1.0),
-    "wide": (0, False, 3.0, 1.0, 1.0),
+# profile -> (median-filter width in 5 ms frames, isolated-octave correction)
+# F0 presets only control processing of the measured F0 target. Pitch model-loss
+# settings are resolved separately so changing an analysis preset never mutates
+# the objective used to train the Pitch network.
+F0_PROCESSING_PROFILES: dict[str, tuple[int, bool]] = {
+    "standard": (0, False),
+    "vocaloid": (5, True),
+    "low": (0, False),
+    "high": (0, False),
+    "wide": (0, False),
 }
 
 
@@ -69,35 +68,42 @@ def resolve_f0_processing(
     *,
     smoothing_frames: int | None = None,
     correct_octave: bool | None = None,
-    pitch_smoothing_hz: float | None = None,
-    pitch_melody_weight: float | None = None,
-    pitch_motion_weight: float | None = None,
-) -> tuple[int, bool, float, float, float]:
-    """Resolve the F0 cleanup and Pitch-loss defaults for a tracking preset.
+) -> tuple[int, bool]:
+    """Resolve F0 cleanup defaults for a tracking preset.
 
-    Explicit values override preset defaults. The VOCALOID profile applies a
-    25 ms median filter, fixes isolated octave tracker spikes, and slightly
-    emphasizes the smooth melody contour over fast pitch movement.
+    The VOCALOID profile enables a 25 ms median filter and conservative
+    correction of isolated octave tracker spikes. Pitch-loss defaults are not
+    coupled to this profile.
     """
     if profile not in F0_PROCESSING_PROFILES:
         raise ValueError(f"unknown F0 processing profile {profile!r}")
     defaults = F0_PROCESSING_PROFILES[profile]
     smoothing = defaults[0] if smoothing_frames is None else smoothing_frames
     octave = defaults[1] if correct_octave is None else correct_octave
-    cutoff = defaults[2] if pitch_smoothing_hz is None else float(pitch_smoothing_hz)
-    melody = defaults[3] if pitch_melody_weight is None else float(pitch_melody_weight)
-    motion = defaults[4] if pitch_motion_weight is None else float(pitch_motion_weight)
     if smoothing not in F0_SMOOTHING_OPTIONS:
         raise ValueError(
             f"F0 smoothing must be one of {', '.join(map(str, F0_SMOOTHING_OPTIONS))} frames"
         )
+    return int(smoothing), bool(octave)
+
+
+def resolve_pitch_loss_options(
+    *,
+    pitch_smoothing_hz: float | None = None,
+    pitch_melody_weight: float | None = None,
+    pitch_motion_weight: float | None = None,
+) -> tuple[float, float, float]:
+    """Resolve and validate Pitch-network loss settings independently of F0."""
+    cutoff = 3.0 if pitch_smoothing_hz is None else float(pitch_smoothing_hz)
+    melody = 1.0 if pitch_melody_weight is None else float(pitch_melody_weight)
+    motion = 1.0 if pitch_motion_weight is None else float(pitch_motion_weight)
     if not math.isfinite(cutoff) or not 0.0 < cutoff < 100.0:
         raise ValueError("pitch smoothing cutoff must be finite and between 0 and 100 Hz")
     if not math.isfinite(melody) or not math.isfinite(motion) or melody < 0 or motion < 0:
         raise ValueError("Pitch loss weights must be finite, non-negative numbers")
     if melody == 0 and motion == 0:
         raise ValueError("at least one Pitch loss weight must be greater than zero")
-    return int(smoothing), bool(octave), cutoff, melody, motion
+    return cutoff, melody, motion
 
 
 def process_f0_track(
