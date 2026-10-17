@@ -39,6 +39,9 @@ class TrainConfig:
     seed: int = 0
     device: str = "cpu"
     rap_languages: list[str] = field(default_factory=list)
+    pitch_melody_weight: float = 1.0
+    pitch_motion_weight: float = 1.0
+    pitch_smoothing_hz: float = 3.0
 
 
 def parameter_groups(voice: Voice, models, params: str) -> dict[str, list[torch.nn.Parameter]]:
@@ -147,13 +150,15 @@ class Trainer:
         target = model.normalize_pitch(torch.from_numpy(midi[:count] + inputs.transpose).to(self.device)) * scale
         weights = torch.from_numpy(mask[:count].astype(np.float32)).to(self.device)
         voiced = weights.sum().clamp(min=1.0)
-        slow_predicted, slow_target = _low_pass(predicted), _low_pass(target)
+        slow_predicted = _low_pass(predicted, cutoff_hz=self.config.pitch_smoothing_hz)
+        slow_target = _low_pass(target, cutoff_hz=self.config.pitch_smoothing_hz)
         melody = (torch.abs(slow_predicted - slow_target) * weights).sum() / voiced
         fast_predicted, fast_target = (predicted - slow_predicted) * weights, (target - slow_target) * weights
         motion = (_motion_spectrum(fast_predicted) - _motion_spectrum(fast_target)).abs().mean()
         frame_error = (torch.abs(predicted - target) * weights).sum() / voiced
         ratio = fast_predicted.detach().abs().sum() / fast_target.abs().sum().clamp(min=1e-6)
-        return {"pitch": melody + motion, "pitch_semitones": frame_error, "pitch_melody": melody, "pitch_motion": ratio}
+        weighted = self.config.pitch_melody_weight * melody + self.config.pitch_motion_weight * motion
+        return {"pitch": weighted, "pitch_semitones": frame_error, "pitch_melody": melody, "pitch_motion": ratio}
 
     def anchor_penalty(self) -> torch.Tensor:
         return sum(torch.sum((parameter - anchor) ** 2) * weight for parameter, anchor, weight in zip(self.parameters, self.anchors, self.anchor_weights))
@@ -274,17 +279,21 @@ class Trainer:
                     parameter.copy_(value)
 
 
-_LOW_PASS = None
+_LOW_PASS: dict[tuple[str, float, float], torch.Tensor] = {}
 
 
 def _low_pass(curve: torch.Tensor, cutoff_hz: float = 3.0, frame_rate: float = 200.0) -> torch.Tensor:
-    global _LOW_PASS
-    if _LOW_PASS is None or _LOW_PASS.device != curve.device:
+    if not 0.0 < cutoff_hz < frame_rate / 2.0:
+        raise ValueError(f"pitch smoothing cutoff must be between 0 and {frame_rate / 2:g} Hz")
+    key = (str(curve.device), float(cutoff_hz), float(frame_rate))
+    kernel = _LOW_PASS.get(key)
+    if kernel is None:
         taps = torch.arange(-64, 65, dtype=torch.float32, device=curve.device)
         kernel = torch.sinc(2 * cutoff_hz / frame_rate * taps) * torch.hann_window(129, periodic=False, device=curve.device)
-        _LOW_PASS = (kernel / kernel.sum()).view(1, 1, -1)
+        kernel = (kernel / kernel.sum()).view(1, 1, -1)
+        _LOW_PASS[key] = kernel
     padded = F.pad(curve.view(1, 1, -1), (64, 64), mode="replicate")
-    return F.conv1d(padded, _LOW_PASS).view(-1)
+    return F.conv1d(padded, kernel).view(-1)
 
 
 def _motion_spectrum(curve: torch.Tensor) -> torch.Tensor:
