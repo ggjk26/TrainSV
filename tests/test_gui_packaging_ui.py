@@ -229,6 +229,16 @@ def test_dynamic_webui_messages_translate_in_all_locales():
             "无法读取 transcriptions.csv：invalid encoding",
         ],
         ["Choose a voice (step 1).", "ja", "音声ライブラリを選択してください（手順 1）。"],
+        ["Help: Steps", "zh-CN", "帮助：步骤"],
+        ["Help: Steps", "ja", "ヘルプ：手順"],
+        ["step 3/8", "zh-CN", "第 3 / 8 步"],
+        ["step 3/8", "ja", "ステップ 3 / 8"],
+        ["Session expired. Reload the page.", "zh-CN", "会话已过期，请重新加载页面。"],
+        ["Something is already running. Stop it first.", "ja", "既にタスクが実行中です。先に停止してください。"],
+        ["Could not start Python: Permission denied", "zh-CN", "无法启动 Python：Permission denied"],
+        ["unknown command: probe", "ja", "不明なコマンド：probe"],
+        ["Timing (duration)", "ja", "Timing（長さ）"],
+        ["No permission to open this folder.", "zh-CN", "无权打开此文件夹。"],
     ]
     script = "\n".join(
         [
