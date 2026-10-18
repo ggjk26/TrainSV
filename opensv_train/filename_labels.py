@@ -298,7 +298,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
     # Expand only a standalone rhoticized at-vowel token. The inserted space
     # makes the vowel and rhotic component two ordered phones; embedded substrings
     # in other symbols are not modified.
-    stem = re.sub(r"(?<!\\S)@" + chr(96) + r"(?!\\S)", "@" + " r" + chr(92), stem)
+    stem = re.sub(r"(?<!\S)@" + chr(96) + r"(?!\S)", "@" + " r" + chr(92), stem)
     raw_phones = stem.split()
     if not raw_phones:
         raise ValueError(f"{Path(filename).name}: filename contains no space-separated phonemes")
