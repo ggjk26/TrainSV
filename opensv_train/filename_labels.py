@@ -541,10 +541,22 @@ def filename_recordings(
                 # vowel that cannot be represented by the selected inventory.
                 token_match = re.search(r": ['\"]([^'\"]+)['\"]", message)
 
+            source_token = token_match.group(1) if token_match else ""
+            # If the generated rhotic component is the blocker, report the
+            # original source token (@ plus grave accent), not its escaped
+            # Python repr (which doubles the backslash in CSV summaries).
+            source_stem = wav.stem
+            if source_stem.endswith(("_0", "_1")):
+                source_stem = source_stem[:-2]
+            if (
+                source_token == "r" + chr(92) * 2
+                and ("@" + chr(96)) in source_stem.split()
+            ):
+                source_token = "@" + chr(96)
             unmatched.append({
                 "filename": wav.name,
                 "category": "phone_mapping",
-                "source_token": token_match.group(1) if token_match else "",
+                "source_token": source_token,
                 "error": message,
             })
             continue
