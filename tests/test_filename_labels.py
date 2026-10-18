@@ -133,6 +133,20 @@ def test_vocaloid_mapping_preserves_legacy_xsampa_inventory():
         "sil", "7", "p", "ts", "a", ":n", "@", "N", "sil"
     ]
 
+def test_standalone_vqm_quality_cache_is_excluded_from_dataset(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(str(wav_dir / "vqm_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "vqm_1.WAV"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "a_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    unmatched = []
+    recordings = filename_recordings(
+        wav_dir, {"sil", "a"}, source_system="vocaloid-mandarin", unmatched=unmatched
+    )
+    assert [recording[0] for recording in recordings] == ["a_0"]
+    assert unmatched == []
+
+
 def test_unmatched_wav_files_are_reported_without_aborting_other_files(tmp_path):
     wav_dir = tmp_path / "wavs"
     wav_dir.mkdir()
