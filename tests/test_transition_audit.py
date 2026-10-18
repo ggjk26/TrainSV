@@ -151,3 +151,19 @@ def test_transition_frame_weights_validate_settings_and_phone_alignment():
         transition_frame_weights(phones, [2])
     with pytest.raises(ValueError, match="one positive duration"):
         transition_frame_weights(phones, [2, 0])
+
+
+
+def test_transition_controls_are_wired_through_cli_and_webui():
+    root = Path(__file__).resolve().parents[1]
+    cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
+    gui = (root / "trainsv_gui.py").read_text("utf-8")
+
+    assert 'command.add_argument("--transition-weight"' in cli
+    assert 'command.add_argument("--transition-frames"' in cli
+    assert "transition_weight=arguments.transition_weight" in cli
+    assert "transition_frames=arguments.transition_frames" in cli
+    assert 'data-id="t_transition_weight"' in gui
+    assert 'data-id="t_transition_frames"' in gui
+    assert 'if route == "audit-dataset"' in gui
+    assert 'data-audit="dataset"' in gui
