@@ -39,3 +39,5 @@ def test_info_voice_v3_fallback_is_pitch_only_and_blocks_pitch_training():
     assert 'if "pitch" in config.models and not getattr(voice.pitch, "supported", True):' in train
     assert 'if "pitch" in models and not getattr(voice.pitch, "supported", True):' in cli
     assert 'if role == "pitch" and not getattr(model, "supported", True):' in cli
+    assert 'if not getattr(voice.pitch, "supported", True):' in cli
+    assert "Choose a training configuration that does not include Pitch" in voice
