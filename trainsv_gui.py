@@ -203,10 +203,14 @@ def check_dataset(path: str) -> dict:
         # Scan the WAV directory once, rather than making one filesystem
         # existence query for every CSV row. normcase follows the host OS's
         # native filename case semantics (case-insensitive on Windows).
-        wav_names = (
-            {os.path.normcase(item.stem) for item in wavs.glob("*.wav")}
-            if wavs.is_dir() else set()
-        )
+        try:
+            wav_names = (
+                {os.path.normcase(item.stem) for item in wavs.glob("*.wav")}
+                if out["has_wavs"] else set()
+            )
+        except OSError as error:
+            out["error"] = f"Could not inspect WAV files: {error}"
+            return out
         try:
             with csv_path.open(newline="", encoding="utf-8-sig") as handle:
                 reader = csv.DictReader(handle)
@@ -220,7 +224,7 @@ def check_dataset(path: str) -> dict:
                     except ValueError:
                         pass
                     name = row.get("name") or ""
-                    if wavs.is_dir() and os.path.normcase(name) not in wav_names:
+                    if out["has_wavs"] and os.path.normcase(name) not in wav_names:
                         missing += 1
                     if (row.get("style") or "").strip():
                         styles.add(row["style"].strip())
