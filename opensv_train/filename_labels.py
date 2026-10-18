@@ -482,6 +482,14 @@ def filename_recordings(
         raise ValueError(f"no .wav files found in {directory}")
     recordings = []
     for wav in wavs:
+        # VOCALOID's standalone vqm take is a quality-analysis cache artifact,
+        # not a user utterance. Exclude only this exact stem after removing the
+        # conventional take suffix; never add vqm to the training phone table.
+        source_stem = wav.stem
+        if source_stem.endswith(("_0", "_1")):
+            source_stem = source_stem[:-2]
+        if source_stem.casefold() == "vqm":
+            continue
         try:
             phones = parse_filename_phones(wav.name, phone_table, source_system=source_system)
         except ValueError as error:
