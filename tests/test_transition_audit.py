@@ -133,7 +133,7 @@ def test_transition_frame_weights_emphasize_only_speech_handoffs():
     assert np.all(weighted[:3] == 1.0)  # silence -> consonant is excluded
     assert np.all(weighted[5:9] == 1.5)  # k -> a handoff
     assert np.all(weighted[10:14] == 1.5)  # a -> t handoff
-    assert np.all(weighted[13:] == 1.0)  # consonant -> silence is excluded
+    assert np.all(weighted[14:] == 1.0)  # consonant -> silence is excluded
 
 
 def test_transition_frame_weights_validate_settings_and_phone_alignment():
