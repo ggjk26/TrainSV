@@ -120,6 +120,10 @@ class Trainer:
         self.train_phrases = train
         self.validation_phrases = validation
         self.config = config
+        if not math.isfinite(config.transition_weight) or config.transition_weight < 1.0:
+            raise ValueError("transition weight must be finite and at least 1.0")
+        if config.transition_frames < 0:
+            raise ValueError("transition frames must be non-negative")
         self.log = log
         self.device = torch.device(config.device)
         voice.to(self.device)
