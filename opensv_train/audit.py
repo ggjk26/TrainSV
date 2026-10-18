@@ -119,7 +119,6 @@ def audit_dataset(
     invalid: list[dict[str, Any]] = []
     duration_mismatches: list[dict[str, Any]] = []
     short_examples: list[dict[str, Any]] = []
-    valid_name_count = 0
 
     try:
         with csv_path.open(newline="", encoding="utf-8-sig") as handle:
@@ -204,14 +203,13 @@ def audit_dataset(
                 if wav_path is None or audio_unreadable:
                     continue
 
-                valid_name_count += 1
                 report["summary"]["trainable_rows"] += 1
                 phones = [_canonical_phone(token) for token in tokens]
                 unique_phones = {phone for phone in phones if phone not in {"sil", "br"}}
                 for phone in phones:
                     phone_occurrences[phone] += 1
                 for phone in unique_phones:
-                    phone_recordings[phone].add(name)
+                    phone_recordings[phone].add(norm_name)
 
                 # Transitions adjacent to silence are kept out of the rare
                 # transition table: they mostly measure phrase padding, not a
@@ -221,7 +219,7 @@ def audit_dataset(
                         continue
                     pair = (left, right)
                     transition_occurrences[pair] += 1
-                    transition_recordings[pair].add(name)
+                    transition_recordings[pair].add(norm_name)
 
                 if short_phone_ms > 0:
                     for token, seconds in zip(phones, durations):
