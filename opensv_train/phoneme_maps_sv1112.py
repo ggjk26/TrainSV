@@ -42,6 +42,15 @@ SV1112_CANTONESE_XSAMPA_TO_LEGACY: dict[str, tuple[str, ...]] = {
     ":t}": (":t}",), ":k}": (":k}",),
 }
 
+
+# Symbols containing the X-SAMPA grave accent are built explicitly so the
+# mapping remains readable without confusing the accent with punctuation.
+SV1112_CHINESE_XSAMPA_TO_LEGACY[":r" + chr(92) + chr(96)] = ("i" + chr(96),)
+SV1112_CHINESE_XSAMPA_TO_LEGACY["ts" + chr(96)] = ("ts" + chr(96),)
+SV1112_CHINESE_XSAMPA_TO_LEGACY["ts" + chr(96) + "_h"] = ("ts" + chr(96) + "h",)
+SV1112_CHINESE_XSAMPA_TO_LEGACY["s" + chr(96)] = ("s" + chr(96),)
+SV1112_CHINESE_XSAMPA_TO_LEGACY["z" + chr(96)] = ("z" + chr(96),)
+
 SV1112_LEGACY_XSAMPA_MAPS = {
     "sv1112-chinese": SV1112_CHINESE_XSAMPA_TO_LEGACY,
     "sv1112-cantonese": SV1112_CANTONESE_XSAMPA_TO_LEGACY,
