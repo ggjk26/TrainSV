@@ -202,9 +202,17 @@ class Trainer:
             history.append({"step": 0, **metrics})
             best = {key: (self._selection(key, metrics), 0, self._snapshot(group)) for key, group in self.groups.items() if key in metrics}
         started = time.time()
-        running: dict[str, list[float]] = {}
+        # Prepare eligible examples and cumulative duration weights once, not
+        # on every optimizer step. random.choices accepts cumulative weights
+        # directly, avoiding rebuilding the prefix sums for audio sampling.
+        running: dict[str, list[torch.Tensor]] = {}
         audio_model = "vocoder" if "vocoder" in config.models else "acoustic"
         schedule = [m for m in config.models if m in ("duration", "pitch")] + ([audio_model] if any(m in ("acoustic", "vocoder") for m in config.models) else [])
+        eligible_by_model = {model: self.eligible(model, self.train_phrases) for model in schedule}
+        cumulative_weights = {}
+        for model, phrases in eligible_by_model.items():
+            if model in ("acoustic", "vocoder") and phrases:
+                cumulative_weights[model] = np.cumsum([phrase.frames for phrase in phrases]).tolist()
         for step in range(start + 1, config.steps + 1):
             rate = learning_rate(step, config.steps, self.rate, config.warmup, config.lr_end)
             for group in self.optimizer.param_groups:
@@ -212,15 +220,20 @@ class Trainer:
             self.optimizer.zero_grad()
             loss = self.parameters[0].new_zeros(())
             for model in schedule:
-                phrases = self.eligible(model, self.train_phrases)
+                phrases = eligible_by_model[model]
                 if not phrases:
                     continue
-                weights = [phrase.frames for phrase in phrases] if model in ("acoustic", "vocoder") else None
                 for _ in range(config.batch):
-                    terms = self.step_terms(model, self.random.choices(phrases, weights=weights)[0])
+                    if model in cumulative_weights:
+                        phrase = self.random.choices(phrases, cum_weights=cumulative_weights[model])[0]
+                    else:
+                        phrase = self.random.choices(phrases)[0]
+                    terms = self.step_terms(model, phrase)
                     loss = loss + terms[self.loss_key(model)] / config.batch
                     for key, value in terms.items():
-                        running.setdefault(key, []).append(float(value.detach()))
+                        # Keep detached scalars on-device and synchronize only
+                        # when the log interval is emitted.
+                        running.setdefault(key, []).append(value.detach())
             penalty = self.anchor_penalty()
             loss = loss + config.anchor * penalty
             if not torch.isfinite(loss):
@@ -228,10 +241,15 @@ class Trainer:
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.parameters, config.gradient_clip)
             self.optimizer.step()
-            running.setdefault("anchor", []).append(float(penalty.detach()))
+            running.setdefault("anchor", []).append(penalty.detach())
             if step % config.log_every == 0:
                 seconds = (time.time() - started) / (step - start)
-                means = {k: float(np.mean(v)) for k, v in running.items()}
+                # One device-to-host transfer for the whole metrics batch,
+                # rather than one scalar synchronization for every term and step.
+                metric_keys = list(running)
+                metric_values = [torch.stack(values).mean() for values in running.values()]
+                host_values = torch.stack(metric_values).detach().cpu().tolist()
+                means = dict(zip(metric_keys, map(float, host_values)))
                 self.log(f"step {step}/{config.steps} ({seconds:.2f}s/step): {_format(means)}")
                 self._record({"step": step, "seconds_per_step": seconds, "lr": rate, **means})
                 running = {}
@@ -280,6 +298,7 @@ class Trainer:
 
 
 _LOW_PASS: dict[tuple[str, float, float], torch.Tensor] = {}
+_MOTION_WINDOWS: dict[tuple[str, torch.dtype], torch.Tensor] = {}
 
 
 def _low_pass(curve: torch.Tensor, cutoff_hz: float = 3.0, frame_rate: float = 200.0) -> torch.Tensor:
@@ -297,7 +316,11 @@ def _low_pass(curve: torch.Tensor, cutoff_hz: float = 3.0, frame_rate: float = 2
 
 
 def _motion_spectrum(curve: torch.Tensor) -> torch.Tensor:
-    window = torch.hann_window(128, device=curve.device)
+    key = (str(curve.device), curve.dtype)
+    window = _MOTION_WINDOWS.get(key)
+    if window is None:
+        window = torch.hann_window(128, device=curve.device, dtype=curve.dtype)
+        _MOTION_WINDOWS[key] = window
     padded = F.pad(curve, (0, max(0, 128 - len(curve))))
     return torch.stft(padded, 128, 16, window=window, return_complex=True).abs()
 
