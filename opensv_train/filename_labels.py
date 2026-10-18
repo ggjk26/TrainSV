@@ -189,6 +189,8 @@ def _map_rhoticized_at_pair(valid: set[str]) -> list[str] | None:
     rhotic = "r" + chr(92)
     if "@" in valid and rhotic in valid:
         return ["@", rhotic]
+    if "@" in valid and "r" in valid:
+        return ["@", "r"]
     # Prefer curated multi-phone representations supported by the target.
     for candidate in VOCALOID_MANDARIN_PHONE_CANDIDATES.get("@" + chr(96), ()):
         if len(candidate) == 2 and all(phone in valid for phone in candidate):
