@@ -90,6 +90,8 @@ class Trainer:
         self.train_phrases = train
         self.validation_phrases = validation
         self.config = config
+        if "pitch" in config.models and not getattr(voice.pitch, "supported", True):
+            raise ValueError(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
         if not math.isfinite(config.transition_weight) or config.transition_weight < 1.0:
             raise ValueError("transition weight must be finite and at least 1.0")
         if config.transition_frames < 0:
