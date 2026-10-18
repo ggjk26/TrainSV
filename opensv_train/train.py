@@ -182,7 +182,9 @@ class Trainer:
             for model in audio_models + other:
                 for phrase in self.eligible(model, self.validation_phrases):
                     for key, value in self.step_terms(model, phrase, full=True).items():
-                        scalar = value.detach()
+                        # Preserve the high-precision averaging used by the
+                        # previous Python/NumPy aggregation path.
+                        scalar = value.detach().to(dtype=torch.float64)
                         totals[key] = scalar if key not in totals else totals[key] + scalar
                         counts[key] = counts.get(key, 0) + 1
         if not totals:
@@ -256,7 +258,7 @@ class Trainer:
                 # One device-to-host transfer for the whole metrics batch,
                 # rather than one scalar synchronization for every term and step.
                 metric_keys = list(running)
-                metric_values = [torch.stack(values).mean() for values in running.values()]
+                metric_values = [torch.stack(values).to(torch.float64).mean() for values in running.values()]
                 host_values = torch.stack(metric_values).detach().cpu().tolist()
                 means = dict(zip(metric_keys, map(float, host_values)))
                 self.log(f"step {step}/{config.steps} ({seconds:.2f}s/step): {_format(means)}")
