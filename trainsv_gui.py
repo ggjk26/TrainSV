@@ -205,7 +205,7 @@ def check_dataset(path: str) -> dict:
         # native filename case semantics (case-insensitive on Windows).
         try:
             wav_names = (
-                {os.path.normcase(item.stem) for item in wavs.glob("*.wav")}
+                {os.path.normcase(item.stem) for item in wavs.glob("*.wav") if item.exists()}
                 if out["has_wavs"] else set()
             )
         except OSError as error:
