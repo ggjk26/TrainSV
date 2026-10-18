@@ -121,6 +121,16 @@ Notes with cents (as GAME writes them) are shifted by each song's overall tuning
 
 Datasets spelled with another syllable dictionary convert with `convert-dict`: `trainsv convert-dict --data src --output dst --source-dict opencpop-extension.txt --target-dict clf-data/mandarin-xsampa-dict.txt --voice <voice> --language zh`. The source stays untouched and `wavs/` is linked.
 
+### Audit phone and transition coverage
+
+Before finetuning, audit a dataset for missing WAVs, duplicate recording IDs, malformed phone/duration rows, unusually short non-silence phones, and adjacent non-silence phone pairs that occur in too few distinct recordings:
+
+```bash
+trainsv audit-data --data my-dataset --check-audio --json-out runs/dataset-audit.json
+```
+
+By default, phones appearing in fewer than 3 recordings and transitions appearing in fewer than 2 recordings are flagged. `--short-phone-ms` adjusts the short-phone threshold (default 20 ms); use `--min-phone-recordings` and `--min-transition-recordings` to change the coverage thresholds. `--strict` exits with status 2 for missing WAVs, invalid rows, duplicate names, or unreadable WAV headers. The command is read-only: it diagnoses sample coverage and label risks but does not fabricate samples or rewrite alignments. Rare-transition warnings are evidence to investigate, not proof that the model will pronounce a sound incorrectly.
+
 ## Training
 
 `finetune` trains the models named by `--models` (default `acoustic`) for `--steps` steps (default 2000). Utterances are split into phrases at silences of 0.2 s or more, with 0.1 s of silence context, the way OpenSV's renderer builds phrases.

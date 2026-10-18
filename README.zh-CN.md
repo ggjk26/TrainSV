@@ -314,6 +314,16 @@ my-dataset/
 | `note_slur` | 连音标记 |
 | `style` | Vocal Mode 名称 |
 
+### 训练前检查音素与过渡覆盖率
+
+训练前可以先检查缺失 WAV、重复录音名、音素/时长标注格式、过短的非静音音素，以及只出现在少量录音中的相邻音素组合：
+
+```powershell
+trainsv audit-data --data my-dataset --check-audio --json-out runs/dataset-audit.json
+```
+
+默认会提示少于 3 份不同录音包含的音素，以及少于 2 份不同录音包含的相邻非静音音素组合。`--short-phone-ms` 可调整过短音素阈值（默认 20 毫秒）；`--min-phone-recordings` 和 `--min-transition-recordings` 可调整覆盖率阈值。使用 `--strict` 时，若发现缺失 WAV、无效标注行、重复名称或无法读取的 WAV 文件头，将以状态码 2 退出。该命令只读数据集，不会伪造样本或改写对齐。罕见过渡提示是需要进一步检查的线索，并不等于模型一定会发音错误。
+
 ## 其他工具
 
 - `trainsv synthesize-dataset --voice <声库> --output <数据集>`：生成练习数据，检查训练流程。

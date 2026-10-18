@@ -14,6 +14,7 @@ import numpy as np
 import soundfile
 import torch
 
+from .audit import audit_dataset
 from .acoustic import TimedPhoneme
 from .calibration import fit_input_ranges
 from .data import F0_PROFILES, LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, resolve_f0_profile, split
@@ -450,6 +451,80 @@ def package_sfpk_command(arguments) -> None:
     print("Test importing, selecting, and rendering this voice in Synthesizer V Studio Flat before relying on it.")
 
 
+def audit_data_command(arguments) -> None:
+    report = audit_dataset(
+        arguments.data,
+        min_phone_recordings=arguments.min_phone_recordings,
+        min_transition_recordings=arguments.min_transition_recordings,
+        short_phone_ms=arguments.short_phone_ms,
+        check_audio=arguments.check_audio,
+    )
+    summary = report["summary"]
+    print(f"Dataset audit: {report['dataset']}")
+    print(
+        f"{summary['rows']} CSV rows; {summary['trainable_rows']} with usable labels and matching WAVs; "
+        f"{summary['missing_wavs']} missing WAVs; {summary['invalid_rows']} invalid rows; "
+        f"{summary['duplicate_names']} duplicate recording names"
+    )
+    if arguments.check_audio:
+        print(
+            f"Audio checks: {summary['unreadable_wavs']} unreadable WAVs; "
+            f"{len(report['duration_mismatches'])} label/WAV duration mismatches"
+        )
+    print(
+        f"Coverage: {summary['phone_types']} phone types; {summary['transition_types']} non-silence transitions; "
+        f"{summary['short_phone_occurrences']} phone occurrences shorter than {arguments.short_phone_ms:g} ms"
+    )
+    if report["fatal_errors"]:
+        for error in report["fatal_errors"]:
+            print(f"ERROR: {error}")
+    for label, key in (
+        ("Missing WAVs", "missing_wavs"),
+        ("Invalid rows", "invalid_rows"),
+        ("Unreadable WAVs", "unreadable_wavs"),
+        ("Duplicate names", "duplicate_names"),
+    ):
+        values = report[key]
+        if values:
+            print(f"{label} (showing up to 10):")
+            for item in values[:10]:
+                print(f"  {item}")
+    if report["rare_phones"]:
+        print(f"Underrepresented phones (fewer than {arguments.min_phone_recordings} recordings; showing up to 20):")
+        for item in report["rare_phones"][:20]:
+            print(f"  {item['phone']}: {item['recordings']} recording(s), {item['occurrences']} occurrence(s)")
+    if report["rare_transitions"]:
+        print(f"Underrepresented adjacent-phone transitions (fewer than {arguments.min_transition_recordings} recordings; showing up to 20):")
+        for item in report["rare_transitions"][:20]:
+            print(
+                f"  {item['from']} -> {item['to']}: {item['recordings']} recording(s), "
+                f"{item['occurrences']} occurrence(s)"
+            )
+    if report["short_phone_examples"]:
+        print("Short phone examples (showing up to 10):")
+        for item in report["short_phone_examples"][:10]:
+            print(f"  {item['name']}: {item['phone']} at {item['duration_ms']:g} ms")
+    if report["duration_mismatches"]:
+        print("Label/WAV duration mismatches (showing up to 10):")
+        for item in report["duration_mismatches"][:10]:
+            print(
+                f"  {item['name']}: labels {item['label_seconds']:.3f}s, "
+                f"WAV {item['wav_seconds']:.3f}s"
+            )
+    if arguments.json_out:
+        output = Path(arguments.json_out).expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"Wrote audit report: {output}")
+    failed = bool(report["fatal_errors"]) or (
+        arguments.strict and any(
+            summary[key] for key in ("missing_wavs", "unreadable_wavs", "invalid_rows", "duplicate_names")
+        )
+    )
+    if failed:
+        raise SystemExit(2)
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trainsv")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -503,6 +578,16 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--save-best", action="store_true", help="also save the voice whenever the held-out score improves")
     command.add_argument("--final-version", help="also save the last step's weights, unselected, as this version")
     command.set_defaults(handler=finetune)
+
+    command = commands.add_parser("audit-data", help="audit WAV completeness, phone coverage, short phones, and adjacent-phone transitions")
+    command.add_argument("--data", required=True, help="dataset directory with wavs/ and transcriptions.csv")
+    command.add_argument("--min-phone-recordings", type=int, default=3, help="warn when a phone appears in fewer distinct WAVs")
+    command.add_argument("--min-transition-recordings", type=int, default=2, help="warn when an adjacent non-silence phone pair appears in fewer distinct WAVs")
+    command.add_argument("--short-phone-ms", type=float, default=20.0, help="flag non-silence phone labels shorter than this duration in milliseconds; 0 disables this check")
+    command.add_argument("--check-audio", action="store_true", help="inspect WAV headers and compare label duration with WAV duration")
+    command.add_argument("--json-out", help="optional path for a detailed JSON report; source dataset is never modified")
+    command.add_argument("--strict", action="store_true", help="exit with status 2 when missing WAVs, invalid rows, duplicate names, or unreadable WAVs are found")
+    command.set_defaults(handler=audit_data_command)
 
     command = commands.add_parser("import-lab", help="convert HTS/vLabeler .lab alignments and their wavs into a dataset")
     command.add_argument("--corpus", help="TrainV6 corpus: a directory of <name>.wav and <name>.lab (or wav/ and lab/), or a manifest.json")
