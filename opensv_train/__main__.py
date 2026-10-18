@@ -227,7 +227,12 @@ def import_lab(arguments) -> None:
     from .data import corpus_recordings, import_labels, lab_recordings
 
     if arguments.from_filenames:
-        from .filename_labels import filename_recordings, read_phone_table, write_lab_files
+        from .filename_labels import (
+            filename_recordings,
+            is_quality_analysis_cache_wav,
+            read_phone_table,
+            write_lab_files,
+        )
 
         if not arguments.wavs:
             raise SystemExit("--from-filenames requires --wavs")
@@ -259,6 +264,7 @@ def import_lab(arguments) -> None:
         discovered_wavs = [
             path for path in wav_directory.iterdir()
             if path.is_file() and path.suffix.casefold() == ".wav"
+            and not is_quality_analysis_cache_wav(path)
         ] if wav_directory.is_dir() else []
         print(
             f"WAV label generation: retained {len(recordings)} of {len(discovered_wavs)} "
