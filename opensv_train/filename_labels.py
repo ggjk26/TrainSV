@@ -184,6 +184,23 @@ VOCALOID_MANDARIN_COMPOSITES: dict[str, tuple[tuple[str, ...], ...]] = {
     "iUN": (("io", "ng"), ("io", "N"), ("iU", "N")),
 }
 
+def _map_rhoticized_at_pair(valid: set[str]) -> list[str] | None:
+    """Map the expanded at-vowel plus rhotic pair to target-supported phones."""
+    rhotic = "r" + chr(92)
+    if "@" in valid and rhotic in valid:
+        return ["@", rhotic]
+    # Prefer curated multi-phone representations supported by the target.
+    for candidate in VOCALOID_MANDARIN_PHONE_CANDIDATES.get("@" + chr(96), ()):
+        if len(candidate) == 2 and all(phone in valid for phone in candidate):
+            return list(candidate)
+    # A target-native erhua phone is safer than dropping the rhotic component.
+    if "er" in valid:
+        return ["er"]
+    if "3" in valid:
+        return ["3"]
+    return None
+
+
 def _map_vocaloid_mandarin(token: str, valid: set[str]) -> list[str] | None:
     """Map one VOCALOID Mandarin token to spellings present in the target inventory."""
     # VOCALOID 6 uses underscore forms for aspirated consonants. Preserve the
@@ -278,18 +295,38 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
     # Some VOCALOID exports percent-encode literal backslashes in phone names.
     # Normalize every occurrence before mapping, independent of hex-letter case.
     stem = re.sub(r"%5c", lambda _match: chr(92), stem, flags=re.IGNORECASE)
+    # Expand only a standalone rhoticized at-vowel token. The inserted space
+    # makes the vowel and rhotic component two ordered phones; embedded substrings
+    # in other symbols are not modified.
+    stem = re.sub(r"(?<!\\S)@" + chr(96) + r"(?!\\S)", "@" + " r" + chr(92), stem)
     raw_phones = stem.split()
     if not raw_phones:
         raise ValueError(f"{Path(filename).name}: filename contains no space-separated phonemes")
 
     phones = ["sil"]
-    for token in raw_phones:
+    consumed_tokens: set[int] = set()
+    for index, token in enumerate(raw_phones):
+        if index in consumed_tokens:
+            continue
         if token.casefold() == "sil":
             phones.append("sil")
             continue
 
         # For the rhoticized at-vowel, prefer the explicit X-SAMPA sequence
         # @ + r\ when supported, otherwise use the compatible 3 phone.
+        # Consume an expanded at-vowel + rhotic pair together before mapping
+        # individual symbols. Exact target phones win, then curated alternatives.
+        if (
+            token == "@"
+            and index + 1 < len(raw_phones)
+            and raw_phones[index + 1] == "r" + chr(92)
+        ):
+            converted_pair = _map_rhoticized_at_pair(valid)
+            if converted_pair is not None:
+                phones.extend(converted_pair)
+                consumed_tokens.add(index + 1)
+                continue
+
         if token == "@" + chr(96) and token not in valid:
             rhotic = "r" + chr(92)
             if "@" in valid and rhotic in valid:
