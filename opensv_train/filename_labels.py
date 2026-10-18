@@ -185,16 +185,34 @@ VOCALOID_MANDARIN_COMPOSITES: dict[str, tuple[tuple[str, ...], ...]] = {
 }
 
 def _map_rhoticized_at_pair(valid: set[str]) -> list[str] | None:
-    """Map the expanded at-vowel plus rhotic pair to target-supported phones."""
+    """Map the expanded at-vowel plus rhotic pair through known target aliases."""
     rhotic = "r" + chr(92)
-    if "@" in valid and rhotic in valid:
-        return ["@", rhotic]
-    if "@" in valid and "r" in valid:
-        return ["@", "r"]
+
+    # First apply the curated standard-X-SAMPA bridge. For SynthV's newer
+    # simplified Mandarin inventory, this maps '@' to 'e/' and 'r\\' to
+    # 'iz' when those target-native labels are present. This is the key fallback
+    # when the raw X-SAMPA rhotic symbol itself is not part of the model inventory.
+    vowel_mapping = _map_xsampa_mandarin("@", valid, "xsampa")
+    if vowel_mapping is None and "@" in valid:
+        vowel_mapping = ["@"]
+    rhotic_mapping = _map_xsampa_mandarin(rhotic, valid, "xsampa")
+    if rhotic_mapping is None:
+        if rhotic in valid:
+            rhotic_mapping = [rhotic]
+        elif "r" in valid:
+            rhotic_mapping = ["r"]
+    if vowel_mapping is not None and rhotic_mapping is not None:
+        return [*vowel_mapping, *rhotic_mapping]
+
     # Prefer curated multi-phone representations supported by the target.
     for candidate in VOCALOID_MANDARIN_PHONE_CANDIDATES.get("@" + chr(96), ()):
         if len(candidate) == 2 and all(phone in valid for phone in candidate):
             return list(candidate)
+    if "@" in valid and "rr" in valid:
+        return ["@", "rr"]
+    if "@" in valid and "-r" in valid:
+        return ["@", "-r"]
+
     # A target-native erhua phone is safer than dropping the rhotic component.
     if "er" in valid:
         return ["er"]
