@@ -175,6 +175,15 @@ def test_rhoticized_vowel_falls_back_to_available_rhotic_phone():
     assert parse_filename_phones("7 @`_0.wav", PHONES | {"r"}) == ["sil", "7", "@", "r", "sil"]
 
 
+def test_rhoticized_vowel_maps_to_legacy_synthv_rhotic_label():
+    # The pre-2.3 SynthV Mandarin phone table uses i\\ as the legacy alias
+    # for the modern X-SAMPA r\\ phone.
+    target = {"sil", "@", "i" + chr(92)}
+    assert parse_filename_phones(
+        "@" + chr(96) + "_0.wav", target
+    ) == ["sil", "@", "i" + chr(92)]
+
+
 def test_rhoticized_vowel_maps_through_synthv_mandarin_aliases():
     # In the newer SynthV Mandarin inventory, the curated bridge maps @ -> e/
     # and X-SAMPA r\\ -> iz when both target symbols exist.
