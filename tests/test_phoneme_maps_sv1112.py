@@ -39,7 +39,7 @@ def test_sv1112_cantonese_preserves_legacy_consonants_vowels_and_codas():
         source_system="sv1112-cantonese",
     )
     assert parsed == ["sil", *phones.split(), "sil"]
-    assert len(SV1112_CANTONESE_XSAMPA_TO_OLD) == 43
+    assert len(SV1112_CANTONESE_XSAMPA_TO_OLD) == 42
 
 
 def test_mapping_tables_use_old_labels_not_2_3_romanized_labels():
