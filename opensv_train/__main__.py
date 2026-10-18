@@ -61,6 +61,10 @@ def finetune(arguments) -> None:
     models = tuple(arguments.models.split(","))
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
+    if "pitch" in models and not getattr(voice.pitch, "supported", True):
+        raise SystemExit(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
+    if not getattr(voice.pitch, "supported", True):
+        print(f"Warning: {voice.pitch.reason}")
     if arguments.pitch_model:
         if "pitch" not in models:
             raise SystemExit("--pitch-model requires --models to include pitch")
@@ -433,9 +437,13 @@ def inspect(arguments) -> None:
     files = voice.files
     print(f"{files.metadata.get('.name', '?')} ({'info voice' if files.info else 'voice.nofs'}) vocal modes: {', '.join(files.vocal_modes) or '-'}")
     for role in ROLES:
+        model_file = files.models[role]
         model = voice.models[role]
+        if role == "pitch" and not getattr(model, "supported", True):
+            print(f"  {role:9s} DNNI v{model_file.version} opaque / unsupported; preserved unchanged (Pitch training disabled)")
+            continue
         count = sum(parameter.numel() for parameter in model.parameters())
-        print(f"  {role:9s} DNNI v{files.models[role].version} {count / 1e6:6.2f}M parameters")
+        print(f"  {role:9s} DNNI v{model_file.version} {count / 1e6:6.2f}M parameters")
     for phone_set in voice.acoustic.phone_sets:
         print(f"  {phone_set.name}: {' '.join(phone_set.symbols)}")
 
