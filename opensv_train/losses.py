@@ -23,9 +23,15 @@ def mel_filterbank(sample_rate: int, n_fft: int, mels: int, low: float, high: fl
 
 class SpectralLoss(nn.Module):
 
-    def __init__(self, sample_rate: int = 48000, mels: int = 128, mel_weight: float = 1.0, floor_db: float = 50.0):
+    def __init__(
+        self, sample_rate: int = 48000, mels: int = 128,
+        mel_weight: float = 1.0, floor_db: float = 50.0,
+        brightness_weight: float = 0.0,
+    ):
         super().__init__()
         self.mel_weight = mel_weight
+        self.brightness_weight = float(brightness_weight)
+        self.sample_rate = sample_rate
         self.floor = 10.0 ** (-floor_db / 20.0)
         for n_fft, _ in RESOLUTIONS:
             self.register_buffer(f"window{n_fft}", torch.hann_window(n_fft))
@@ -39,9 +45,33 @@ class SpectralLoss(nn.Module):
         floor = target.detach().amax() * self.floor + 1e-7
         return torch.mean(torch.abs(torch.log(target + floor) - torch.log(predicted + floor)) * frame_weights) / frame_weights.mean()
 
+    def _brightness_balance(
+        self, predicted: torch.Tensor, target: torch.Tensor, frame_weights: torch.Tensor
+    ) -> torch.Tensor:
+        """Match target high-to-mid spectral balance without applying a post filter.
+
+        The ratio uses 3–10 kHz versus 1–3 kHz power at the 2048-point STFT.
+        A zero brightness weight leaves the original training objective unchanged.
+        """
+        frequencies = torch.fft.rfftfreq(
+            2048, d=1.0 / self.sample_rate, device=predicted.device
+        )
+        mid_mask = ((frequencies >= 1000.0) & (frequencies < 3000.0)).to(predicted.dtype)
+        high_mask = ((frequencies >= 3000.0) & (frequencies <= 10000.0)).to(predicted.dtype)
+        p_mid = (predicted * mid_mask[:, None]).sum(dim=0)
+        p_high = (predicted * high_mask[:, None]).sum(dim=0)
+        t_mid = (target * mid_mask[:, None]).sum(dim=0)
+        t_high = (target * high_mask[:, None]).sum(dim=0)
+        floor = target.detach().amax() * self.floor + 1e-7
+        p_balance = torch.log(p_high + floor) - torch.log(p_mid + floor)
+        t_balance = torch.log(t_high + floor) - torch.log(t_mid + floor)
+        weights = frame_weights.to(p_balance.dtype)
+        return torch.mean(torch.abs(p_balance - t_balance) * weights) / weights.mean().clamp(min=1e-8)
+
     def forward(self, predicted: torch.Tensor, target: torch.Tensor, weights: torch.Tensor | None = None) -> dict[str, torch.Tensor]:
         convergence = predicted.new_zeros(())
         log_magnitude = predicted.new_zeros(())
+        brightness = predicted.new_zeros(())
         for n_fft, hop in RESOLUTIONS:
             p, t = self._magnitude(predicted, n_fft, hop), self._magnitude(target, n_fft, hop)
             frame_weights = p.new_ones(p.shape[1]) if weights is None else weights[torch.clamp(torch.arange(p.shape[1], device=p.device) * hop, max=len(weights) - 1)]
@@ -50,7 +80,16 @@ class SpectralLoss(nn.Module):
             log_magnitude = log_magnitude + self._log_distance(p, t, frame_weights)
             if n_fft == 2048:
                 mel = self._log_distance(self.mel @ p, self.mel @ t, frame_weights)
+                brightness = self._brightness_balance(p, t, frame_weights)
         count = len(RESOLUTIONS)
-        terms = {"convergence": convergence / count, "log_magnitude": log_magnitude / count, "mel": mel}
-        terms["total"] = terms["convergence"] + terms["log_magnitude"] + self.mel_weight * mel
+        terms = {
+            "convergence": convergence / count,
+            "log_magnitude": log_magnitude / count,
+            "mel": mel,
+            "brightness": brightness,
+        }
+        terms["total"] = (
+            terms["convergence"] + terms["log_magnitude"]
+            + self.mel_weight * mel + self.brightness_weight * brightness
+        )
         return terms
