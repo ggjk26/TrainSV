@@ -93,6 +93,8 @@ class Phrase:
     syllable_targets: list[float] | None = None
     phone_frames: list[int] = field(default_factory=list)
     problem: str | None = None
+    _frame_f0_cache: tuple[np.ndarray, np.ndarray] | None = field(default=None, init=False, repr=False, compare=False)
+    _pitch_f0_cache: tuple[np.ndarray, np.ndarray] | None = field(default=None, init=False, repr=False, compare=False)
 
     @property
     def frames(self) -> int:
@@ -102,8 +104,13 @@ class Phrase:
         return [TimedPhoneme(phone.language, phone.symbol, count) for phone, count in zip(self.phones, self.phone_frames)]
 
     def frame_f0(self) -> tuple[np.ndarray, np.ndarray]:
-        times = self.start + (np.arange(self.frames) + 0.5) * FRAME_SECONDS
-        return self.utterance.f0_at(times)
+        # Phrase timing and its utterance F0 target are immutable during a run.
+        # Cache this frame-aligned contour because acoustic training revisits
+        # the same phrases many times.
+        if self._frame_f0_cache is None:
+            times = self.start + (np.arange(self.frames) + 0.5) * FRAME_SECONDS
+            self._frame_f0_cache = self.utterance.f0_at(times)
+        return self._frame_f0_cache
 
     def audio(self) -> np.ndarray:
         first = int(round(self.start * SAMPLE_RATE))
@@ -133,12 +140,15 @@ class Phrase:
             begin = origin if index == 0 else phone.start
             end = stop if index == len(self.phones) - 1 else phone.end
             phonemes.append(PhonemeDuration(phone.language, phone.symbol, 0, 0, end - begin))
-        frames = int(round((stop - origin) / FRAME_SECONDS))
-        times = origin + np.arange(frames) * FRAME_SECONDS
-        hz, voiced = self.utterance.f0_at(times)
-        inside = (times >= first.start) & (times < last.end) & (times >= 0) & (times < len(self.utterance.audio) / SAMPLE_RATE)
-        midi = 69.0 + 12.0 * np.log2(hz / 440.0) - self.utterance.tuning
-        return notes, phonemes, midi.astype(np.float32), voiced & inside
+        if self._pitch_f0_cache is None:
+            frames = int(round((stop - origin) / FRAME_SECONDS))
+            times = origin + np.arange(frames) * FRAME_SECONDS
+            hz, voiced = self.utterance.f0_at(times)
+            inside = (times >= first.start) & (times < last.end) & (times >= 0) & (times < len(self.utterance.audio) / SAMPLE_RATE)
+            midi = 69.0 + 12.0 * np.log2(hz / 440.0) - self.utterance.tuning
+            self._pitch_f0_cache = (midi.astype(np.float32), voiced & inside)
+        midi, pitch_mask = self._pitch_f0_cache
+        return notes, phonemes, midi, pitch_mask
 
 
 def parse_note(name: str) -> float | None:
