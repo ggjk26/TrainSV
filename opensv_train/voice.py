@@ -8,7 +8,7 @@ from pathlib import Path
 
 import torch
 
-from .dnni import DnniFile
+from .dnni import DnniFile, OpaqueDnniFile
 from .nofs import InfoVoice, NofsFile, is_info_voice
 
 ROLES = ("duration", "pitch", "acoustic", "vocoder")
@@ -18,7 +18,7 @@ INFO_KINDS = {"duration": "duration", "pitch": "f0", "acoustic": "acoustic", "vo
 @dataclass
 class VoiceFiles:
     path: Path
-    models: dict[str, DnniFile]
+    models: dict[str, DnniFile | OpaqueDnniFile]
     metadata: dict[str, str]
     nofs: NofsFile | None = None
     info: InfoVoice | None = None
@@ -34,11 +34,44 @@ class VoiceFiles:
         return self.metadata.get(".feature_rap_languages", "").split()
 
 
+def _load_info_model(role: str, path: Path) -> DnniFile | OpaqueDnniFile:
+    """Load a shared-model dependency, preserving an unsupported Pitch v3 opaquely.
+
+    DNNI v3 is not parsed or interpreted here. Only the Pitch role may be kept
+    as an opaque byte payload so acoustic-only operations can leave it intact.
+    """
+    data = Path(path).read_bytes()
+    try:
+        return DnniFile.parse(data)
+    except ValueError:
+        if role == "pitch":
+            try:
+                return OpaqueDnniFile.from_bytes(data)
+            except ValueError:
+                pass
+        raise
+
+
+class UnavailablePitchModel(torch.nn.Module):
+    """Placeholder for a preserved Pitch file whose internals are unsupported."""
+
+    supported = False
+
+    def __init__(self, version: int):
+        super().__init__()
+        self.version = version
+        self.reason = (
+            f"Pitch DNNI v{version} is preserved without parsing; Pitch training, "
+            "Pitch-model initialization, and Pitch-network inference are unavailable. "
+            "Select acoustic-only training to keep this dependency unchanged."
+        )
+
+
 def load_voice(path) -> VoiceFiles:
     path = Path(path).expanduser()
     if is_info_voice(path):
         info = InfoVoice.load(path)
-        models = {role: DnniFile.load(info.models[role]) for role in ROLES}
+        models = {role: _load_info_model(role, info.models[role]) for role in ROLES}
         metadata = {".name": info.info.get("name", ""), ".language": info.info.get("language", "")}
         return VoiceFiles(path, models, metadata, info=info)
     nofs = NofsFile.load(path)
@@ -100,7 +133,10 @@ class Voice(torch.nn.Module):
             self.acoustic = AcousticModel(files.models["acoustic"], files.vocal_modes)
         else:
             self.duration = DurationModel(files.models["duration"], info.duration_voice)
-            self.pitch = PitchModel(files.models["pitch"], info.pitch_speaker)
+            if isinstance(files.models["pitch"], OpaqueDnniFile):
+                self.pitch = UnavailablePitchModel(files.models["pitch"].version)
+            else:
+                self.pitch = PitchModel(files.models["pitch"], info.pitch_speaker)
             self.acoustic = AcousticModel(files.models["acoustic"], list(info.vocal_modes), info.acoustic_speaker, info.default_style, list(info.vocal_modes.values()))
         self.vocoder = Vocoder(files.models["vocoder"])
 
@@ -115,12 +151,15 @@ class Voice(torch.nn.Module):
     def export(self) -> VoiceFiles:
         from .layers import export_parameters
 
-        for model in self.models.values():
+        for role, model in self.models.items():
+            if role == "pitch" and not getattr(model, "supported", True):
+                continue
             export_parameters(model)
         info = self.files.info
         if info is not None:
             info.duration_voice = self.duration.voice.detach().cpu().numpy()
-            info.pitch_speaker = self.pitch.speaker.detach().cpu().numpy()
+            if getattr(self.pitch, "supported", True):
+                info.pitch_speaker = self.pitch.speaker.detach().cpu().numpy()
             info.acoustic_speaker = self.acoustic.speaker.detach().cpu().numpy()
             info.default_style = self.acoustic.default_style.detach().cpu().numpy()
             info.vocal_modes = {name: style.detach().cpu().numpy() for name, style in zip(self.acoustic.vocal_modes, self.acoustic.mode_styles)}
@@ -162,6 +201,8 @@ def initialize_pitch_from_file(voice: Voice, source_path) -> int:
 
     from .pitch import PitchModel
 
+    if not getattr(voice.pitch, "supported", True):
+        raise ValueError(getattr(voice.pitch, "reason", "the target Pitch model is unsupported"))
     target_file = voice.files.models["pitch"]
     target = voice.pitch
     try:
