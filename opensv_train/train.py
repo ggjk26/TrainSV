@@ -89,6 +89,7 @@ class Trainer:
         self.optimizer = torch.optim.Adam(self.parameters, lr=self.rate)
         self.spectral = SpectralLoss().to(self.device)
         self.random = random.Random(config.seed)
+        self._phone_weights_cache: dict[int, np.ndarray] = {}
 
     def eligible(self, model: str, phrases: list[Phrase]) -> list[Phrase]:
         if model in ("duration", "pitch"):
@@ -114,12 +115,19 @@ class Trainer:
         rendered = vocoder(frames[begin:end], deterministic_noise=self.config.fixed_noise).samples
         hop = vocoder.hop
         predicted = rendered[(first - begin) * hop:(first - begin + width) * hop]
-        audio = phrase.audio()[first * hop:(first + width) * hop]
+        audio = phrase.audio_segment(first * hop, width * hop)
         target = torch.from_numpy(audio).to(self.device, predicted.dtype)
         weights = None
         if not full and self.config.consonant_weight != 1.0:
-            per_frame = np.repeat([self._phone_weight(phone.language, phone.symbol) for phone in phrase.phones], phrase.phone_frames)
-            weights = torch.from_numpy(np.repeat(per_frame[first:first + width], hop).astype(np.float32)).to(self.device, predicted.dtype)
+            key = id(phrase)
+            per_frame = self._phone_weights_cache.get(key)
+            if per_frame is None:
+                per_frame = np.repeat(
+                    [self._phone_weight(phone.language, phone.symbol) for phone in phrase.phones],
+                    phrase.phone_frames,
+                ).astype(np.float32)
+                self._phone_weights_cache[key] = per_frame
+            weights = torch.from_numpy(np.repeat(per_frame[first:first + width], hop)).to(self.device, predicted.dtype)
         terms = self.spectral(predicted, target, weights)
         voicing = acoustic.acoustic_normalizer.denormalize(output.normalized)[:, 0].clamp(1e-4, 1 - 1e-4)
         terms["voicing"] = F.binary_cross_entropy(voicing, target_voicing)
