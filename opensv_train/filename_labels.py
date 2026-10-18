@@ -329,7 +329,6 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
     # The explicit SV 1.11.2 Chinese map handles its VOCALOID alias as one phone.
     if source_system not in {"sv1112-chinese", "sv1112-cantonese"}:
         stem = re.sub(r"(?<!\S)@" + chr(96) + r"(?!\S)", lambda _match: "@" + " r" + chr(92), stem)
-    stem = re.sub(r"(?<!\S)@" + chr(96) + r"(?!\S)", lambda _match: "@" + " r" + chr(92), stem)
     raw_phones = stem.split()
     if not raw_phones:
         raise ValueError(f"{Path(filename).name}: filename contains no space-separated phonemes")
