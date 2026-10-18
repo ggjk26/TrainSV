@@ -13,9 +13,22 @@ from .common import find_language
 from .data import Phrase
 from .duration import interval_log_fractions
 from .losses import SpectralLoss
+from .pitch import PitchInputs
 from .voice import Voice
 
 MODELS = ("acoustic", "duration", "pitch", "vocoder")
+
+
+@dataclass
+class PitchTrainingCache:
+    inputs: PitchInputs
+    count: int
+    target: torch.Tensor
+    weights: torch.Tensor
+    voiced: torch.Tensor
+    slow_target: torch.Tensor
+    fast_target: torch.Tensor
+    target_motion_spectrum: torch.Tensor
 
 
 @dataclass
@@ -89,6 +102,10 @@ class Trainer:
         self.optimizer = torch.optim.Adam(self.parameters, lr=self.rate)
         self.spectral = SpectralLoss().to(self.device)
         self.random = random.Random(config.seed)
+        self._phone_weights_cache: dict[int, np.ndarray] = {}
+        # Pitch preprocessing is deterministic for a phrase and fixed run
+        # configuration, so keep it out of the per-optimizer-step hot path.
+        self._pitch_cache: dict[int, PitchTrainingCache] = {}
 
     def eligible(self, model: str, phrases: list[Phrase]) -> list[Phrase]:
         if model in ("duration", "pitch"):
@@ -114,12 +131,19 @@ class Trainer:
         rendered = vocoder(frames[begin:end], deterministic_noise=self.config.fixed_noise).samples
         hop = vocoder.hop
         predicted = rendered[(first - begin) * hop:(first - begin + width) * hop]
-        audio = phrase.audio()[first * hop:(first + width) * hop]
+        audio = phrase.audio_segment(first * hop, width * hop)
         target = torch.from_numpy(audio).to(self.device, predicted.dtype)
         weights = None
         if not full and self.config.consonant_weight != 1.0:
-            per_frame = np.repeat([self._phone_weight(phone.language, phone.symbol) for phone in phrase.phones], phrase.phone_frames)
-            weights = torch.from_numpy(np.repeat(per_frame[first:first + width], hop).astype(np.float32)).to(self.device, predicted.dtype)
+            key = id(phrase)
+            per_frame = self._phone_weights_cache.get(key)
+            if per_frame is None:
+                per_frame = np.repeat(
+                    [self._phone_weight(phone.language, phone.symbol) for phone in phrase.phones],
+                    phrase.phone_frames,
+                ).astype(np.float32)
+                self._phone_weights_cache[key] = per_frame
+            weights = torch.from_numpy(np.repeat(per_frame[first:first + width], hop)).to(self.device, predicted.dtype)
         terms = self.spectral(predicted, target, weights)
         voicing = acoustic.acoustic_normalizer.denormalize(output.normalized)[:, 0].clamp(1e-4, 1 - 1e-4)
         terms["voicing"] = F.binary_cross_entropy(voicing, target_voicing)
@@ -142,21 +166,45 @@ class Trainer:
 
     def pitch_terms(self, phrase: Phrase) -> dict[str, torch.Tensor]:
         model = self.voice.pitch
-        notes, phonemes, midi, mask = phrase.pitch_example()
-        inputs = model.prepare(notes, phonemes, self.config.rap_languages)
-        count = min(inputs.frames, len(midi))
+        key = id(phrase)
+        cached = self._pitch_cache.get(key)
+        if cached is None:
+            example = phrase.pitch_example()
+            if example is None:
+                raise ValueError(f"{phrase.utterance.name}: phrase has no usable Pitch example")
+            notes, phonemes, midi, mask = example
+            inputs = model.prepare(notes, phonemes, self.config.rap_languages)
+            count = min(inputs.frames, len(midi))
+            scale = model.note_normalizer.scale[2]
+            target = model.normalize_pitch(
+                torch.from_numpy(midi[:count] + inputs.transpose).to(self.device)
+            ) * scale
+            target = target.detach()
+            weights = torch.from_numpy(mask[:count].astype(np.float32)).to(self.device)
+            voiced = weights.sum().clamp(min=1.0)
+            slow_target = _low_pass(target, cutoff_hz=self.config.pitch_smoothing_hz)
+            fast_target = (target - slow_target) * weights
+            target_spectrum = _motion_spectrum(fast_target)
+            cached = PitchTrainingCache(
+                inputs=inputs,
+                count=count,
+                target=target,
+                weights=weights,
+                voiced=voiced,
+                slow_target=slow_target,
+                fast_target=fast_target,
+                target_motion_spectrum=target_spectrum,
+            )
+            self._pitch_cache[key] = cached
+
         scale = model.note_normalizer.scale[2]
-        predicted = model(inputs)[:count] * scale
-        target = model.normalize_pitch(torch.from_numpy(midi[:count] + inputs.transpose).to(self.device)) * scale
-        weights = torch.from_numpy(mask[:count].astype(np.float32)).to(self.device)
-        voiced = weights.sum().clamp(min=1.0)
+        predicted = model(cached.inputs)[:cached.count] * scale
         slow_predicted = _low_pass(predicted, cutoff_hz=self.config.pitch_smoothing_hz)
-        slow_target = _low_pass(target, cutoff_hz=self.config.pitch_smoothing_hz)
-        melody = (torch.abs(slow_predicted - slow_target) * weights).sum() / voiced
-        fast_predicted, fast_target = (predicted - slow_predicted) * weights, (target - slow_target) * weights
-        motion = (_motion_spectrum(fast_predicted) - _motion_spectrum(fast_target)).abs().mean()
-        frame_error = (torch.abs(predicted - target) * weights).sum() / voiced
-        ratio = fast_predicted.detach().abs().sum() / fast_target.abs().sum().clamp(min=1e-6)
+        melody = (torch.abs(slow_predicted - cached.slow_target) * cached.weights).sum() / cached.voiced
+        fast_predicted = (predicted - slow_predicted) * cached.weights
+        motion = (_motion_spectrum(fast_predicted) - cached.target_motion_spectrum).abs().mean()
+        frame_error = (torch.abs(predicted - cached.target) * cached.weights).sum() / cached.voiced
+        ratio = fast_predicted.detach().abs().sum() / cached.fast_target.abs().sum().clamp(min=1e-6)
         weighted = self.config.pitch_melody_weight * melody + self.config.pitch_motion_weight * motion
         return {"pitch": weighted, "pitch_semitones": frame_error, "pitch_melody": melody, "pitch_motion": ratio}
 
@@ -174,15 +222,37 @@ class Trainer:
         return "acoustic" if model in ("acoustic", "vocoder") else model
 
     def evaluate(self) -> dict[str, float]:
-        totals: dict[str, list[float]] = {}
+        totals: dict[str, list[torch.Tensor]] = {}
+        pending: dict[str, list[torch.Tensor]] = {}
+        counts: dict[str, int] = {}
+        chunk_size = 128
         audio_models = [m for m in self.config.models if m in ("acoustic", "vocoder")][:1]
         other = [m for m in self.config.models if m in ("duration", "pitch")]
         with torch.no_grad():
             for model in audio_models + other:
                 for phrase in self.eligible(model, self.validation_phrases):
                     for key, value in self.step_terms(model, phrase, full=True).items():
-                        totals.setdefault(key, []).append(float(value))
-        return {key: float(np.mean(values)) for key, values in totals.items()}
+                        # Reduce small chunks to bound temporary tensor retention
+                        # while still avoiding a synchronization per phrase.
+                        bucket = pending.setdefault(key, [])
+                        bucket.append(value.detach())
+                        counts[key] = counts.get(key, 0) + 1
+                        if len(bucket) >= chunk_size:
+                            totals.setdefault(key, []).append(
+                                torch.stack(bucket).to(torch.float64).sum()
+                            )
+                            pending[key] = []
+        if not counts:
+            return {}
+        for key, bucket in pending.items():
+            if bucket:
+                totals.setdefault(key, []).append(torch.stack(bucket).to(torch.float64).sum())
+        # Transfer all final means together and preserve float64 aggregation.
+        keys = list(totals)
+        means = torch.stack([
+            torch.stack(totals[key]).sum() / counts[key] for key in keys
+        ]).cpu().tolist()
+        return dict(zip(keys, map(float, means)))
 
     def run(self, resume: dict | None = None) -> list[dict]:
         config = self.config
@@ -202,9 +272,17 @@ class Trainer:
             history.append({"step": 0, **metrics})
             best = {key: (self._selection(key, metrics), 0, self._snapshot(group)) for key, group in self.groups.items() if key in metrics}
         started = time.time()
-        running: dict[str, list[float]] = {}
+        # Prepare eligible examples and cumulative duration weights once, not
+        # on every optimizer step. random.choices accepts cumulative weights
+        # directly, avoiding rebuilding the prefix sums for audio sampling.
+        running: dict[str, list[torch.Tensor]] = {}
         audio_model = "vocoder" if "vocoder" in config.models else "acoustic"
         schedule = [m for m in config.models if m in ("duration", "pitch")] + ([audio_model] if any(m in ("acoustic", "vocoder") for m in config.models) else [])
+        eligible_by_model = {model: self.eligible(model, self.train_phrases) for model in schedule}
+        cumulative_weights = {}
+        for model, phrases in eligible_by_model.items():
+            if model in ("acoustic", "vocoder") and phrases:
+                cumulative_weights[model] = np.cumsum([phrase.frames for phrase in phrases]).tolist()
         for step in range(start + 1, config.steps + 1):
             rate = learning_rate(step, config.steps, self.rate, config.warmup, config.lr_end)
             for group in self.optimizer.param_groups:
@@ -212,15 +290,20 @@ class Trainer:
             self.optimizer.zero_grad()
             loss = self.parameters[0].new_zeros(())
             for model in schedule:
-                phrases = self.eligible(model, self.train_phrases)
+                phrases = eligible_by_model[model]
                 if not phrases:
                     continue
-                weights = [phrase.frames for phrase in phrases] if model in ("acoustic", "vocoder") else None
                 for _ in range(config.batch):
-                    terms = self.step_terms(model, self.random.choices(phrases, weights=weights)[0])
+                    if model in cumulative_weights:
+                        phrase = self.random.choices(phrases, cum_weights=cumulative_weights[model])[0]
+                    else:
+                        phrase = self.random.choices(phrases)[0]
+                    terms = self.step_terms(model, phrase)
                     loss = loss + terms[self.loss_key(model)] / config.batch
                     for key, value in terms.items():
-                        running.setdefault(key, []).append(float(value.detach()))
+                        # Keep detached scalars on-device and synchronize only
+                        # when the log interval is emitted.
+                        running.setdefault(key, []).append(value.detach())
             penalty = self.anchor_penalty()
             loss = loss + config.anchor * penalty
             if not torch.isfinite(loss):
@@ -228,10 +311,15 @@ class Trainer:
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.parameters, config.gradient_clip)
             self.optimizer.step()
-            running.setdefault("anchor", []).append(float(penalty.detach()))
+            running.setdefault("anchor", []).append(penalty.detach())
             if step % config.log_every == 0:
                 seconds = (time.time() - started) / (step - start)
-                means = {k: float(np.mean(v)) for k, v in running.items()}
+                # One device-to-host transfer for the whole metrics batch,
+                # rather than one scalar synchronization for every term and step.
+                metric_keys = list(running)
+                metric_values = [torch.stack(values).to(torch.float64).mean() for values in running.values()]
+                host_values = torch.stack(metric_values).detach().cpu().tolist()
+                means = dict(zip(metric_keys, map(float, host_values)))
                 self.log(f"step {step}/{config.steps} ({seconds:.2f}s/step): {_format(means)}")
                 self._record({"step": step, "seconds_per_step": seconds, "lr": rate, **means})
                 running = {}
@@ -280,6 +368,7 @@ class Trainer:
 
 
 _LOW_PASS: dict[tuple[str, float, float], torch.Tensor] = {}
+_MOTION_WINDOWS: dict[tuple[str, torch.dtype], torch.Tensor] = {}
 
 
 def _low_pass(curve: torch.Tensor, cutoff_hz: float = 3.0, frame_rate: float = 200.0) -> torch.Tensor:
@@ -297,7 +386,11 @@ def _low_pass(curve: torch.Tensor, cutoff_hz: float = 3.0, frame_rate: float = 2
 
 
 def _motion_spectrum(curve: torch.Tensor) -> torch.Tensor:
-    window = torch.hann_window(128, device=curve.device)
+    key = (str(curve.device), curve.dtype)
+    window = _MOTION_WINDOWS.get(key)
+    if window is None:
+        window = torch.hann_window(128, device=curve.device, dtype=curve.dtype)
+        _MOTION_WINDOWS[key] = window
     padded = F.pad(curve, (0, max(0, 128 - len(curve))))
     return torch.stft(padded, 128, 16, window=window, return_complex=True).abs()
 
