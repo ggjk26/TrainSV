@@ -162,6 +162,20 @@ Other commands:
 - `inspect --voice <voice>`: list a voice's models, parameter counts, vocal modes and phone sets
 - `synthesize-dataset --voice <voice> --output <dataset>`: render a labelled dataset with any voice. Finetuning one voice towards another voice's renders is a quick end-to-end check that needs no recordings
 
+### Reducing nasal coloring (experimental)
+
+Two opt-in options target vowels that pick up nasal coloring. Both default to off and neither is a post-render EQ.
+
+- `--oral-vowel-weight W` (>= 1): weights the training frames of vowels with no directly adjacent nasal consonant, so the model is pushed to keep them oral instead of smearing nasalization across the voice. Try `2`.
+- `--nasal-band-weight W` (>= 0): on those same vowel frames, compares the 200–450 Hz to 450–1100 Hz power ratio with the recording's own ratio on the same frames, and penalizes only excess low-band weight. It is one-sided, so matching or undershooting the recording costs nothing. The loss is in units of 10 dB; start around `0.05`–`0.2`. `--nasal-margin-db M` (0–12) asks for M dB *less* than the recording, which is the only way to end up less nasal than the data itself; keep it small, such as `2`.
+
+With the weight above 0, validation also reports `nasal` and `nasal_delta_db` (positive means more low-band heavy than the recording), and `nasal` joins the best-checkpoint score. `evaluate` accepts the same two nasal options to report them. These are spectral proxies chosen by phone category, not a nasality classifier: listen to matching vowels, and compare against a run without them from the same base.
+
+```sh
+trainsv finetune --voice <voice> --data <dataset> --language zh --output <out-voice> --run <run> \
+  --oral-vowel-weight 2 --nasal-band-weight 0.1 --nasal-margin-db 2
+```
+
 ## Voice output
 
 A `voice.nofs` voice is written as a `voice.nofs` with its model entries patched in place. An `info.<version>.nofs` voice (shared models) is written to the `databases/<name>/` directory given by `--output`, with changed models added to the sibling `models/<kind>/<md5>.dnni` tree. `--name` sets the singer name and `--version` the info voice's version.

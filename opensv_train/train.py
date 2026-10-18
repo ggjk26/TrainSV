@@ -13,6 +13,7 @@ from .common import find_language
 from .data import Phrase
 from .duration import interval_log_fractions
 from .losses import SpectralLoss
+from .nasality import oral_vowel_frames
 from .pitch import PitchInputs
 from .transitions import transition_frame_weights
 from .voice import Voice
@@ -59,6 +60,9 @@ class TrainConfig:
     transition_weight: float = 1.0
     transition_frames: int = 2
     brightness_weight: float = 0.0
+    oral_vowel_weight: float = 1.0
+    nasal_band_weight: float = 0.0
+    nasal_margin_db: float = 0.0
 
 
 def parameter_groups(voice: Voice, models, params: str) -> dict[str, list[torch.nn.Parameter]]:
@@ -96,6 +100,12 @@ class Trainer:
             raise ValueError("transition frames must be non-negative")
         if not math.isfinite(config.brightness_weight) or config.brightness_weight < 0:
             raise ValueError("brightness weight must be finite and non-negative")
+        if not math.isfinite(config.oral_vowel_weight) or config.oral_vowel_weight < 1.0:
+            raise ValueError("oral vowel weight must be finite and at least 1.0")
+        if not math.isfinite(config.nasal_band_weight) or config.nasal_band_weight < 0:
+            raise ValueError("nasal band weight must be finite and non-negative")
+        if not math.isfinite(config.nasal_margin_db) or not 0.0 <= config.nasal_margin_db <= 12.0:
+            raise ValueError("nasal margin must be between 0 and 12 dB")
         self.log = log
         self.device = torch.device(config.device)
         voice.to(self.device)
@@ -110,9 +120,14 @@ class Trainer:
         default_rate = 3e-3 if config.params == "embeddings" else 2e-5
         self.rate = config.learning_rate or default_rate
         self.optimizer = torch.optim.Adam(self.parameters, lr=self.rate)
-        self.spectral = SpectralLoss(brightness_weight=config.brightness_weight).to(self.device)
+        self.spectral = SpectralLoss(
+            brightness_weight=config.brightness_weight,
+            nasal_weight=config.nasal_band_weight,
+            nasal_margin_db=config.nasal_margin_db,
+        ).to(self.device)
         self.random = random.Random(config.seed)
         self._phone_weights_cache: dict[int, np.ndarray] = {}
+        self._oral_frames_cache: dict[int, np.ndarray] = {}
         # Pitch preprocessing is deterministic for a phrase and fixed run
         # configuration, so keep it out of the per-optimizer-step hot path.
         self._pitch_cache: dict[int, PitchTrainingCache] = {}
@@ -144,8 +159,12 @@ class Trainer:
         audio = phrase.audio_segment(first * hop, width * hop)
         target = torch.from_numpy(audio).to(self.device, predicted.dtype)
         weights = None
+        oral = None
+        if self.config.nasal_band_weight > 0 or self.config.oral_vowel_weight != 1.0:
+            oral = self._oral_frames(phrase)
         if not full and (
             self.config.consonant_weight != 1.0 or self.config.transition_weight != 1.0
+            or self.config.oral_vowel_weight != 1.0
         ):
             key = id(phrase)
             per_frame = self._phone_weights_cache.get(key)
@@ -164,21 +183,41 @@ class Trainer:
                         radius=self.config.transition_frames,
                     )
                     per_frame = per_frame * transition
+                if self.config.oral_vowel_weight != 1.0:
+                    per_frame = per_frame * np.where(
+                        oral > 0, np.float32(self.config.oral_vowel_weight), np.float32(1.0)
+                    ).astype(np.float32)
                 self._phone_weights_cache[key] = per_frame
             weights = torch.from_numpy(
                 np.repeat(per_frame[first:first + width], hop)
             ).to(self.device, predicted.dtype)
-        terms = self.spectral(predicted, target, weights)
+        nasal_mask = None
+        if self.config.nasal_band_weight > 0:
+            nasal_mask = torch.from_numpy(np.repeat(oral[first:first + width], hop)).to(self.device, predicted.dtype)
+        terms = self.spectral(predicted, target, weights, nasal_mask)
         voicing = acoustic.acoustic_normalizer.denormalize(output.normalized)[:, 0].clamp(1e-4, 1 - 1e-4)
         terms["voicing"] = F.binary_cross_entropy(voicing, target_voicing)
         terms["acoustic"] = terms["total"] + self.config.voicing_weight * terms["voicing"]
         return terms
 
-    def _phone_weight(self, language: str, symbol: str) -> float:
+    def _phone_category(self, language: str, symbol: str) -> str:
         phone_sets = self.voice.acoustic.phone_sets
         phone_set = phone_sets[find_language(phone_sets, language)]
-        category = phone_set.categories[phone_set.symbols.index(symbol)]
+        return phone_set.categories[phone_set.symbols.index(symbol)]
+
+    def _phone_weight(self, language: str, symbol: str) -> float:
+        category = self._phone_category(language, symbol)
         return 1.0 if category in ("vowel", "diphthong", "silence", "breath") else self.config.consonant_weight
+
+    def _oral_frames(self, phrase: Phrase) -> np.ndarray:
+        """Frames of vowels without a nasal neighbour (cached per phrase)."""
+        key = id(phrase)
+        frames = self._oral_frames_cache.get(key)
+        if frames is None:
+            categories = [self._phone_category(phone.language, phone.symbol) for phone in phrase.phones]
+            frames = oral_vowel_frames(categories, phrase.phone_frames)
+            self._oral_frames_cache[key] = frames
+        return frames
 
     def duration_terms(self, phrase: Phrase) -> dict[str, torch.Tensor]:
         model = self.voice.duration
@@ -381,6 +420,7 @@ class Trainer:
                 metrics["mel"]
                 + self.config.voicing_weight * metrics["voicing"]
                 + self.config.brightness_weight * metrics.get("brightness", 0.0)
+                + self.config.nasal_band_weight * metrics.get("nasal", 0.0)
             )
         return metrics[key]
 

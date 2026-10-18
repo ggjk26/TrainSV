@@ -158,6 +158,9 @@ def finetune(arguments) -> None:
         transition_weight=arguments.transition_weight,
         transition_frames=arguments.transition_frames,
         brightness_weight=arguments.brightness_weight,
+        oral_vowel_weight=arguments.oral_vowel_weight,
+        nasal_band_weight=arguments.nasal_band_weight,
+        nasal_margin_db=arguments.nasal_margin_db,
     )
     calibration = random.Random(arguments.seed).sample(phrases, min(40, len(phrases)))
     models_root = Path(arguments.output).expanduser().parent.parent / "models"
@@ -380,6 +383,8 @@ def evaluate(arguments) -> None:
             pitch_motion_weight=arguments.pitch_motion_weight,
             pitch_smoothing_hz=arguments.pitch_smoothing_hz,
             brightness_weight=arguments.brightness_weight,
+            nasal_band_weight=arguments.nasal_band_weight,
+            nasal_margin_db=arguments.nasal_margin_db,
         )
         metrics = Trainer(voice, [], validation, config, log=lambda message: None).evaluate()
         name = voice.files.metadata.get(".name", path)
@@ -587,6 +592,9 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--transition-weight", type=float, default=1.0, help="extra weight for non-silence phoneme handoffs in the acoustic training loss; 1 disables it")
     command.add_argument("--transition-frames", type=int, default=2, help="frames on either side of each speech-phone boundary to emphasize (5 ms per frame)")
     command.add_argument("--brightness-weight", type=float, default=0.0, help="optional loss weight for matching target high/mid spectral balance; 0 disables it")
+    command.add_argument("--oral-vowel-weight", type=float, default=1.0, help="extra weight (>= 1) for vowels with no adjacent nasal consonant in the training audio loss; 1 disables it")
+    command.add_argument("--nasal-band-weight", type=float, default=0.0, help="loss weight that penalizes oral-vowel frames whose 200-450 Hz vs 450-1100 Hz balance is more nasal than the recording; 0 disables it")
+    command.add_argument("--nasal-margin-db", type=float, default=0.0, help="ask for this many dB (0-12) less low-band weight than the recording on oral vowels; 0 only penalizes excess")
     command.add_argument("--validation", type=float, default=0.1, help="phrases held out: a fraction, or a count when 1 or more")
     command.add_argument("--evaluate-every", "--val-every", type=int, default=250)
     command.add_argument("--log-every", type=int, default=25)
@@ -661,6 +669,8 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--pitch-melody-weight", type=float, default=None, help="override the default Pitch model smooth-melody loss weight")
     command.add_argument("--pitch-motion-weight", type=float, default=None, help="override the default Pitch model fast-motion/vibrato loss weight")
     command.add_argument("--brightness-weight", type=float, default=0.0, help="brightness-balance loss weight (0 disables)")
+    command.add_argument("--nasal-band-weight", type=float, default=0.0, help="report the oral-vowel nasal-band metrics (weight only scales the combined score; 0 disables)")
+    command.add_argument("--nasal-margin-db", type=float, default=0.0, help="dB margin for the nasal-band metric (0-12)")
     command.add_argument("--validation", type=float, default=0.1)
     command.add_argument("--phoneme-map")
     command.add_argument("--seed", type=int, default=0)

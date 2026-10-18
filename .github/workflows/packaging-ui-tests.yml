@@ -24,6 +24,8 @@ on:
       - "tests/test_data.py"
       - "tests/test_transition_audit.py"
       - "tests/test_timbre_profiles.py"
+      - "tests/test_nasality.py"
+      - "opensv_train/nasality.py"
       - "tests/test_gui_performance.py"
       - "tests/test_audio_io.py"
       - "tests/test_pitch.py"
@@ -63,3 +65,4 @@ jobs:
           python -m pytest -q tests/test_gui_performance.py
           python -m pytest -q tests/test_transition_audit.py
           python -m pytest -q tests/test_timbre_profiles.py
+          python -m pytest -q tests/test_nasality.py
