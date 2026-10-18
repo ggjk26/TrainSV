@@ -181,3 +181,63 @@ def test_unvoiced_silence_and_consonant_sample_is_kept_when_f0_is_empty(tmp_path
     assert not voiced.any()
 
 
+
+
+def test_phrase_frame_f0_is_cached_across_repeated_training_steps():
+    from opensv_train.data import Phrase
+
+    class CountingUtterance:
+        def __init__(self):
+            self.calls = 0
+
+        def f0_at(self, times):
+            self.calls += 1
+            return np.full(times.shape, 220.0, dtype=np.float32), np.ones(times.shape, dtype=bool)
+
+    utterance = CountingUtterance()
+    phrase = Phrase(
+        utterance=utterance,
+        start=0.0,
+        end=0.01,
+        phones=[],
+        phone_frames=[1, 1],
+    )
+
+    first_hz, first_voiced = phrase.frame_f0()
+    second_hz, second_voiced = phrase.frame_f0()
+
+    assert utterance.calls == 1
+    assert first_hz is second_hz
+    assert first_voiced is second_voiced
+    assert np.all(first_hz == 220.0)
+    assert np.all(first_voiced)
+
+
+
+@pytest.mark.parametrize("phrase_start", [-0.05, 0.0, 0.08, 0.25])
+def test_audio_segment_matches_full_phrase_padding(phrase_start):
+    from opensv_train.data import Phrase, Utterance
+
+    audio = np.linspace(-1.0, 1.0, 12000, dtype=np.float32)
+    utterance = Utterance(
+        name="window",
+        audio=audio,
+        phones=[],
+        notes=None,
+        f0_times=np.array([], dtype=np.float64),
+        f0_values=np.array([], dtype=np.float32),
+    )
+    phrase = Phrase(
+        utterance=utterance,
+        start=phrase_start,
+        end=phrase_start + 0.4,
+        phones=[],
+        phone_frames=[20, 20, 40],
+    )
+    full = phrase.audio()
+    for start, count in ((0, 480), (960, 1440), (6000, 1920), (18000, 480)):
+        expected = full[start:start + count]
+        if len(expected) < count:
+            expected = np.pad(expected, (0, count - len(expected)))
+        actual = phrase.audio_segment(start, count)
+        np.testing.assert_array_equal(actual, expected)
