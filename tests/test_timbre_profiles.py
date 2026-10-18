@@ -34,9 +34,15 @@ def test_high_band_diagnostic_detects_spectral_balance_change():
 
 
 def test_timbre_summary_compares_target_and_render_and_disclaims_nasality():
-    result = summarize_timbre([_tone(False)], [_tone(True)])
-    assert result["phrases"] == 1
+    result = summarize_timbre(
+        [_tone(False), _tone(False)],
+        [_tone(True), _tone(True)],
+        phrase_names=["song_a_0.00", "song_b_1.50"],
+    )
+    assert result["phrases"] == 2
     assert result["delta"]["high_mid_ratio_db"] > 0
+    assert [item["name"] for item in result["per_phrase"]] == ["song_a_0.00", "song_b_1.50"]
+    assert result["per_phrase"][0]["delta"]["high_mid_ratio_db"] > 0
     assert "not" in result["caveat"].lower()
     assert result["reference"]["spectral_centroid_hz"] < result["rendered"]["spectral_centroid_hz"]
 
@@ -56,4 +62,6 @@ def test_brightness_and_preset_controls_are_wired_into_training_and_webui():
     assert 'data-id="t_brightness_weight"' in gui
     assert "function applyTimbrePreset(name)" in gui
     assert "timbre_diagnostics.json" in cli
+    assert "phrase_names=phrase_names" in cli
+    assert "Phrase-level diagnostic deltas" in gui
     assert '"timbre_diagnostics": timbre_diagnostics' in gui
