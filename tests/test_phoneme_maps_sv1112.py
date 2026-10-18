@@ -55,6 +55,8 @@ def test_sv1112_cantonese_preserves_legacy_consonants_vowels_and_codas():
 
 def test_mapping_tables_use_old_labels_not_2_3_romanized_labels():
     assert SV1112_CHINESE_XSAMPA_TO_OLD["O"] == ("o",)
+    assert len(SV1112_CHINESE_XSAMPA_TO_OLD) == 55
+    assert SV1112_CHINESE_XSAMPA_TO_OLD["i^"] == (":\\i",)
     assert SV1112_CHINESE_XSAMPA_TO_OLD["r" + chr(92)] == ("i" + chr(92),)
     assert SV1112_VOCALOID_MANDARIN_ALIASES["p_h"] == (("ph",),)
     assert SV1112_CANTONESE_XSAMPA_TO_OLD["p"] == ("p",)
