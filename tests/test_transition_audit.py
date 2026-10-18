@@ -108,3 +108,46 @@ def test_audit_data_command_is_documented_in_cli():
     assert 'commands.add_parser("audit-data"' in cli
     assert 'command.set_defaults(handler=audit_data_command)' in cli
     assert 'command.add_argument("--strict"' in cli
+
+
+
+def test_transition_frame_weights_emphasize_only_speech_handoffs():
+    from types import SimpleNamespace
+
+    from opensv_train.train import transition_frame_weights
+
+    phones = [
+        SimpleNamespace(symbol="sil"),
+        SimpleNamespace(symbol="k"),
+        SimpleNamespace(symbol="a"),
+        SimpleNamespace(symbol="t"),
+        SimpleNamespace(symbol="sil"),
+    ]
+    frames = [3, 4, 5, 4, 3]
+
+    baseline = transition_frame_weights(phones, frames)
+    assert np.all(baseline == 1.0)
+
+    weighted = transition_frame_weights(phones, frames, weight=1.5, radius=2)
+    assert weighted.shape == (sum(frames),)
+    assert np.all(weighted[:3] == 1.0)  # silence -> consonant is excluded
+    assert np.all(weighted[5:9] == 1.5)  # k -> a handoff
+    assert np.all(weighted[9:13] == 1.5)  # a -> t handoff
+    assert np.all(weighted[13:] == 1.0)  # consonant -> silence is excluded
+
+
+def test_transition_frame_weights_validate_settings_and_phone_alignment():
+    import pytest
+    from types import SimpleNamespace
+
+    from opensv_train.train import transition_frame_weights
+
+    phones = [SimpleNamespace(symbol="k"), SimpleNamespace(symbol="a")]
+    with pytest.raises(ValueError, match="at least 1.0"):
+        transition_frame_weights(phones, [2, 2], weight=0.5)
+    with pytest.raises(ValueError, match="non-negative"):
+        transition_frame_weights(phones, [2, 2], radius=-1)
+    with pytest.raises(ValueError, match="one positive duration"):
+        transition_frame_weights(phones, [2])
+    with pytest.raises(ValueError, match="one positive duration"):
+        transition_frame_weights(phones, [2, 0])
