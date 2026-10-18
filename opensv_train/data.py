@@ -93,6 +93,8 @@ class Phrase:
     syllable_targets: list[float] | None = None
     phone_frames: list[int] = field(default_factory=list)
     problem: str | None = None
+    _frame_f0_cache: tuple[np.ndarray, np.ndarray] | None = field(default=None, init=False, repr=False, compare=False)
+    _pitch_f0_cache: tuple[np.ndarray, np.ndarray] | None = field(default=None, init=False, repr=False, compare=False)
 
     @property
     def frames(self) -> int:
@@ -102,14 +104,42 @@ class Phrase:
         return [TimedPhoneme(phone.language, phone.symbol, count) for phone, count in zip(self.phones, self.phone_frames)]
 
     def frame_f0(self) -> tuple[np.ndarray, np.ndarray]:
-        times = self.start + (np.arange(self.frames) + 0.5) * FRAME_SECONDS
-        return self.utterance.f0_at(times)
+        # Phrase timing and its utterance F0 target are immutable during a run.
+        # Cache this frame-aligned contour because acoustic training revisits
+        # the same phrases many times.
+        if self._frame_f0_cache is None:
+            times = self.start + (np.arange(self.frames) + 0.5) * FRAME_SECONDS
+            self._frame_f0_cache = self.utterance.f0_at(times)
+        return self._frame_f0_cache
 
     def audio(self) -> np.ndarray:
         first = int(round(self.start * SAMPLE_RATE))
         length = self.frames * int(SAMPLE_RATE * FRAME_SECONDS)
         audio = self.utterance.audio[max(first, 0):first + length]
         return np.pad(audio, (max(-first, 0), length - len(audio) - max(-first, 0)))
+
+    def audio_segment(self, start_sample: int, sample_count: int) -> np.ndarray:
+        """Return only a requested phrase-local audio window, with matching edge padding.
+
+        Acoustic training usually consumes a random segment rather than the
+        entire phrase. Avoid materializing and padding the full phrase array
+        just to immediately slice that segment back out.
+        """
+        start_sample, sample_count = int(start_sample), int(sample_count)
+        if start_sample < 0 or sample_count < 0:
+            raise ValueError("audio segment offsets and lengths must be non-negative")
+        phrase_origin = int(round(self.start * SAMPLE_RATE))
+        source_start = phrase_origin + start_sample
+        source_stop = source_start + sample_count
+        audio = self.utterance.audio
+        valid_start = max(0, source_start)
+        valid_stop = max(valid_start, min(len(audio), source_stop))
+        segment = audio[valid_start:valid_stop]
+        left_pad = min(sample_count, max(0, -source_start))
+        right_pad = max(0, sample_count - left_pad - len(segment))
+        if left_pad or right_pad:
+            segment = np.pad(segment, (left_pad, right_pad))
+        return segment
 
     def pitch_example(self) -> tuple[list[PitchNote], list[PhonemeDuration], np.ndarray, np.ndarray] | None:
         if not self.syllables:
@@ -133,12 +163,15 @@ class Phrase:
             begin = origin if index == 0 else phone.start
             end = stop if index == len(self.phones) - 1 else phone.end
             phonemes.append(PhonemeDuration(phone.language, phone.symbol, 0, 0, end - begin))
-        frames = int(round((stop - origin) / FRAME_SECONDS))
-        times = origin + np.arange(frames) * FRAME_SECONDS
-        hz, voiced = self.utterance.f0_at(times)
-        inside = (times >= first.start) & (times < last.end) & (times >= 0) & (times < len(self.utterance.audio) / SAMPLE_RATE)
-        midi = 69.0 + 12.0 * np.log2(hz / 440.0) - self.utterance.tuning
-        return notes, phonemes, midi.astype(np.float32), voiced & inside
+        if self._pitch_f0_cache is None:
+            frames = int(round((stop - origin) / FRAME_SECONDS))
+            times = origin + np.arange(frames) * FRAME_SECONDS
+            hz, voiced = self.utterance.f0_at(times)
+            inside = (times >= first.start) & (times < last.end) & (times >= 0) & (times < len(self.utterance.audio) / SAMPLE_RATE)
+            midi = 69.0 + 12.0 * np.log2(hz / 440.0) - self.utterance.tuning
+            self._pitch_f0_cache = (midi.astype(np.float32), voiced & inside)
+        midi, pitch_mask = self._pitch_f0_cache
+        return notes, phonemes, midi, pitch_mask
 
 
 def parse_note(name: str) -> float | None:
