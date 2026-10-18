@@ -187,7 +187,7 @@ class Trainer:
                         weight=self.config.transition_weight,
                         radius=self.config.transition_frames,
                     )
-                    per_frame = np.maximum(per_frame, transition)
+                    per_frame = per_frame * transition
                 self._phone_weights_cache[key] = per_frame
             weights = torch.from_numpy(
                 np.repeat(per_frame[first:first + width], hop)
