@@ -45,6 +45,16 @@ SV1112_VOCALOID_MANDARIN_ALIASES: dict[str, tuple[tuple[str, ...], ...]] = {
     "aI": (("a", "i"),), "ei": (("e", "i"),),
     "uaI": (("u", "a", "i"),), "uei": (("u", "e", "i"),),
 }
+# VOCALOID 6 source spellings for aspirated phones differ from the official X-SAMPA names.
+SV1112_VOCALOID_MANDARIN_ALIASES.update({
+    "p_h": (("ph",),),
+    "t_h": (("th",),),
+    "k_h": (("kh",),),
+    "ts_h": (("tsh",),),
+})
+SV1112_VOCALOID_MANDARIN_ALIASES["ts" + chr(92) + "_h"] = (("ts" + chr(92) + "h",),)
+SV1112_VOCALOID_MANDARIN_ALIASES["ts" + chr(96) + "_h"] = (("ts" + chr(96) + "h",),)
+
 # In VOCALOID filenames, at-vowel + grave denotes Mandarin erhua.
 SV1112_VOCALOID_MANDARIN_ALIASES["@" + chr(96)] = (("i" + chr(92),), ("i" + chr(96),))
 
