@@ -181,7 +181,7 @@ def test_rhoticized_vowel_maps_to_legacy_synthv_rhotic_label():
     target = {"sil", "@", "i" + chr(92)}
     assert parse_filename_phones(
         "@" + chr(96) + "_0.wav", target
-    ) == ["sil", "@", "i" + chr(92)]
+    ) == ["sil", "@", "i" + chr(92), "sil"]
 
 
 def test_rhoticized_vowel_maps_through_synthv_mandarin_aliases():
