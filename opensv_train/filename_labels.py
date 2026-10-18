@@ -462,6 +462,14 @@ def labels_from_phones(
     return entries
 
 
+def is_quality_analysis_cache_wav(path: str | Path) -> bool:
+    """Return true for the standalone VOCALOID vqm quality-analysis cache take."""
+    stem = Path(path).stem
+    if stem.endswith(("_0", "_1")):
+        stem = stem[:-2]
+    return stem.casefold() == "vqm"
+
+
 def filename_recordings(
     wav_directory: str | Path,
     phone_table: Iterable[str],
@@ -475,21 +483,13 @@ def filename_recordings(
     # Case-insensitive extension matching prevents .WAV/.Wav files from being
     # silently missed when a Windows dataset is processed on Linux.
     wavs = sorted(
-        (path for path in directory.iterdir() if path.is_file() and path.suffix.casefold() == ".wav"),
+        (path for path in directory.iterdir() if path.is_file() and path.suffix.casefold() == ".wav" and not is_quality_analysis_cache_wav(path)),
         key=lambda path: path.name.casefold(),
     )
     if not wavs:
         raise ValueError(f"no .wav files found in {directory}")
     recordings = []
     for wav in wavs:
-        # VOCALOID's standalone vqm take is a quality-analysis cache artifact,
-        # not a user utterance. Exclude only this exact stem after removing the
-        # conventional take suffix; never add vqm to the training phone table.
-        source_stem = wav.stem
-        if source_stem.endswith(("_0", "_1")):
-            source_stem = source_stem[:-2]
-        if source_stem.casefold() == "vqm":
-            continue
         try:
             phones = parse_filename_phones(wav.name, phone_table, source_system=source_system)
         except ValueError as error:
