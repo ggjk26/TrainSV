@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .audio_io import read_wav_frames
+from .phoneme_maps_sv1112 import map_sv1112_xsampa
 
 TICKS_PER_SECOND = 10_000_000
 SILENCE_FRACTION = 0.10
@@ -401,6 +402,16 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 )
             phones.append(replacement)
             continue
+        if source_system in {"sv1112-chinese", "sv1112-cantonese"}:
+            converted = map_sv1112_xsampa(token, valid, source_system)
+            if converted is not None:
+                phones.extend(converted)
+                continue
+            raise ValueError(
+                f"{Path(filename).name}: {token!r} has no verified mapping in "
+                f"the {source_system} phoneme table or is unsupported by the target inventory"
+            )
+
         if source_system in {"xsampa", "synthv-xsampa"}:
             converted = _map_xsampa_mandarin(token, valid, source_system)
             if converted is not None:
