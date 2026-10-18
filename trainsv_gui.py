@@ -1547,7 +1547,7 @@ async function startJob(kind){
   const r=B[kind]();if(r.p.length)return;
   try{
     await api("run",{command:r.cmd,args:r.args,label:r.label});
-    JOB={kind,label:r.label,status:"running",lines:[],next:null,since:0,log:!!r.log,step:0,total:0,sps:0,val0:null,valN:null,saved:"",dataLine:"",elapsed:0};
+    JOB={kind,label:r.label,status:"running",lines:[],next:null,since:0,log:!!r.log,logNeedsSync:true,logDropped:0,logRendered:0,step:0,total:0,sps:0,val0:null,valN:null,saved:"",dataLine:"",elapsed:0};
     $("#activity").classList.remove("collapsed");$("#actToggle").textContent="Hide details";$("#actLog").open=false;
     renderJob();refresh();poll();
   }catch(e){alert(e.message)}
@@ -1634,12 +1634,12 @@ function renderJob(){
   // Append only newly received lines; rebuilding and comparing the full log
   // on each 700 ms poll becomes quadratic over long training runs.
   if(JOB.logNeedsSync||(JOB.logRendered||0)>JOB.lines.length){
-    const omitted=JOB.logDropped?("["+JOB.logDropped+" earlier log lines omitted]\\n"):"";
-    log.textContent=omitted+JOB.lines.join("\\n");
+    const omitted=JOB.logDropped?("["+JOB.logDropped+" earlier log lines omitted]\n"):"";
+    log.textContent=omitted+JOB.lines.join("\n");
     JOB.logRendered=JOB.lines.length;JOB.logNeedsSync=false;
   }else if((JOB.logRendered||0)<JOB.lines.length){
-    const added=JOB.lines.slice(JOB.logRendered||0).join("\\n");
-    if(added)log.append(document.createTextNode((log.textContent?"\\n":"")+added));
+    const added=JOB.lines.slice(JOB.logRendered||0).join("\n");
+    if(added)log.append(document.createTextNode((log.textContent?"\n":"")+added));
     JOB.logRendered=JOB.lines.length;
   }
   if(atEnd)log.scrollTop=log.scrollHeight
@@ -1833,7 +1833,7 @@ async function init(){
   go((location.hash||"#voice").slice(1).replace(/[^a-z]/g,"")||"voice");
   if(!$(".page.show"))go("voice");
   // reattach to a job that is already running (page reloaded)
-  try{const s=await api("job?since=0");if(s.status!=="idle"){JOB={kind:"",label:s.label,status:s.status,lines:[],next:null,since:0,step:0,total:0,sps:0,val0:null,valN:null,saved:"",dataLine:"",elapsed:s.elapsed};
+  try{const s=await api("job?since=0");if(s.status!=="idle"){JOB={kind:"",label:s.label,status:s.status,lines:[],next:null,since:0,logNeedsSync:true,logDropped:0,logRendered:0,step:0,total:0,sps:0,val0:null,valN:null,saved:"",dataLine:"",elapsed:s.elapsed};
     if(/^finetune/.test(s.command))JOB.kind="finetune";poll()}}catch(e){}
   loadResults();
 }
