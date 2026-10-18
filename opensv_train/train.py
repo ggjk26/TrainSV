@@ -182,25 +182,25 @@ class Trainer:
         return "acoustic" if model in ("acoustic", "vocoder") else model
 
     def evaluate(self) -> dict[str, float]:
-        totals: dict[str, torch.Tensor] = {}
-        counts: dict[str, int] = {}
+        totals: dict[str, list[torch.Tensor]] = {}
         audio_models = [m for m in self.config.models if m in ("acoustic", "vocoder")][:1]
         other = [m for m in self.config.models if m in ("duration", "pitch")]
         with torch.no_grad():
             for model in audio_models + other:
                 for phrase in self.eligible(model, self.validation_phrases):
                     for key, value in self.step_terms(model, phrase, full=True).items():
-                        # Preserve the high-precision averaging used by the
-                        # previous Python/NumPy aggregation path.
-                        scalar = value.detach().to(dtype=torch.float64)
-                        totals[key] = scalar if key not in totals else totals[key] + scalar
-                        counts[key] = counts.get(key, 0) + 1
+                        # Keep scalar tensors detached on-device. Stack and
+                        # reduce each metric once after the validation pass,
+                        # avoiding a device reduction launch for every phrase.
+                        totals.setdefault(key, []).append(value.detach())
         if not totals:
             return {}
         # Validation may visit thousands of phrases. Aggregate on-device and
         # transfer all final means together to avoid a host sync per metric.
         keys = list(totals)
-        means = torch.stack([totals[key] / counts[key] for key in keys]).cpu().tolist()
+        means = torch.stack([
+            torch.stack(totals[key]).to(torch.float64).mean() for key in keys
+        ]).cpu().tolist()
         return dict(zip(keys, map(float, means)))
 
     def run(self, resume: dict | None = None) -> list[dict]:
