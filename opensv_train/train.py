@@ -223,23 +223,34 @@ class Trainer:
 
     def evaluate(self) -> dict[str, float]:
         totals: dict[str, list[torch.Tensor]] = {}
+        pending: dict[str, list[torch.Tensor]] = {}
+        counts: dict[str, int] = {}
+        chunk_size = 128
         audio_models = [m for m in self.config.models if m in ("acoustic", "vocoder")][:1]
         other = [m for m in self.config.models if m in ("duration", "pitch")]
         with torch.no_grad():
             for model in audio_models + other:
                 for phrase in self.eligible(model, self.validation_phrases):
                     for key, value in self.step_terms(model, phrase, full=True).items():
-                        # Keep scalar tensors detached on-device. Stack and
-                        # reduce each metric once after the validation pass,
-                        # avoiding a device reduction launch for every phrase.
-                        totals.setdefault(key, []).append(value.detach())
-        if not totals:
+                        # Reduce small chunks to bound temporary tensor retention
+                        # while still avoiding a synchronization per phrase.
+                        bucket = pending.setdefault(key, [])
+                        bucket.append(value.detach())
+                        counts[key] = counts.get(key, 0) + 1
+                        if len(bucket) >= chunk_size:
+                            totals.setdefault(key, []).append(
+                                torch.stack(bucket).to(torch.float64).sum()
+                            )
+                            pending[key] = []
+        if not counts:
             return {}
-        # Validation may visit thousands of phrases. Aggregate on-device and
-        # transfer all final means together to avoid a host sync per metric.
+        for key, bucket in pending.items():
+            if bucket:
+                totals.setdefault(key, []).append(torch.stack(bucket).to(torch.float64).sum())
+        # Transfer all final means together and preserve float64 aggregation.
         keys = list(totals)
         means = torch.stack([
-            torch.stack(totals[key]).to(torch.float64).mean() for key in keys
+            torch.stack(totals[key]).sum() / counts[key] for key in keys
         ]).cpu().tolist()
         return dict(zip(keys, map(float, means)))
 
