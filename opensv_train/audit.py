@@ -150,6 +150,8 @@ def audit_dataset(
 
                 tokens = (row.get("ph_seq") or "").split()
                 duration_text = (row.get("ph_dur") or "").split()
+                if not tokens:
+                    row_errors.append("ph_seq is empty")
                 try:
                     durations = [float(value) for value in duration_text]
                 except ValueError:
