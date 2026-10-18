@@ -356,8 +356,11 @@ def evaluate(arguments) -> None:
         ceiling=arguments.f0_ceiling,
         voicing_threshold=arguments.f0_voicing_threshold,
     )
+    models = tuple(arguments.models.split(","))
     for index, path in enumerate(arguments.voice):
         voice = Voice.load(path).to(device)
+        if "pitch" in models and not getattr(voice.pitch, "supported", True):
+            raise SystemExit(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
         phrases = [
             phrase
             for utterance in load_dataset(
@@ -377,7 +380,7 @@ def evaluate(arguments) -> None:
         gain = level_gain(voice, phrases, device)
         apply_gain(phrases, gain)
         config = TrainConfig(
-            models=tuple(arguments.models.split(",")),
+            models=models,
             device=arguments.device,
             rap_languages=voice.files.rap_languages,
             pitch_melody_weight=arguments.pitch_melody_weight,
@@ -429,7 +432,10 @@ def _render(voice: Voice, phrase, device: torch.device):
 def synthesize_dataset(arguments) -> None:
     from .synthetic import render_dataset
 
-    render_dataset(Voice.load(arguments.voice), arguments.output, arguments.phrases, arguments.language, arguments.seed, arguments.notes)
+    voice = Voice.load(arguments.voice)
+    if not getattr(voice.pitch, "supported", True):
+        raise SystemExit(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
+    render_dataset(voice, arguments.output, arguments.phrases, arguments.language, arguments.seed, arguments.notes)
 
 
 def inspect(arguments) -> None:
