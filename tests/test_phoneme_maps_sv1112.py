@@ -50,7 +50,7 @@ def test_sv1112_cantonese_preserves_legacy_consonants_vowels_and_codas():
     expected[expected.index(":t}")] = ":t_}"
     expected[expected.index(":k}")] = ":k_}"
     assert parsed == ["sil", *expected, "sil"]
-    assert len(SV1112_CANTONESE_XSAMPA_TO_OLD) == 42
+    assert len(SV1112_CANTONESE_XSAMPA_TO_OLD) == 43
 
 
 def test_mapping_tables_use_old_labels_not_2_3_romanized_labels():
