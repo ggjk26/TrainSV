@@ -514,7 +514,7 @@ def audit_data_command(arguments) -> None:
     if arguments.json_out:
         output = Path(arguments.json_out).expanduser()
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+        output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"Wrote audit report: {output}")
     failed = bool(report["fatal_errors"]) or (
         arguments.strict and any(
