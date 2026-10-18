@@ -1,4 +1,5 @@
 import csv
+from pathlib import Path
 
 import numpy as np
 import soundfile
@@ -99,3 +100,11 @@ def test_audit_rejects_invalid_thresholds(tmp_path):
         audit_dataset(tmp_path, min_phone_recordings=0)
     with pytest.raises(ValueError, match="short_phone_ms"):
         audit_dataset(tmp_path, short_phone_ms=-1)
+
+
+
+def test_audit_data_command_is_documented_in_cli():
+    cli = (Path(__file__).resolve().parents[1] / "opensv_train" / "__main__.py").read_text("utf-8")
+    assert 'commands.add_parser("audit-data"' in cli
+    assert 'command.set_defaults(handler=audit_data_command)' in cli
+    assert 'command.add_argument("--strict"' in cli
