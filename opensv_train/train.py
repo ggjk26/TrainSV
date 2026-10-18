@@ -14,6 +14,7 @@ from .data import Phrase
 from .duration import interval_log_fractions
 from .losses import SpectralLoss
 from .pitch import PitchInputs
+from .transitions import transition_frame_weights
 from .voice import Voice
 
 MODELS = ("acoustic", "duration", "pitch", "vocoder")
@@ -55,6 +56,9 @@ class TrainConfig:
     pitch_melody_weight: float = 1.0
     pitch_motion_weight: float = 1.0
     pitch_smoothing_hz: float = 3.0
+    transition_weight: float = 1.0
+    transition_frames: int = 2
+    brightness_weight: float = 0.0
 
 
 def parameter_groups(voice: Voice, models, params: str) -> dict[str, list[torch.nn.Parameter]]:
@@ -86,6 +90,12 @@ class Trainer:
         self.train_phrases = train
         self.validation_phrases = validation
         self.config = config
+        if not math.isfinite(config.transition_weight) or config.transition_weight < 1.0:
+            raise ValueError("transition weight must be finite and at least 1.0")
+        if config.transition_frames < 0:
+            raise ValueError("transition frames must be non-negative")
+        if not math.isfinite(config.brightness_weight) or config.brightness_weight < 0:
+            raise ValueError("brightness weight must be finite and non-negative")
         self.log = log
         self.device = torch.device(config.device)
         voice.to(self.device)
@@ -100,7 +110,7 @@ class Trainer:
         default_rate = 3e-3 if config.params == "embeddings" else 2e-5
         self.rate = config.learning_rate or default_rate
         self.optimizer = torch.optim.Adam(self.parameters, lr=self.rate)
-        self.spectral = SpectralLoss().to(self.device)
+        self.spectral = SpectralLoss(brightness_weight=config.brightness_weight).to(self.device)
         self.random = random.Random(config.seed)
         self._phone_weights_cache: dict[int, np.ndarray] = {}
         # Pitch preprocessing is deterministic for a phrase and fixed run
@@ -134,16 +144,30 @@ class Trainer:
         audio = phrase.audio_segment(first * hop, width * hop)
         target = torch.from_numpy(audio).to(self.device, predicted.dtype)
         weights = None
-        if not full and self.config.consonant_weight != 1.0:
+        if not full and (
+            self.config.consonant_weight != 1.0 or self.config.transition_weight != 1.0
+        ):
             key = id(phrase)
             per_frame = self._phone_weights_cache.get(key)
             if per_frame is None:
-                per_frame = np.repeat(
-                    [self._phone_weight(phone.language, phone.symbol) for phone in phrase.phones],
-                    phrase.phone_frames,
-                ).astype(np.float32)
+                if self.config.consonant_weight == 1.0:
+                    per_frame = np.ones(phrase.frames, dtype=np.float32)
+                else:
+                    per_frame = np.repeat(
+                        [self._phone_weight(phone.language, phone.symbol) for phone in phrase.phones],
+                        phrase.phone_frames,
+                    ).astype(np.float32)
+                if self.config.transition_weight != 1.0:
+                    transition = transition_frame_weights(
+                        phrase.phones, phrase.phone_frames,
+                        weight=self.config.transition_weight,
+                        radius=self.config.transition_frames,
+                    )
+                    per_frame = per_frame * transition
                 self._phone_weights_cache[key] = per_frame
-            weights = torch.from_numpy(np.repeat(per_frame[first:first + width], hop)).to(self.device, predicted.dtype)
+            weights = torch.from_numpy(
+                np.repeat(per_frame[first:first + width], hop)
+            ).to(self.device, predicted.dtype)
         terms = self.spectral(predicted, target, weights)
         voicing = acoustic.acoustic_normalizer.denormalize(output.normalized)[:, 0].clamp(1e-4, 1 - 1e-4)
         terms["voicing"] = F.binary_cross_entropy(voicing, target_voicing)
@@ -353,7 +377,11 @@ class Trainer:
 
     def _selection(self, key: str, metrics: dict[str, float]) -> float:
         if key == "acoustic":
-            return metrics["mel"] + self.config.voicing_weight * metrics["voicing"]
+            return (
+                metrics["mel"]
+                + self.config.voicing_weight * metrics["voicing"]
+                + self.config.brightness_weight * metrics.get("brightness", 0.0)
+            )
         return metrics[key]
 
     @staticmethod
