@@ -114,7 +114,7 @@ def test_audit_data_command_is_documented_in_cli():
 def test_transition_frame_weights_emphasize_only_speech_handoffs():
     from types import SimpleNamespace
 
-    from opensv_train.train import transition_frame_weights
+    from opensv_train.transitions import transition_frame_weights
 
     phones = [
         SimpleNamespace(symbol="sil"),
@@ -140,7 +140,7 @@ def test_transition_frame_weights_validate_settings_and_phone_alignment():
     import pytest
     from types import SimpleNamespace
 
-    from opensv_train.train import transition_frame_weights
+    from opensv_train.transitions import transition_frame_weights
 
     phones = [SimpleNamespace(symbol="k"), SimpleNamespace(symbol="a")]
     with pytest.raises(ValueError, match="at least 1.0"):
