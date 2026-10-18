@@ -387,7 +387,7 @@ def evaluate(arguments) -> None:
         if output is not None:
             label = f"{index}_{name}"
             report[label] = {"voice": str(path), "gain": gain, **metrics}
-            reference_audio, rendered_audio = [], []
+            reference_audio, rendered_audio, phrase_names = [], [], []
             for phrase in validation[:arguments.max_phrases]:
                 directory = output / f"{phrase.utterance.name}_{phrase.start:.2f}"
                 directory.mkdir(parents=True, exist_ok=True)
@@ -397,8 +397,11 @@ def evaluate(arguments) -> None:
                 soundfile.write(str(directory / f"{label}.wav"), rendered, SAMPLE_RATE)
                 reference_audio.append(recording)
                 rendered_audio.append(rendered)
+                phrase_names.append(f"{phrase.utterance.name}_{phrase.start:.2f}")
             if reference_audio:
-                timbre_diagnostics[label] = summarize_timbre(reference_audio, rendered_audio, SAMPLE_RATE)
+                timbre_diagnostics[label] = summarize_timbre(
+                    reference_audio, rendered_audio, SAMPLE_RATE, phrase_names=phrase_names
+                )
                 delta = timbre_diagnostics[label]["delta"]
                 print(
                     f"timbre {name}: centroid Δ={delta['spectral_centroid_hz']:.1f} Hz, "
