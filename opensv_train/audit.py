@@ -176,6 +176,7 @@ def audit_dataset(
                 if name and wav_path is None:
                     missing[name].append(row_number)
 
+                audio_unreadable = False
                 if check_audio and wav_path is not None and not row_errors:
                     try:
                         import soundfile as sf
@@ -195,12 +196,12 @@ def audit_dataset(
                             })
                     except (OSError, RuntimeError, ValueError) as error:
                         unreadable[name].append(row_number)
-                        row_errors.append(f"WAV header could not be read: {error}")
+                        audio_unreadable = True
 
                 if row_errors:
                     invalid.append({"name": name or f"row-{row_number}", "row": row_number, "errors": row_errors})
                     continue
-                if wav_path is None or (check_audio and name in unreadable):
+                if wav_path is None or audio_unreadable:
                     continue
 
                 valid_name_count += 1
