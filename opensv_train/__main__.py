@@ -154,6 +154,8 @@ def finetune(arguments) -> None:
         pitch_melody_weight=arguments.pitch_melody_weight,
         pitch_motion_weight=arguments.pitch_motion_weight,
         pitch_smoothing_hz=arguments.pitch_smoothing_hz,
+        transition_weight=arguments.transition_weight,
+        transition_frames=arguments.transition_frames,
     )
     calibration = random.Random(arguments.seed).sample(phrases, min(40, len(phrases)))
     models_root = Path(arguments.output).expanduser().parent.parent / "models"
@@ -561,6 +563,8 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--anchor", type=float, default=1.0, help="L2 pull towards the original weights")
     command.add_argument("--batch", type=int, default=1, help="phrases (audio: windows) averaged per step")
     command.add_argument("--consonant-weight", type=float, default=1.0, help="weight of consonant frames in the training audio loss (held-out scores stay unweighted)")
+    command.add_argument("--transition-weight", type=float, default=1.0, help="extra weight for non-silence phoneme handoffs in the acoustic training loss; 1 disables it")
+    command.add_argument("--transition-frames", type=int, default=2, help="frames on either side of each speech-phone boundary to emphasize (5 ms per frame)")
     command.add_argument("--validation", type=float, default=0.1, help="phrases held out: a fraction, or a count when 1 or more")
     command.add_argument("--evaluate-every", "--val-every", type=int, default=250)
     command.add_argument("--log-every", type=int, default=25)
