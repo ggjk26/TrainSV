@@ -174,15 +174,24 @@ class Trainer:
         return "acoustic" if model in ("acoustic", "vocoder") else model
 
     def evaluate(self) -> dict[str, float]:
-        totals: dict[str, list[float]] = {}
+        totals: dict[str, torch.Tensor] = {}
+        counts: dict[str, int] = {}
         audio_models = [m for m in self.config.models if m in ("acoustic", "vocoder")][:1]
         other = [m for m in self.config.models if m in ("duration", "pitch")]
         with torch.no_grad():
             for model in audio_models + other:
                 for phrase in self.eligible(model, self.validation_phrases):
                     for key, value in self.step_terms(model, phrase, full=True).items():
-                        totals.setdefault(key, []).append(float(value))
-        return {key: float(np.mean(values)) for key, values in totals.items()}
+                        scalar = value.detach()
+                        totals[key] = scalar if key not in totals else totals[key] + scalar
+                        counts[key] = counts.get(key, 0) + 1
+        if not totals:
+            return {}
+        # Validation may visit thousands of phrases. Aggregate on-device and
+        # transfer all final means together to avoid a host sync per metric.
+        keys = list(totals)
+        means = torch.stack([totals[key] / counts[key] for key in keys]).cpu().tolist()
+        return dict(zip(keys, map(float, means)))
 
     def run(self, resume: dict | None = None) -> list[dict]:
         config = self.config
