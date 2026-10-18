@@ -55,6 +55,40 @@ class TrainConfig:
     pitch_melody_weight: float = 1.0
     pitch_motion_weight: float = 1.0
     pitch_smoothing_hz: float = 3.0
+    transition_weight: float = 1.0
+    transition_frames: int = 2
+
+
+def transition_frame_weights(
+    phones, phone_frames: list[int], *, weight: float = 1.0, radius: int = 2
+) -> np.ndarray:
+    """Return frame weights that optionally emphasize speech-phone handoffs.
+
+    Only non-silence/non-breath boundaries are considered. The default weight
+    of 1.0 is an exact no-op; this weights training targets rather than
+    smoothing generated audio, so plosives and fricative releases remain sharp.
+    """
+    if not math.isfinite(weight) or weight < 1.0:
+        raise ValueError("transition weight must be finite and at least 1.0")
+    if radius < 0:
+        raise ValueError("transition radius must be non-negative")
+    if len(phones) != len(phone_frames) or any(int(count) < 1 for count in phone_frames):
+        raise ValueError("phone frames must contain one positive duration per phone")
+    result = np.ones(sum(phone_frames), dtype=np.float32)
+    if weight == 1.0 or radius == 0 or len(phones) < 2:
+        return result
+    boundary = 0
+    silent = {"sil", "pau", "SP", "br", "AP"}
+    for index, (phone, count) in enumerate(zip(phones, phone_frames)):
+        boundary += int(count)
+        if index + 1 >= len(phones):
+            continue
+        next_phone = phones[index + 1]
+        if phone.symbol in silent or next_phone.symbol in silent:
+            continue
+        begin, end = max(0, boundary - radius), min(len(result), boundary + radius)
+        result[begin:end] = np.maximum(result[begin:end], np.float32(weight))
+    return result
 
 
 def parameter_groups(voice: Voice, models, params: str) -> dict[str, list[torch.nn.Parameter]]:
@@ -134,16 +168,30 @@ class Trainer:
         audio = phrase.audio_segment(first * hop, width * hop)
         target = torch.from_numpy(audio).to(self.device, predicted.dtype)
         weights = None
-        if not full and self.config.consonant_weight != 1.0:
+        if not full and (
+            self.config.consonant_weight != 1.0 or self.config.transition_weight != 1.0
+        ):
             key = id(phrase)
             per_frame = self._phone_weights_cache.get(key)
             if per_frame is None:
-                per_frame = np.repeat(
-                    [self._phone_weight(phone.language, phone.symbol) for phone in phrase.phones],
-                    phrase.phone_frames,
-                ).astype(np.float32)
+                if self.config.consonant_weight == 1.0:
+                    per_frame = np.ones(phrase.frames, dtype=np.float32)
+                else:
+                    per_frame = np.repeat(
+                        [self._phone_weight(phone.language, phone.symbol) for phone in phrase.phones],
+                        phrase.phone_frames,
+                    ).astype(np.float32)
+                if self.config.transition_weight != 1.0:
+                    transition = transition_frame_weights(
+                        phrase.phones, phrase.phone_frames,
+                        weight=self.config.transition_weight,
+                        radius=self.config.transition_frames,
+                    )
+                    per_frame = np.maximum(per_frame, transition)
                 self._phone_weights_cache[key] = per_frame
-            weights = torch.from_numpy(np.repeat(per_frame[first:first + width], hop)).to(self.device, predicted.dtype)
+            weights = torch.from_numpy(
+                np.repeat(per_frame[first:first + width], hop)
+            ).to(self.device, predicted.dtype)
         terms = self.spectral(predicted, target, weights)
         voicing = acoustic.acoustic_normalizer.denormalize(output.normalized)[:, 0].clamp(1e-4, 1 - 1e-4)
         terms["voicing"] = F.binary_cross_entropy(voicing, target_voicing)
