@@ -2,33 +2,36 @@ from __future__ import annotations
 
 import pytest
 
-from opensv_train.f0 import F0_PROFILES, f0_cache_tag, resolve_f0_profile, resolve_f0_processing
+from opensv_train.f0 import F0_PROFILES, f0_cache_tag, resolve_f0_profile, resolve_f0_processing, resolve_pitch_loss_options
 
 
 def test_f0_profiles_have_expected_ranges():
-    assert tuple(F0_PROFILES) == ("standard", "vocaloid", "low", "high", "wide")
+    assert tuple(F0_PROFILES) == ("standard", "vocaloid", "low", "high", "wide", "sensitive")
     assert resolve_f0_profile("standard") == (65.0, 1100.0, 0.60)
     assert resolve_f0_profile("vocaloid") == (45.0, 1400.0, 0.45)
     assert resolve_f0_profile("low") == (45.0, 650.0, 0.60)
     assert resolve_f0_profile("high") == (100.0, 1400.0, 0.60)
     assert resolve_f0_profile("wide") == (40.0, 1600.0, 0.60)
+    assert resolve_f0_profile("sensitive") == (35.0, 1800.0, 0.30)
 
 
-def test_vocaloid_profile_enables_naturalizing_pitch_defaults():
-    assert resolve_f0_processing("standard") == (0, False, 3.0, 1.0, 1.0)
-    assert resolve_f0_processing("vocaloid") == (5, True, 2.5, 1.2, 0.8)
-    assert resolve_f0_processing("low") == (0, False, 3.0, 1.0, 1.0)
+def test_f0_presets_only_control_f0_cleanup():
+    assert resolve_f0_processing("standard") == (0, False)
+    assert resolve_f0_processing("vocaloid") == (5, True)
+    assert resolve_f0_processing("low") == (0, False)
+    assert resolve_f0_processing("sensitive") == (3, False)
 
 
-def test_explicit_pitch_processing_options_override_profile():
-    assert resolve_f0_processing(
-        "vocaloid",
-        smoothing_frames=0,
-        correct_octave=False,
+def test_pitch_loss_defaults_and_overrides_are_independent_of_f0_profile():
+    assert resolve_pitch_loss_options() == (3.0, 1.0, 1.0)
+    assert resolve_pitch_loss_options(
         pitch_smoothing_hz=3.5,
-        pitch_melody_weight=1.0,
-        pitch_motion_weight=1.0,
-    ) == (0, False, 3.5, 1.0, 1.0)
+        pitch_melody_weight=1.2,
+        pitch_motion_weight=0.8,
+    ) == (3.5, 1.2, 0.8)
+    assert resolve_f0_processing(
+        "vocaloid", smoothing_frames=0, correct_octave=False
+    ) == (0, False)
 
 
 def test_cli_wires_f0_profile_defaults_to_finetune_and_evaluate():
@@ -42,9 +45,10 @@ def test_cli_wires_f0_profile_defaults_to_finetune_and_evaluate():
     assert "arguments.pitch_melody_weight," in cli_source
     assert "arguments.pitch_motion_weight," in cli_source
     assert "resolve_f0_processing(" in cli_source
+    assert "resolve_pitch_loss_options(" in cli_source
     assert cli_source.count('action=argparse.BooleanOptionalAction, default=None') == 2
     assert cli_source.count('type=int, choices=F0_SMOOTHING_OPTIONS, default=None') == 2
-    assert cli_source.count('type=float, default=None, help="override profile\'s low-pass cutoff') == 2
+    assert cli_source.count('type=float, default=None, help="override the default low-pass cutoff') == 2
 
 
 def test_f0_profile_numeric_overrides_and_validation():
@@ -63,6 +67,6 @@ def test_f0_profile_numeric_overrides_and_validation():
 
 
 def test_f0_cache_tag_changes_with_analysis_settings():
-    assert f0_cache_tag(45, 1400, 0.45) == "f0-45-1400-v0.45"
-    assert f0_cache_tag(65, 1100, 0.6) == "f0-65-1100-v0.6"
+    assert f0_cache_tag(45, 1400, 0.45) == "f0-v2-45-1400-v0.45"
+    assert f0_cache_tag(65, 1100, 0.6) == "f0-v2-65-1100-v0.6"
     assert f0_cache_tag(45, 1400, 0.45) != f0_cache_tag(65, 1100, 0.6)

@@ -117,7 +117,7 @@ def test_user_vocaloid_mandarin_filename_tokens_are_convertible():
 
 
 def test_vocaloid6_underscored_aspirates_map_by_target_inventory():
-    simplified = {"sil", "a", "p", "t", "k", "c", "q", "b", "d", "g", "z", "ng", "e/", "-n"}
+    simplified = {"sil", "a", "p", "t", "k", "c", "q", "ch", "b", "d", "g", "z", "ng", "e/", "-n"}
     assert parse_filename_phones("p_h t_h k_h ts_h ts\\_h ts`_h_0.wav", simplified, source_system="vocaloid-mandarin") == [
         "sil", "p", "t", "k", "c", "q", "ch", "sil"
     ]
@@ -132,6 +132,20 @@ def test_vocaloid_mapping_preserves_legacy_xsampa_inventory():
     assert parse_filename_phones("7 p ts a_n @N_0.wav", legacy, source_system="vocaloid-mandarin") == [
         "sil", "7", "p", "ts", "a", ":n", "@", "N", "sil"
     ]
+
+def test_standalone_vqm_quality_cache_is_excluded_from_dataset(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(str(wav_dir / "vqm_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "vqm_1.WAV"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "a_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    unmatched = []
+    recordings = filename_recordings(
+        wav_dir, {"sil", "a"}, source_system="vocaloid-mandarin", unmatched=unmatched
+    )
+    assert [recording[0] for recording in recordings] == ["a_0"]
+    assert unmatched == []
+
 
 def test_unmatched_wav_files_are_reported_without_aborting_other_files(tmp_path):
     wav_dir = tmp_path / "wavs"
@@ -150,19 +164,41 @@ def test_unknown_phone_fails_loudly():
         parse_filename_phones("definitely_unknown_0.wav", PHONES)
 
 
-def test_rhoticized_vowel_uses_complete_symbol_when_available():
-    assert parse_filename_phones("7 @`_0.wav", PHONES | {"@`"}) == ["sil", "7", "@`", "sil"]
-
+def test_rhoticized_vowel_is_regex_expanded_to_two_ordered_phones():
+    rhotic = "r" + chr(92)
+    assert parse_filename_phones(
+        "7 @" + chr(96) + "_0.wav", PHONES | {rhotic}
+    ) == ["sil", "7", "@", rhotic, "sil"]
 
 def test_rhoticized_vowel_falls_back_to_available_rhotic_phone():
     assert parse_filename_phones("7 @`_0.wav", PHONES | {"r\\"}) == ["sil", "7", "@", "r\\", "sil"]
     assert parse_filename_phones("7 @`_0.wav", PHONES | {"r"}) == ["sil", "7", "@", "r", "sil"]
 
 
-def test_rhoticized_vowel_explains_missing_fallback():
-    with pytest.raises(ValueError, match="rhoticized vowel"):
-        parse_filename_phones("7 @`_0.wav", PHONES)
+def test_rhoticized_vowel_maps_to_legacy_synthv_rhotic_label():
+    # The pre-2.3 SynthV Mandarin phone table uses i\\ as the legacy alias
+    # for the modern X-SAMPA r\\ phone.
+    target = {"sil", "@", "i" + chr(92)}
+    assert parse_filename_phones(
+        "@" + chr(96) + "_0.wav", target
+    ) == ["sil", "@", "i" + chr(92), "sil"]
 
+
+def test_rhoticized_vowel_maps_through_synthv_mandarin_aliases():
+    # In the newer SynthV Mandarin inventory, the curated bridge maps @ -> e/
+    # and X-SAMPA r\\ -> iz when both target symbols exist.
+    target = {
+        "sil", "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v",
+        "ng", "-n", "b", "p", "d", "t", "g", "k", "z", "c",
+    }
+    assert parse_filename_phones(
+        "@" + chr(96) + "_0.wav", target, source_system="vocaloid-mandarin"
+    ) == ["sil", "e/", "iz", "sil"]
+
+
+def test_rhoticized_vowel_without_compatible_target_fails_loudly():
+    with pytest.raises(ValueError, match="unknown phone"):
+        parse_filename_phones("7 @" + chr(96) + "_0.wav", PHONES)
 
 def test_f0_at_handles_utterance_with_no_voiced_frames():
     from opensv_train.data import Utterance
@@ -198,3 +234,254 @@ def test_f0_at_keeps_voicing_mask_for_utterance_with_voiced_frames():
 
     assert np.allclose(hz, [220.0, 220.0])
     assert voiced.all()
+
+
+def test_standard_xsampa_maps_to_synthv_mandarin_labels_without_guessing():
+    target = {
+        "sil", "a", "aa", "o/", "e/", "ee", "e", "o", "u", "i", "iz", "ir", "v",
+        "ao", "ou", "ia", "iaa", "iao", "ie", "iae", "io", "iu", "va", "ve",
+        "ua", "uaa", "ue/", "ue", "uo", "-i", "-r", "-n", "ng", "b", "p",
+        "d", "t", "g", "k", "z", "c", "j", "q", "zh", "ch", "h", "f", "s",
+        "sh", "x", "r", "m", "n", "l", "w", "y",
+    }
+    slash, grave = chr(92), chr(96)
+    tokens = [
+        "A", "O", "@", "e", "7", "U", "r" + slash, ":r" + slash + grave, "y",
+        "au", "ou", "ia", "iA", "iau", "ie", "iE", "iU", "jou", "y{", "yE",
+        "ua", "uA", "u@", "ue", "uo", ":" + slash + "i", "r" + slash + grave,
+        ":n", "N", "p", "p_h", "t", "t_h", "k", "k_h", "ts", "ts_h",
+        "ts" + slash, "ts" + slash + "h", "ts" + grave, "ts" + grave + "h",
+        "x", "f", "s", "s" + grave, "s" + slash, "z" + grave, "w", "j",
+    ]
+    parsed = parse_filename_phones(" ".join(tokens) + "_0.wav", target, source_system="xsampa")
+    assert parsed == [
+        "sil", "aa", "o/", "e/", "ee", "e", "o", "iz", "ir", "v", "ao", "ou",
+        "ia", "iaa", "iao", "ie", "iae", "io", "iu", "va", "ve", "ua", "uaa",
+        "ue/", "ue", "uo", "-i", "-r", "-n", "ng", "b", "p", "d", "t", "g",
+        "k", "z", "c", "j", "q", "zh", "ch", "h", "f", "s", "sh", "x", "r",
+        "w", "y", "sil",
+    ]
+
+
+def test_legacy_synthv_xsampa_spellings_map_to_new_mandarin_inventory():
+    target = {
+        "sil", "o/", "ao", "ou", "iao", "iu", "iz", "ir", "-i", "p", "t", "k",
+        "c", "q", "ch",
+    }
+    slash, grave = chr(92), chr(96)
+    tokens = [
+        "o", "AU", "@U", "iAU", "i@U", "i" + slash, "i" + grave,
+        ":" + slash + "i", "ph", "th", "kh", "tsh",
+        "ts" + slash + "h", "ts" + grave + "h",
+    ]
+    assert parse_filename_phones(
+        " ".join(tokens) + "_0.wav", target, source_system="synthv-xsampa"
+    ) == [
+        "sil", "o/", "ao", "ou", "iao", "iu", "iz", "ir", "-i", "p", "t", "k",
+        "c", "q", "ch", "sil",
+    ]
+
+
+def test_explicit_xsampa_mode_does_not_split_unknown_token_into_wrong_phones():
+    with pytest.raises(ValueError, match="unknown phone"):
+        parse_filename_phones("xyz_0.wav", {"sil", "x", "y", "z"}, source_system="xsampa")
+
+
+def test_unreadable_wav_is_reported_without_dropping_other_valid_recordings(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(str(wav_dir / "Sil Sil k Sil_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    (wav_dir / "k_0.wav").write_bytes(b"this is not a WAV")
+    unmatched = []
+    recordings = filename_recordings(wav_dir, {"sil", "k"}, unmatched=unmatched)
+    assert [name for name, _, _ in recordings] == ["Sil Sil k Sil_0"]
+    assert [phone for _, _, entries in recordings for _, _, phone in entries] == [
+        "sil", "sil", "sil", "k", "sil", "sil",
+    ]
+    assert len(unmatched) == 1
+    assert unmatched[0]["filename"] == "k_0.wav"
+    assert "unreadable or damaged WAV" in unmatched[0]["error"]
+
+
+def test_xsampa_compound_mandarin_finals_use_explicit_mappings_not_character_splitting():
+    target = {"sil", "a", "i", "ai", "ei", "ao", "ou", "iao", "iu", "er"}
+    tokens = "aI ei AU @U iAU i@U @" + chr(96)
+    assert parse_filename_phones(
+        f"{tokens}_0.wav", target, source_system="xsampa"
+    ) == ["sil", "ai", "ei", "ao", "ou", "iao", "iu", "er", "sil"]
+
+
+def test_uppercase_wav_extension_and_silence_k_sequence_are_kept(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(
+        str(wav_dir / "Sil Sil k Sil_0.WAV"),
+        np.zeros(4800, dtype=np.float32),
+        48000,
+    )
+    unmatched = []
+    recordings = filename_recordings(wav_dir, {"sil", "k"}, unmatched=unmatched)
+    assert len(recordings) == 1
+    assert not unmatched
+    assert [phone for _, _, phone in recordings[0][2]] == [
+        "sil", "sil", "sil", "k", "sil", "sil",
+    ]
+
+
+def test_supported_pcm_wav_falls_back_when_primary_decoder_fails(tmp_path, monkeypatch):
+    from opensv_train import audio_io
+
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(
+        str(wav_dir / "Sil Sil k Sil_0.wav"),
+        np.zeros(4800, dtype=np.float32),
+        48000,
+        subtype="PCM_16",
+    )
+
+    def reject_with_primary_reader(*_args, **_kwargs):
+        raise RuntimeError("simulated libsndfile subtype limitation")
+
+    monkeypatch.setattr(audio_io.soundfile, "read", reject_with_primary_reader)
+    unmatched = []
+    recordings = filename_recordings(wav_dir, {"sil", "k"}, unmatched=unmatched)
+    assert len(recordings) == 1
+    assert unmatched == []
+    assert recordings[0][0] == "Sil Sil k Sil_0"
+
+
+def test_unmatched_report_classifies_phone_mapping_and_wav_decode_failures(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(str(wav_dir / "badphone_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    (wav_dir / "Sil Sil k Sil_0.wav").write_bytes(b"not a wav")
+    unmatched = []
+    recordings = filename_recordings(wav_dir, {"sil", "k"}, unmatched=unmatched)
+    assert not recordings
+    categories = {item["filename"]: item["category"] for item in unmatched}
+    assert categories == {
+        "badphone_0.wav": "phone_mapping",
+        "Sil Sil k Sil_0.wav": "wav_decode",
+    }
+
+
+def test_standard_xsampa_aspirates_map_to_legacy_synthv_phone_symbols():
+    legacy = {
+        "sil", "p", "ph", "t", "th", "k", "kh", "ts", "tsh",
+        r"ts\h", "ts" + chr(96) + "h",
+    }
+    tokens = ["p_h", "t_h", "k_h", "ts_h", r"ts\_h", "ts" + chr(96) + "_h"]
+    parsed = parse_filename_phones(
+        " ".join(tokens) + "_0.wav", legacy, source_system="xsampa"
+    )
+    assert parsed == [
+        "sil", "ph", "th", "kh", "tsh", r"ts\h", "ts" + chr(96) + "h", "sil",
+    ]
+
+
+def test_synthv_legacy_xsampa_aliases_still_map_to_new_phone_symbols():
+    simple = {
+        "sil", "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v",
+        "ng", "-n", "b", "p", "d", "t", "g", "k", "z", "c", "q", "ch",
+    }
+    tokens = ["ph", "th", "kh", "tsh", r"ts\h", "ts" + chr(96) + "h"]
+    parsed = parse_filename_phones(
+        " ".join(tokens) + "_0.wav", simple, source_system="synthv-xsampa"
+    )
+    assert parsed == ["sil", "p", "t", "k", "c", "q", "ch", "sil"]
+
+
+def test_vocaloid_source_also_uses_explicit_standard_xsampa_bridge_for_unlisted_tokens():
+    # O is a canonical X-SAMPA vowel not present as an explicit VOCALOID
+    # source alias in the filename table; it maps safely through the standard
+    # Mandarin bridge when the target uses SynthV's newer inventory.
+    assert parse_filename_phones(
+        "O_0.wav", {"sil", "o/", "aa", "e/"}, source_system="vocaloid-mandarin"
+    ) == ["sil", "o/", "sil"]
+
+
+def test_unmatched_report_includes_first_unknown_source_token(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(str(wav_dir / "badphone_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    unmatched = []
+    recordings = filename_recordings(
+        wav_dir, {"sil", "a"}, source_system="vocaloid-mandarin", unmatched=unmatched
+    )
+    assert recordings == []
+    assert unmatched[0]["source_token"] == "badphone"
+    assert unmatched[0]["category"] == "phone_mapping"
+
+
+def test_percent5c_sequences_are_normalized_before_phone_mapping():
+    target = {
+        "sil", "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v",
+        "ng", "-n", "b", "p", "d", "t", "g", "k", "z", "c", "q", "ch", "x",
+    }
+    parsed = parse_filename_phones(
+        "s%5c ts%5c_h i%5c_0.wav", target, source_system="xsampa"
+    )
+    assert parsed == ["sil", "x", "q", "iz", "sil"]
+
+
+def test_erhua_at_grave_uses_target_xsampa_inventory():
+    rhotic = "r" + chr(92)
+    assert parse_filename_phones(
+        "@" + chr(96) + "_0.wav", {"sil", "@", rhotic}, source_system="xsampa"
+    ) == ["sil", "@", rhotic, "sil"]
+    assert parse_filename_phones(
+        "@" + chr(96) + "_0.wav", {"sil", "3"}, source_system="xsampa"
+    ) == ["sil", "3", "sil"]
+
+
+def test_uaI_triphthong_prefers_u_a_capital_i_then_w_a_capital_i():
+    assert parse_filename_phones(
+        "uaI_0.wav", {"sil", "u", "a", "I"}, source_system="vocaloid-mandarin"
+    ) == ["sil", "u", "a", "I", "sil"]
+    assert parse_filename_phones(
+        "uaI_0.wav", {"sil", "w", "a", "I"}, source_system="vocaloid-mandarin"
+    ) == ["sil", "w", "a", "I", "sil"]
+
+
+def test_uei_triphthong_prefers_u_e_i_then_w_e_i():
+    assert parse_filename_phones(
+        "uei_0.wav", {"sil", "u", "e", "i"}, source_system="vocaloid-mandarin"
+    ) == ["sil", "u", "e", "i", "sil"]
+    assert parse_filename_phones(
+        "uei_0.wav", {"sil", "w", "e", "i"}, source_system="vocaloid-mandarin"
+    ) == ["sil", "w", "e", "i", "sil"]
+
+def test_rhoticized_vowel_uses_synthv_mandarin_er_label_without_separate_rhotic_phone():
+    # In the simplified Mandarin inventory, "er" is an available native label
+    # for erhua; no standalone X-SAMPA rhotic phone is required.
+    target = {"sil", "er"}
+    assert parse_filename_phones(
+        "@" + chr(96) + "_0.wav", target
+    ) == ["sil", "er", "sil"]
+
+
+def test_rhoticized_vowel_uses_curated_inventory_fallback_without_source_mode():
+    token = "@" + chr(96)
+    assert parse_filename_phones(
+        token + "_0.wav", {"sil", "e/", "-r"}
+    ) == ["sil", "e/", "-r", "sil"]
+    assert parse_filename_phones(
+        token + "_0.wav", {"sil", "e/", "rr"}
+    ) == ["sil", "e/", "rr", "sil"]
+
+
+def test_unmatched_report_identifies_expanded_rhotic_component(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(
+        str(wav_dir / ("@" + chr(96) + "_0.wav")),
+        np.zeros(4800, dtype=np.float32),
+        48000,
+    )
+    unmatched = []
+    recordings = filename_recordings(
+        wav_dir, {"sil", "@"}, unmatched=unmatched
+    )
+    assert recordings == []
+    assert unmatched[0]["source_token"] == "@" + chr(96)

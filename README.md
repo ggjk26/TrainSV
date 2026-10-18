@@ -99,7 +99,7 @@ trainsv import-lab --from-filenames --wavs /path/to/wavs --voice /path/to/voice.
 
 The generator preserves left-to-right order, strips only a terminal `_0` or `_1` retake suffix, and always adds leading and trailing `sil` without deduplicating an internal silence. Each boundary silence receives 10% of the WAV duration; middle phones share the remaining 80% equally. Generated LAB files are saved under the output dataset's `lab/` directory. This is a filename-driven equal-duration approximation, **not acoustic forced alignment**; inspect the boundaries before training.
 
-For `--language mandarin`, `--source-phoneme-system auto` (the default) converts common VOCALOID Chinese phone spellings to the target SynthV Mandarin inventory, supporting both the simplified labels introduced in SynthV 2.3.0 Beta 1 and legacy X-SAMPA-style labels. It prefers phones present in the selected voice. Usually, pass `--voice <voice>` to provide that target inventory; a separate `phone_table.json` is not required. WAVs that cannot be mapped are skipped and recorded with their error in `<output>/unmatched_phones.csv`, while other WAVs continue. Use `--source-phoneme-system none` to disable conversion or set it explicitly to `vocaloid-mandarin`.
+For `--language mandarin`, `--source-phoneme-system auto` (the default) maps common VOCALOID Mandarin filename spellings to the selected SynthV Mandarin inventory. Use `--source-phoneme-system xsampa` for standard Mandarin X-SAMPA spellings, or `synthv-xsampa` for legacy Synthesizer V Mandarin X-SAMPA spellings; `vocaloid-mandarin` explicitly selects the VOCALOID mapping, and `none` leaves conversion off. The X-SAMPA mappings follow Dreamtonics' published Synthesizer V 2.3 phoneme-change table and preserve exact target phones when using a legacy X-SAMPA inventory. Explicit X-SAMPA modes reject unknown compound tokens instead of guessing how to split them. Pass `--voice <voice>` to use that voice's target inventory; a separate `phone_table.json` is not required. Files with unmappable phone labels or unreadable WAV audio are skipped and recorded with a reason in `<output>/unmatched_phones.csv`, while other files continue.
 
 X-SAMPA `@\`` and `3\`` are rhoticized vowels. If the complete symbol exists in the target phone table, it is preserved. Otherwise, the generator tries to approximate it as the base vowel plus a rhotic phone available in the table (preferring `r\\`, then `ɹ`, `ɻ`, `r`, etc.). If no compatible phone exists, it raises a specific error rather than silently dropping rhoticity.
 
@@ -117,7 +117,7 @@ my-dataset/
 
 `ph_seq` uses the voice's phonemes (`trainsv inspect --voice …` lists them). `SP` and `AP` mean silence and breath respectively.. A `lang/ph` prefix (`ja/a`, `zh/…`, `en/…`) sets the language per phoneme; `--phoneme-map map.json` renames dataset phonemes. `ph_dur` alone is enough for acoustic training. Duration and pitch training also need `ph_num` (DiffSinger words: each starts at a vowel, consonants belong to the previous word), `note_seq`/`note_dur` and, ideally, `note_slur`. The optional `style` column names the vocal mode a recording was sung in; empty means the default style.
 
-Notes with cents (as GAME writes them) are shifted by each song's overall tuning offset before rounding to semitones, and the pitch targets move with them, so a recording tuned away from A440 still trains in-key. F0 is extracted with Praat and cached in `my-dataset/.opensv-cache/`. The default `--f0-profile standard` uses 65–1100 Hz and a voicing threshold of 0.60. `--f0-profile vocaloid` uses 45–1400 Hz and 0.45, and also enables a 25 ms median filter on voiced F0 runs, conservative correction of isolated one/two-octave tracker spikes, a 2.5 Hz smooth-melody cutoff, and Pitch-loss weights of 1.2 for the smooth contour and 0.8 for faster motion. Those processing defaults can be overridden with `--f0-smoothing`, `--f0-octave-correction` / `--no-f0-octave-correction`, and the `--pitch-*-weight` / `--pitch-smoothing-hz` options. They condition the F0 target used for training and evaluation; they do **not** post-process the final waveform or guarantee removal of the voice's underlying metallic timbre. The cache key includes resolved F0 detection settings, so switching tracking profiles triggers a fresh extraction.
+Notes with cents (as GAME writes them) are shifted by each song's overall tuning offset before rounding to semitones, and the pitch targets move with them, so a recording tuned away from A440 still trains in-key. F0 is extracted with Praat and cached in `my-dataset/.opensv-cache/`. The default `--f0-profile standard` uses 65–1100 Hz and a voicing threshold of 0.60. `--f0-profile vocaloid` uses 45–1400 Hz and 0.45, with a 25 ms median filter on voiced F0 runs and conservative correction of isolated one/two-octave tracker spikes. `--f0-profile sensitive` uses 35–1800 Hz and 0.30 with light 15 ms smoothing to recover more weakly voiced frames; it cannot create a real F0 target for silence or voiceless consonants. F0 analysis presets do not change Pitch-network loss settings, which are independently controlled by `--pitch-*-weight` and `--pitch-smoothing-hz`. Smoothing and octave correction can be overridden with `--f0-smoothing` and `--f0-octave-correction` / `--no-f0-octave-correction`. These settings condition the F0 target used for training and evaluation; they do **not** post-process the final waveform or guarantee removal of the voice's underlying metallic timbre. The cache key includes resolved F0 detection settings, so switching tracking profiles triggers a fresh extraction.
 
 Datasets spelled with another syllable dictionary convert with `convert-dict`: `trainsv convert-dict --data src --output dst --source-dict opencpop-extension.txt --target-dict clf-data/mandarin-xsampa-dict.txt --voice <voice> --language zh`. The source stays untouched and `wavs/` is linked.
 
@@ -131,7 +131,7 @@ Held-out phrases (`--validation`: a fraction, or a count when 1 or more) are sco
 
 `--run <directory>` keeps a run directory: `log.jsonl` holds every logged step (`--log-every`, default 25) with its seconds per step and learning rate, and every validation, and `state.pt` is saved at each validation. `--resume` continues from `state.pt` with the same `--models` and `--params`; raise `--steps` to train further. `--history` writes the validation metrics alone as one JSON file.
 
-The F0 options are also available in the WebUI's Advanced settings. Compare the startup summary (voiced-frame percentage and median detected F0) and held-out `pitch_semitones` / `pitch_melody` metrics rather than assuming the wider preset is better. If the dataset has only phoneme LABs without `note_seq` and note durations, the Pitch model cannot be trained; a tracking preset alone will not fix a uniform pitch offset in Synthesizer V.
+The F0 options are also available in the WebUI's Advanced settings. Compare the startup summary (voiced-frame percentage and median detected F0) and held-out `pitch_semitones` / `pitch_melody` metrics rather than assuming the wider preset is better. Valid WAVs with no measurable voiced frames (for example silence or isolated voiceless consonants such as /k/) are kept for acoustic training; they receive an unvoiced F0 mask and do not provide useful Pitch supervision. If many files are absent after filename import, check `unmatched_phones.csv` for mapping failures and unreadable WAVs instead of assuming F0 removed them. If the dataset has only phoneme LABs without `note_seq` and note durations, the Pitch model cannot be trained; a tracking preset alone will not fix a uniform pitch offset in Synthesizer V.
 
 The audio loss ignores everything 50 dB below each target's peak, so a recording's noise floor is not learned. The pitch loss matches the melody (below 3 Hz) frame by frame but vibrato only by its spectrum, so the model keeps its expression; `pitch_motion` reports its fast motion relative to the singer's (1.0 matches). `--consonant-weight` scales consonant frames in the training audio loss (held-out scores stay unweighted). 
 
@@ -204,29 +204,41 @@ The tests use installed voices (`OPENSV_TEST_VOICES`, separated by `:`, override
 
 Now supported Vocaloid-styled X-SAMPA dict. But something wrong with F0.
 
+
+## WebUI languages
+
+The top toolbar now includes a language selector for **English**, **简体中文**, and **日本語**. The choice is saved in the local WebUI settings and restored on the next launch. Page navigation, controls, parameter help, dynamic status messages, file picker, and packaging dialogs share the selected language; the language used by the recordings remains a separate Training setting.
+
 ## Layout
 
 - `opensv_train/`: the CLI, dataset, model, training and export code
 - `parity/`: the vendored OpenSV engine and the harness the tests compare against
 - `tests/`: parity and training tests
 
-## Pitch / F0 tuning
+## F0 analysis & calibration
 
-The Training page includes a dedicated Pitch / F0 workspace. Control labels and preset choices are in English; explanatory hints intentionally remain in Chinese for now. The existing Pitch checkbox controls whether the voice's own Pitch network is finetuned, while the F0 preset selects both analysis range and (for VOCALOID) target-contour cleanup defaults.
+The Training page has a dedicated **F0 Analysis & Calibration** panel. These controls process the fundamental-frequency targets measured from the recorded WAV; they are separate from the Pitch network's training objective.
 
-- **Standard** keeps the original 65–1100 Hz range and 0.60 voicing threshold.
-- **VOCALOID → Natural-Smooth** uses 45–1400 Hz and a 0.45 threshold, plus a 25 ms median filter within voiced runs, conservative correction of isolated octave spikes, a 2.5 Hz smooth-melody cutoff, and 1.2 / 0.8 melody-versus-fast-motion Pitch loss weights.
-- Low, high and wide presets select the tracking range without enabling extra smoothing by default.
-- Floor, ceiling and voicing threshold remain individually overridable. The smoothing, octave correction, F0 reference correction in cents, melody cutoff, and two loss weights can also be adjusted explicitly.
+- **Standard** uses 65–1100 Hz and a 0.60 voicing threshold.
+- **VOCALOID F0 cleanup** uses 45–1400 Hz and a 0.45 threshold, enables a 25 ms median filter within voiced runs, and conservatively repairs isolated one/two-octave tracker spikes.
+- **Low / High / Wide** select alternative tracking ranges without enabling extra cleanup by default.
+- Floor, ceiling, voicing threshold, median smoothing, isolated-octave correction, and reference correction in cents can be adjusted independently.
 
-The processing presets are intended to reduce brief F0 jumps and overly jagged target contours sometimes seen in synthetic VOCALOID recordings. They affect the F0 targets used during training/evaluation, **not** the final WAV as a post-processing filter. They may improve continuity and pitch smoothness, but cannot guarantee removal of metallic timbre that comes from the acoustic/vocoder model or source signal itself. To benefit from the Pitch loss controls, the dataset must contain usable note and word-boundary labels; for the broader timbral character, train and validate the Sound/Acoustic model as well.
+The F0 cleanup aims to reduce short tracking outliers and jagged target contours. It affects F0 targets used in training/evaluation, **not** the final WAV as a post-processing filter, and cannot guarantee removal of metallic timbre caused by the source recording or acoustic/vocoder model.
 
-The matching CLI flags are available to both `finetune` and `evaluate`: `--f0-profile`, `--f0-floor`, `--f0-ceiling`, `--f0-voicing-threshold`, `--f0-smoothing`, `--f0-octave-correction` / `--no-f0-octave-correction`, `--f0-reference-cents`, `--pitch-smoothing-hz`, `--pitch-melody-weight`, and `--pitch-motion-weight`. Explicit numeric/boolean options override the selected profile. F0 range/threshold changes use a separate cache key; a cents reference correction is applied after loading cached analysis.
+The matching flags for both `finetune` and `evaluate` are `--f0-profile`, `--f0-floor`, `--f0-ceiling`, `--f0-voicing-threshold`, `--f0-smoothing`, `--f0-octave-correction` / `--no-f0-octave-correction`, and `--f0-reference-cents`. Changes to tracking range/threshold use a separate cache key; a cents reference correction is applied after cached analysis.
 
-The Training page also accepts an optional external pretrained Pitch DNNI file. The CLI equivalent is `trainsv finetune --pitch-base-model <path-to-pitch.dnni>`. TrainSV strictly checks the network tree, phoneme tables, normalization buffers, sparse masks, and trainable tensor shapes before copying the source model's non-speaker parameters. The target voice's own speaker vector is preserved; an incompatible file is rejected rather than force-written.
+## Pitch model training
 
-The repository does **not** yet bundle a tested general-purpose Pitch weight file. This option lets a user initialize from a locally available compatible pretrained model; it does not make different Pitch architectures or phone sets automatically compatible. For VOCALOID/UTAU sources, first check the F0 range/voicing settings and small reference correction, then compare listening results on recordings held out from training.
+The separate **Pitch Model & Training** panel contains options for training the Pitch network itself:
 
+- Choose the Pitch model from the selected base voice, or import a compatible pretrained `.dnni` file.
+- **Melody smoothing cutoff**, **Smooth melody loss weight**, and **Vibrato / fast-motion loss weight** change the Pitch model's training objective; they do not clean or re-detect the source WAV.
+- These Pitch settings are independent of the selected F0 analysis preset. Changing the F0 preset will not modify Pitch loss parameters.
+
+The corresponding flags for both `finetune` and `evaluate` are `--pitch-smoothing-hz`, `--pitch-melody-weight`, and `--pitch-motion-weight`. Explicit values override the defaults of 3 Hz and 1.0 / 1.0. For useful Pitch training, the dataset needs valid note and word-boundary labels; for overall timbre, also train and validate the Sound/Acoustic model.
+
+The CLI also accepts `trainsv finetune --pitch-base-model <path-to-pitch.dnni>`. TrainSV strictly checks the network tree, phoneme tables, normalization buffers, sparse masks, and trainable tensor shapes before copying the source model's non-speaker parameters. The target voice's own speaker vector is preserved; incompatible files are rejected. The repository does **not** yet bundle a tested general-purpose Pitch weight file.
 ## Layout
 
 - `opensv_train/`: the CLI, dataset, model, training and export code
