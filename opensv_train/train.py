@@ -13,9 +13,22 @@ from .common import find_language
 from .data import Phrase
 from .duration import interval_log_fractions
 from .losses import SpectralLoss
+from .pitch import PitchInputs
 from .voice import Voice
 
 MODELS = ("acoustic", "duration", "pitch", "vocoder")
+
+
+@dataclass
+class PitchTrainingCache:
+    inputs: PitchInputs
+    count: int
+    target: torch.Tensor
+    weights: torch.Tensor
+    voiced: torch.Tensor
+    slow_target: torch.Tensor
+    fast_target: torch.Tensor
+    target_motion_spectrum: torch.Tensor
 
 
 @dataclass
@@ -90,6 +103,9 @@ class Trainer:
         self.spectral = SpectralLoss().to(self.device)
         self.random = random.Random(config.seed)
         self._phone_weights_cache: dict[int, np.ndarray] = {}
+        # Pitch preprocessing is deterministic for a phrase and fixed run
+        # configuration, so keep it out of the per-optimizer-step hot path.
+        self._pitch_cache: dict[int, PitchTrainingCache] = {}
 
     def eligible(self, model: str, phrases: list[Phrase]) -> list[Phrase]:
         if model in ("duration", "pitch"):
@@ -150,21 +166,45 @@ class Trainer:
 
     def pitch_terms(self, phrase: Phrase) -> dict[str, torch.Tensor]:
         model = self.voice.pitch
-        notes, phonemes, midi, mask = phrase.pitch_example()
-        inputs = model.prepare(notes, phonemes, self.config.rap_languages)
-        count = min(inputs.frames, len(midi))
+        key = id(phrase)
+        cached = self._pitch_cache.get(key)
+        if cached is None:
+            example = phrase.pitch_example()
+            if example is None:
+                raise ValueError(f"{phrase.utterance.name}: phrase has no usable Pitch example")
+            notes, phonemes, midi, mask = example
+            inputs = model.prepare(notes, phonemes, self.config.rap_languages)
+            count = min(inputs.frames, len(midi))
+            scale = model.note_normalizer.scale[2]
+            target = model.normalize_pitch(
+                torch.from_numpy(midi[:count] + inputs.transpose).to(self.device)
+            ) * scale
+            target = target.detach()
+            weights = torch.from_numpy(mask[:count].astype(np.float32)).to(self.device)
+            voiced = weights.sum().clamp(min=1.0)
+            slow_target = _low_pass(target, cutoff_hz=self.config.pitch_smoothing_hz)
+            fast_target = (target - slow_target) * weights
+            target_spectrum = _motion_spectrum(fast_target)
+            cached = PitchTrainingCache(
+                inputs=inputs,
+                count=count,
+                target=target,
+                weights=weights,
+                voiced=voiced,
+                slow_target=slow_target,
+                fast_target=fast_target,
+                target_motion_spectrum=target_spectrum,
+            )
+            self._pitch_cache[key] = cached
+
         scale = model.note_normalizer.scale[2]
-        predicted = model(inputs)[:count] * scale
-        target = model.normalize_pitch(torch.from_numpy(midi[:count] + inputs.transpose).to(self.device)) * scale
-        weights = torch.from_numpy(mask[:count].astype(np.float32)).to(self.device)
-        voiced = weights.sum().clamp(min=1.0)
+        predicted = model(cached.inputs)[:cached.count] * scale
         slow_predicted = _low_pass(predicted, cutoff_hz=self.config.pitch_smoothing_hz)
-        slow_target = _low_pass(target, cutoff_hz=self.config.pitch_smoothing_hz)
-        melody = (torch.abs(slow_predicted - slow_target) * weights).sum() / voiced
-        fast_predicted, fast_target = (predicted - slow_predicted) * weights, (target - slow_target) * weights
-        motion = (_motion_spectrum(fast_predicted) - _motion_spectrum(fast_target)).abs().mean()
-        frame_error = (torch.abs(predicted - target) * weights).sum() / voiced
-        ratio = fast_predicted.detach().abs().sum() / fast_target.abs().sum().clamp(min=1e-6)
+        melody = (torch.abs(slow_predicted - cached.slow_target) * cached.weights).sum() / cached.voiced
+        fast_predicted = (predicted - slow_predicted) * cached.weights
+        motion = (_motion_spectrum(fast_predicted) - cached.target_motion_spectrum).abs().mean()
+        frame_error = (torch.abs(predicted - cached.target) * cached.weights).sum() / cached.voiced
+        ratio = fast_predicted.detach().abs().sum() / cached.fast_target.abs().sum().clamp(min=1e-6)
         weighted = self.config.pitch_melody_weight * melody + self.config.pitch_motion_weight * motion
         return {"pitch": weighted, "pitch_semitones": frame_error, "pitch_melody": melody, "pitch_motion": ratio}
 
