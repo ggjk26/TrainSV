@@ -23,6 +23,7 @@ from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_le
 from .voice import ROLES, Voice, initialize_pitch_from_file
 from .packaging import build_svpk
 from .sfpk import build_sfpk
+from .timbre import summarize_timbre
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -156,6 +157,7 @@ def finetune(arguments) -> None:
         pitch_smoothing_hz=arguments.pitch_smoothing_hz,
         transition_weight=arguments.transition_weight,
         transition_frames=arguments.transition_frames,
+        brightness_weight=arguments.brightness_weight,
     )
     calibration = random.Random(arguments.seed).sample(phrases, min(40, len(phrases)))
     models_root = Path(arguments.output).expanduser().parent.parent / "models"
@@ -343,6 +345,7 @@ def evaluate(arguments) -> None:
     device = torch.device(arguments.device)
     output = Path(arguments.out) if arguments.out else None
     report = {}
+    timbre_diagnostics = {}
     f0_floor, f0_ceiling, f0_threshold = resolve_f0_profile(
         arguments.f0_profile,
         floor=arguments.f0_floor,
@@ -376,6 +379,7 @@ def evaluate(arguments) -> None:
             pitch_melody_weight=arguments.pitch_melody_weight,
             pitch_motion_weight=arguments.pitch_motion_weight,
             pitch_smoothing_hz=arguments.pitch_smoothing_hz,
+            brightness_weight=arguments.brightness_weight,
         )
         metrics = Trainer(voice, [], validation, config, log=lambda message: None).evaluate()
         name = voice.files.metadata.get(".name", path)
@@ -383,13 +387,27 @@ def evaluate(arguments) -> None:
         if output is not None:
             label = f"{index}_{name}"
             report[label] = {"voice": str(path), "gain": gain, **metrics}
+            reference_audio, rendered_audio = [], []
             for phrase in validation[:arguments.max_phrases]:
                 directory = output / f"{phrase.utterance.name}_{phrase.start:.2f}"
                 directory.mkdir(parents=True, exist_ok=True)
-                soundfile.write(str(directory / "recording.wav"), phrase.audio() / gain, SAMPLE_RATE)
-                soundfile.write(str(directory / f"{label}.wav"), _render(voice, phrase, device) / gain, SAMPLE_RATE)
+                recording = np.asarray(phrase.audio() / gain, dtype=np.float32)
+                rendered = np.asarray(_render(voice, phrase, device) / gain, dtype=np.float32)
+                soundfile.write(str(directory / "recording.wav"), recording, SAMPLE_RATE)
+                soundfile.write(str(directory / f"{label}.wav"), rendered, SAMPLE_RATE)
+                reference_audio.append(recording)
+                rendered_audio.append(rendered)
+            if reference_audio:
+                timbre_diagnostics[label] = summarize_timbre(reference_audio, rendered_audio, SAMPLE_RATE)
+                delta = timbre_diagnostics[label]["delta"]
+                print(
+                    f"timbre {name}: centroid Δ={delta['spectral_centroid_hz']:.1f} Hz, "
+                    f"low/mid Δ={delta['low_mid_ratio_db']:.2f} dB, "
+                    f"high/mid Δ={delta['high_mid_ratio_db']:.2f} dB"
+                )
     if output is not None:
         (output / "metrics.json").write_text(json.dumps(report, indent=2))
+        (output / "timbre_diagnostics.json").write_text(json.dumps(timbre_diagnostics, indent=2, ensure_ascii=False))
         print(f"wrote {output}")
 
 
@@ -565,6 +583,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--consonant-weight", type=float, default=1.0, help="weight of consonant frames in the training audio loss (held-out scores stay unweighted)")
     command.add_argument("--transition-weight", type=float, default=1.0, help="extra weight for non-silence phoneme handoffs in the acoustic training loss; 1 disables it")
     command.add_argument("--transition-frames", type=int, default=2, help="frames on either side of each speech-phone boundary to emphasize (5 ms per frame)")
+    command.add_argument("--brightness-weight", type=float, default=0.0, help="optional loss weight for matching target high/mid spectral balance; 0 disables it")
     command.add_argument("--validation", type=float, default=0.1, help="phrases held out: a fraction, or a count when 1 or more")
     command.add_argument("--evaluate-every", "--val-every", type=int, default=250)
     command.add_argument("--log-every", type=int, default=25)
@@ -638,6 +657,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--pitch-smoothing-hz", type=float, default=None, help="override the default low-pass cutoff for the Pitch model's smooth melody contour")
     command.add_argument("--pitch-melody-weight", type=float, default=None, help="override the default Pitch model smooth-melody loss weight")
     command.add_argument("--pitch-motion-weight", type=float, default=None, help="override the default Pitch model fast-motion/vibrato loss weight")
+    command.add_argument("--brightness-weight", type=float, default=0.0, help="brightness-balance loss weight (0 disables)")
     command.add_argument("--validation", type=float, default=0.1)
     command.add_argument("--phoneme-map")
     command.add_argument("--seed", type=int, default=0)
