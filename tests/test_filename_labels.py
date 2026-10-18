@@ -164,19 +164,20 @@ def test_unknown_phone_fails_loudly():
         parse_filename_phones("definitely_unknown_0.wav", PHONES)
 
 
-def test_rhoticized_vowel_uses_complete_symbol_when_available():
-    assert parse_filename_phones("7 @`_0.wav", PHONES | {"@`"}) == ["sil", "7", "@`", "sil"]
-
+def test_rhoticized_vowel_is_regex_expanded_to_two_ordered_phones():
+    rhotic = "r" + chr(92)
+    assert parse_filename_phones(
+        "7 @" + chr(96) + "_0.wav", PHONES | {rhotic}
+    ) == ["sil", "7", "@", rhotic, "sil"]
 
 def test_rhoticized_vowel_falls_back_to_available_rhotic_phone():
     assert parse_filename_phones("7 @`_0.wav", PHONES | {"r\\"}) == ["sil", "7", "@", "r\\", "sil"]
     assert parse_filename_phones("7 @`_0.wav", PHONES | {"r"}) == ["sil", "7", "@", "r", "sil"]
 
 
-def test_rhoticized_vowel_explains_missing_fallback():
-    with pytest.raises(ValueError, match="rhoticized vowel"):
-        parse_filename_phones("7 @`_0.wav", PHONES)
-
+def test_rhoticized_vowel_without_compatible_target_fails_loudly():
+    with pytest.raises(ValueError, match="unknown phone"):
+        parse_filename_phones("7 @" + chr(96) + "_0.wav", PHONES)
 
 def test_f0_at_handles_utterance_with_no_voiced_frames():
     from opensv_train.data import Utterance
@@ -449,7 +450,7 @@ def test_rhoticized_vowel_uses_curated_inventory_fallback_without_source_mode():
     ) == ["sil", "e/", "rr", "sil"]
 
 
-def test_unmatched_report_preserves_rhoticized_vowel_source_token(tmp_path):
+def test_unmatched_report_identifies_expanded_rhotic_component(tmp_path):
     wav_dir = tmp_path / "wavs"
     wav_dir.mkdir()
     soundfile.write(
@@ -462,5 +463,4 @@ def test_unmatched_report_preserves_rhoticized_vowel_source_token(tmp_path):
         wav_dir, {"sil", "@"}, unmatched=unmatched
     )
     assert recordings == []
-    assert unmatched[0]["source_token"] == "@" + chr(96)
-
+    assert unmatched[0]["source_token"] == "r" + chr(92)
