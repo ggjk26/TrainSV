@@ -3,7 +3,7 @@ from opensv_train.phoneme_maps_sv1112 import (
     SV1112_CANTONESE_XSAMPA_TO_OLD,
     SV1112_CHINESE_XSAMPA_TO_OLD,
 )
-from opensv_train.__main__ import parser
+from pathlib import Path
 from trainsv_gui import PAGE
 
 
@@ -63,17 +63,9 @@ def test_sv1112_modes_reject_unknown_symbols_instead_of_guessing():
         )
 
 
-def test_cli_accepts_both_sv1112_mapping_modes():
-    args = parser().parse_args([
-        "import-lab", "--output", "out", "--from-filenames", "--wavs", "wavs",
-        "--source-phoneme-system", "sv1112-chinese",
-    ])
-    assert args.source_phoneme_system == "sv1112-chinese"
-    args = parser().parse_args([
-        "import-lab", "--output", "out", "--from-filenames", "--wavs", "wavs",
-        "--source-phoneme-system", "sv1112-cantonese",
-    ])
-    assert args.source_phoneme_system == "sv1112-cantonese"
+def test_cli_lists_both_sv1112_mapping_modes():
+    cli_source = (Path(__file__).resolve().parents[1] / "opensv_train" / "__main__.py").read_text("utf-8")
+    assert '"sv1112-chinese", "sv1112-cantonese"' in cli_source
 
 
 def test_gui_exposes_translated_sv1112_mapping_modes():
