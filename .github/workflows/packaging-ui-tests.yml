@@ -17,6 +17,7 @@ on:
       - "README.md"
       - "README.zh-CN.md"
       - "tests/test_data.py"
+      - "tests/test_gui_performance.py"
       - "tests/test_audio_io.py"
       - "tests/test_pitch.py"
       - "tests/test_packaging.py"
@@ -50,3 +51,4 @@ jobs:
           python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py tests/test_f0_profile.py
           python -m pytest -q tests/test_filename_labels.py -k "not f0_at"
           python -m pytest -q tests/test_audio_io.py tests/test_f0_tracking.py
+          python -m pytest -q tests/test_gui_performance.py
