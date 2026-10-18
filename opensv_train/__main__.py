@@ -515,7 +515,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--language", default="japanese", type=language_name, help="language phone set for --voice")
     command.add_argument("--from-filenames", action="store_true", help="generate approximate LAB labels from space-separated phones in WAV filenames")
     command.add_argument("--phone-table", help="JSON phone table used to validate and split custom phoneme names")
-    command.add_argument("--source-phoneme-system", choices=("auto", "vocaloid-mandarin", "xsampa", "synthv-xsampa", "none"), default="auto", help="source filename phone convention: auto uses VOCALOID Mandarin for Mandarin; xsampa uses standard X-SAMPA; synthv-xsampa uses legacy SynthV Mandarin X-SAMPA labels")
+    command.add_argument("--source-phoneme-system", choices=("auto", "vocaloid-mandarin", "xsampa", "synthv-xsampa", "sv1112-chinese", "sv1112-cantonese", "none"), default="auto", help="source filename phone convention: auto uses VOCALOID Mandarin for Mandarin; xsampa uses standard X-SAMPA; synthv-xsampa uses legacy SynthV Mandarin X-SAMPA labels; sv1112-chinese/cantonese map documented Chinese or Cantonese X-SAMPA/source aliases to SynthV 1.11.2 Old labels")
     command.set_defaults(handler=import_lab)
 
     command = commands.add_parser("convert-dict", help="re-spell a DiffSinger dataset with SV's dictionary for its language")

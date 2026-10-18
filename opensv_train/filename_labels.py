@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .audio_io import read_wav_frames
+from .phoneme_maps_sv1112 import map_sv1112_phone
 
 TICKS_PER_SECOND = 10_000_000
 SILENCE_FRACTION = 0.10
@@ -324,10 +325,10 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
     # Some VOCALOID exports percent-encode literal backslashes in phone names.
     # Normalize every occurrence before mapping, independent of hex-letter case.
     stem = re.sub(r"%5c", lambda _match: chr(92), stem, flags=re.IGNORECASE)
-    # Expand only a standalone rhoticized at-vowel token. The inserted space
-    # makes the vowel and rhotic component two ordered phones; embedded substrings
-    # in other symbols are not modified.
-    stem = re.sub(r"(?<!\S)@" + chr(96) + r"(?!\S)", lambda _match: "@" + " r" + chr(92), stem)
+    # Older generic modes expand standalone rhoticized vowels into two source tokens.
+    # The explicit SV 1.11.2 Chinese map handles its VOCALOID alias as one phone.
+    if source_system not in {"sv1112-chinese", "sv1112-cantonese"}:
+        stem = re.sub(r"(?<!\S)@" + chr(96) + r"(?!\S)", lambda _match: "@" + " r" + chr(92), stem)
     raw_phones = stem.split()
     if not raw_phones:
         raise ValueError(f"{Path(filename).name}: filename contains no space-separated phonemes")
@@ -340,6 +341,18 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
         if token.casefold() == "sil":
             phones.append("sil")
             continue
+
+        # Official Old/X-SAMPA mapping for Synthesizer V Studio 1.11.2.
+        # These explicit modes never use generic character splitting or 2.3 labels.
+        if source_system in {"sv1112-chinese", "sv1112-cantonese"}:
+            converted = map_sv1112_phone(token, valid, source_system)
+            if converted is not None:
+                phones.extend(converted)
+                continue
+            raise ValueError(
+                f"{Path(filename).name}: unknown phone {token!r}; no verified "
+                f"{source_system} to SynthV 1.11.2 mapping exists in the target inventory"
+            )
 
         # For the rhoticized at-vowel, prefer the explicit X-SAMPA sequence
         # @ + r\ when supported, otherwise use the compatible 3 phone.

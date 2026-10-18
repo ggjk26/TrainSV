@@ -11,6 +11,7 @@ on:
       - "opensv_train/f0.py"
       - "opensv_train/f0_tracking.py"
       - "opensv_train/filename_labels.py"
+      - "opensv_train/phoneme_maps_sv1112.py"
       - "opensv_train/train.py"
       - "opensv_train/voice.py"
       - "trainsv_gui.py"
@@ -25,6 +26,7 @@ on:
       - "tests/test_f0_profile.py"
       - "tests/test_f0_tracking.py"
       - "tests/test_filename_labels.py"
+      - "tests/test_phoneme_maps_sv1112.py"
       - ".github/workflows/packaging-ui-tests.yml"
   push:
     branches:
@@ -49,4 +51,5 @@ jobs:
         run: |
           python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py tests/test_f0_profile.py
           python -m pytest -q tests/test_filename_labels.py -k "not f0_at"
+          python -m pytest -q tests/test_phoneme_maps_sv1112.py
           python -m pytest -q tests/test_audio_io.py tests/test_f0_tracking.py
