@@ -166,6 +166,10 @@ Other commands:
 
 A `voice.nofs` voice is written as a `voice.nofs` with its model entries patched in place. An `info.<version>.nofs` voice (shared models) is written to the `databases/<name>/` directory given by `--output`, with changed models added to the sibling `models/<kind>/<md5>.dnni` tree. `--name` sets the singer name and `--version` the info voice's version.
 
+### Flat voices with a DNNI v3 Pitch dependency
+
+TrainSV currently parses DNNI v1/v2 model graphs. When an extracted/shared-model `info.<version>.nofs` references a DNNI v3 file for the **Pitch** role, TrainSV can keep that file as an opaque byte-for-byte dependency while loading the supported Duration, Acoustic, and Vocoder models. This fallback does not decode the v3 model. It enables data import and acoustic-only (or other non-Pitch) fine-tuning when the other model roles are supported; the Pitch network remains unavailable for inference, initialization, and training. The original Pitch bytes and speaker vector are preserved when saving the info voice. Do not select Pitch training for such a voice. DNNI v3 in any other model role is not covered by this fallback, and compatibility of the resulting voice still requires validation in Synthesizer V Flat.
+
 ## WebUI packaging (experimental SVPK)
 
 After “Compare voices” finishes in the WebUI Results stage, a format-choice dialog appears. Choose “使用 SVPK 格式打包” to enter the singer name, vendor/author, integer version, avatar PNG and background PNG. The WebUI creates the metadata JSON internally; you do not need to author or import it. This SVPK packager currently accepts a regular single-file `voice.nofs`, not a shared-model `info.*.nofs`. A header-preset selector lets you compare four **diagnostic-only** 256-byte fields: `zero` (default), `random`, `sha256-chain`, and `aes256-cbc-test`. The same choice is available on the CLI as `--header-preset zero|random|sha256-chain|aes256-cbc-test` (default `zero`). The AES option uses a synthetic, publicly derivable test key/IV; it is not the Synthesizer V key or official format.
