@@ -11,6 +11,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
+from .phoneme_maps_sv1112 import map_sv1112_xsampa
+
 import soundfile
 
 TICKS_PER_SECOND = 10_000_000
@@ -193,6 +195,16 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
         if token.casefold() == "sil":
             phones.append("sil")
             continue
+        if source_system in {"sv1112-chinese", "sv1112-cantonese"}:
+            converted = map_sv1112_xsampa(token, valid, source_system)
+            if converted is not None:
+                phones.extend(converted)
+                continue
+            raise ValueError(
+                f"{Path(filename).name}: {token!r} has no verified mapping in "
+                f"the {source_system} phoneme table or is unsupported by the target inventory"
+            )
+
         replacement = PHONE_REPLACEMENTS.get(token)
         if replacement is not None:
             if replacement not in valid and source_system == "vocaloid-mandarin":
