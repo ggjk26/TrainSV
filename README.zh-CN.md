@@ -130,7 +130,7 @@ trainsv import-lab --from-filenames --wavs C:\\my-wavs --voice C:\\path\\to\\voi
 
 此模式按文件名从左到右排列音素，只删除末尾的 `_0` / `_1` 重录编号，保留音素内部下划线；首尾固定添加 `sil`，不会合并文件名中原有的静音。首尾静音各占音频时长的 10%，中间音素平均分配剩余 80%。**这是按规则均分的近似标注，不是声学强制对齐**；实际音素边界可能不同，建议先检查生成的 LAB。
 
-当 `--language mandarin` 时，`--source-phoneme-system` 默认是 `auto`，会将常见 VOCALOID 中文文件名音素转换为目标 SynthV 普通话音素。文件名使用标准普通话 X-SAMPA 时选择 `xsampa`；使用 Synthesizer V 旧版普通话 X-SAMPA 写法时选择 `synthv-xsampa`；`vocaloid-mandarin` 可显式启用 VOCALOID 映射，`none` 则关闭音素转换。X-SAMPA 映射依据 Dreamtonics 公布的 Synthesizer V 2.3 音素变更表；对于旧式 X-SAMPA 音素表，会优先保留目标声库中完整匹配的符号。显式 X-SAMPA 模式不会猜测拆分未知音素，而是报告具体文件与错误。通常指定 `--voice` 读取目标音素表即可，不必准备 `phone_table.json`。无法映射的音素或无法解码的 WAV 会记录在输出目录的 `unmatched_phones.csv`，其他文件仍会继续处理。
+`--source-phoneme-system` 默认值 `auto` 会保留现有 VOCALOID 中文映射。如果要专门为 Synthesizer V Studio 1.11.2 生成标签，请选择 `sv1112-chinese`（普通话）或 `sv1112-cantonese`（粤语）。这两个显式模式根据 Dreamtonics 官方音素变更表，将指定的 X-SAMPA 音素及明确列出的 VOCALOID 普通话别名映射到 `Old` 列，也就是 2.3 版本之前的音素标签；不会输出新版简化罗马字标签。所有映射结果都必须存在于所选目标声库的音素表中，不支持的符号会被报告，不会猜测拆分或擅自加入目标音素。原有 `xsampa`、`synthv-xsampa` 和 `vocaloid-mandarin` 模式继续保留；`none` 关闭转换。参考：[Dreamtonics 官方音素变更表（Chinese / Mandarin）](https://resource.dreamtonics.com/sv230b1_phoneme_changes.html#mandarin) 与 [Cantonese](https://resource.dreamtonics.com/sv230b1_phoneme_changes.html#cantonese)。通常指定 `--voice` 读取目标音素表即可，不必准备 `phone_table.json`。无法映射的音素或无法解码的 WAV 会记录在输出目录的 `unmatched_phones.csv`，其他文件仍会继续处理。
 
 X-SAMPA 的 `@\``、`3\`` 表示卷舌化元音：若目标音素表中有完整符号则原样保留；若没有，程序会尝试用对应元音加音素表中已有的卷舌音近似拆分（优先 `r\\`，其次 `ɹ`、`ɻ`、`r` 等）。若表内既没有完整符号，也没有可用近似音，会报出更具体的错误，不会直接丢掉卷舌特征。
 
