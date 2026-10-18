@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import csv
 import importlib.util
+import heapq
 import json
 import os
 import platform
@@ -163,19 +164,24 @@ def browse(path: str, want_files: bool, exts: set) -> dict:
         p = p.parent
     entries, error = [], None
     try:
-        for e in sorted(p.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
-            if e.name.startswith("."):
-                continue
-            try:
-                is_dir = e.is_dir()
-            except OSError:
-                continue
-            if is_dir:
-                entries.append({"name": e.name, "dir": True})
-            elif want_files and (not exts or e.suffix.lower().lstrip(".") in exts):
-                entries.append({"name": e.name, "dir": False})
-            if len(entries) >= 3000:
-                break
+        # Keep directory listing memory bounded for folders with very large
+        # recording collections while preserving the 3000-entry UI limit.
+        def visible_entries():
+            for entry in p.iterdir():
+                if entry.name.startswith("."):
+                    continue
+                try:
+                    is_dir = entry.is_dir()
+                except OSError:
+                    continue
+                matches_file = want_files and (not exts or entry.suffix.lower().lstrip(".") in exts)
+                if is_dir or matches_file:
+                    yield entry, is_dir
+
+        selected = heapq.nsmallest(
+            3000, visible_entries(), key=lambda item: (not item[1], item[0].name.lower())
+        )
+        entries = [{"name": entry.name, "dir": is_dir} for entry, is_dir in selected]
     except PermissionError:
         error = "No permission to open this folder."
     roots = [f"{c}:\\" for c in string.ascii_uppercase if Path(f"{c}:\\").exists()] if os.name == "nt" else ["/"]
@@ -194,6 +200,13 @@ def check_dataset(path: str) -> dict:
         rows = notes = missing = 0
         seconds = 0.0
         styles = set()
+        # Scan the WAV directory once, rather than making one filesystem
+        # existence query for every CSV row. normcase follows the host OS's
+        # native filename case semantics (case-insensitive on Windows).
+        wav_names = (
+            {os.path.normcase(item.stem) for item in wavs.glob("*.wav")}
+            if wavs.is_dir() else set()
+        )
         try:
             with csv_path.open(newline="", encoding="utf-8-sig") as handle:
                 reader = csv.DictReader(handle)
@@ -206,7 +219,8 @@ def check_dataset(path: str) -> dict:
                         seconds += sum(float(x) for x in (row.get("ph_dur") or "").split())
                     except ValueError:
                         pass
-                    if wavs.is_dir() and not (wavs / f"{row.get('name', '')}.wav").exists():
+                    name = row.get("name") or ""
+                    if wavs.is_dir() and os.path.normcase(name) not in wav_names:
                         missing += 1
                     if (row.get("style") or "").strip():
                         styles.add(row["style"].strip())
@@ -222,10 +236,13 @@ def folder_info(path: str) -> dict:
         return {"exists": False}
 
     def count(ext, subs):
-        total = len(list(d.glob(f"*.{ext}")))
+        # Count lazily so checking a large folder doesn't allocate a list
+        # containing every recording path.
+        total = sum(1 for _ in d.glob(f"*.{ext}"))
         for sub in subs:
-            if (d / sub).is_dir():
-                total += len(list((d / sub).glob(f"*.{ext}")))
+            child = d / sub
+            if child.is_dir():
+                total += sum(1 for _ in child.glob(f"*.{ext}"))
         return total
 
     return {"exists": True, "wav": count("wav", ("wav", "wavs")), "lab": count("lab", ("lab", "labs"))}
@@ -1553,6 +1570,11 @@ async function poll(){
       if(s.status==="idle"){JOB=null;break}
       const was=JOB.status;
       JOB.lines.push(...s.lines);JOB.since=s.next;ingest(s.lines);
+      const maxClientLogLines=12000;
+      if(JOB.lines.length>maxClientLogLines){
+        const drop=JOB.lines.length-maxClientLogLines;
+        JOB.lines.splice(0,drop);JOB.logDropped=(JOB.logDropped||0)+drop;JOB.logNeedsSync=true;
+      }
       JOB.status=s.status;JOB.elapsed=s.elapsed;JOB.code=s.code;JOB.command=s.command;JOB.label=s.label||JOB.label;
       renderJob();
       if(was==="running"&&s.status!=="running"){
@@ -1608,8 +1630,19 @@ function renderJob(){
   }else mt.hidden=true;
   const nx=$("#actNext");
   if(JOB.next&&st==="done"){nx.hidden=false;nx.textContent=JOB.next.text;nx.onclick=()=>{const n=JOB.next;go(n.go);if(n.to)setTimeout(()=>$(n.to).scrollIntoView({behavior:"smooth",block:"start"}),50)}}else nx.hidden=true;
-  const log=$("#logPre"),text=JOB.lines.join("\n"),atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-30;
-  if(log.textContent!==text){log.textContent=text;if(atEnd)log.scrollTop=log.scrollHeight}
+  const log=$("#logPre"),atEnd=log.scrollTop+log.clientHeight>=log.scrollHeight-30;
+  // Append only newly received lines; rebuilding and comparing the full log
+  // on each 700 ms poll becomes quadratic over long training runs.
+  if(JOB.logNeedsSync||(JOB.logRendered||0)>JOB.lines.length){
+    const omitted=JOB.logDropped?("["+JOB.logDropped+" earlier log lines omitted]\\n"):"";
+    log.textContent=omitted+JOB.lines.join("\\n");
+    JOB.logRendered=JOB.lines.length;JOB.logNeedsSync=false;
+  }else if((JOB.logRendered||0)<JOB.lines.length){
+    const added=JOB.lines.slice(JOB.logRendered||0).join("\\n");
+    if(added)log.append(document.createTextNode((log.textContent?"\\n":"")+added));
+    JOB.logRendered=JOB.lines.length;
+  }
+  if(atEnd)log.scrollTop=log.scrollHeight
   if(JOB.log&&!JOB.logOpened){$("#actLog").open=true;JOB.logOpened=true}
 }
 
