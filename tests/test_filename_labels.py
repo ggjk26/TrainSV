@@ -175,6 +175,18 @@ def test_rhoticized_vowel_falls_back_to_available_rhotic_phone():
     assert parse_filename_phones("7 @`_0.wav", PHONES | {"r"}) == ["sil", "7", "@", "r", "sil"]
 
 
+def test_rhoticized_vowel_maps_through_synthv_mandarin_aliases():
+    # In the newer SynthV Mandarin inventory, the curated bridge maps @ -> e/
+    # and X-SAMPA r\\ -> iz when both target symbols exist.
+    target = {
+        "sil", "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v",
+        "ng", "-n", "b", "p", "d", "t", "g", "k", "z", "c",
+    }
+    assert parse_filename_phones(
+        "@" + chr(96) + "_0.wav", target, source_system="vocaloid-mandarin"
+    ) == ["sil", "e/", "iz", "sil"]
+
+
 def test_rhoticized_vowel_without_compatible_target_fails_loudly():
     with pytest.raises(ValueError, match="unknown phone"):
         parse_filename_phones("7 @" + chr(96) + "_0.wav", PHONES)
