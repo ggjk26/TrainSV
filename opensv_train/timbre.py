@@ -57,12 +57,17 @@ def analyze_timbre(audio, sample_rate: int = 48000) -> dict[str, float]:
     }
 
 
-def summarize_timbre(reference_audio, rendered_audio, sample_rate: int = 48000) -> dict:
-    """Summarize reference-vs-rendered profiles over matching held-out phrases."""
+def summarize_timbre(
+    reference_audio, rendered_audio, sample_rate: int = 48000,
+    phrase_names: list[str] | None = None,
+) -> dict:
+    """Summarize global and per-phrase spectral balance against matching WAVs."""
     if not reference_audio or not rendered_audio:
         raise ValueError("at least one reference and rendered phrase are required")
     if len(reference_audio) != len(rendered_audio):
         raise ValueError("reference and rendered phrase counts must match")
+    if phrase_names is not None and len(phrase_names) != len(reference_audio):
+        raise ValueError("phrase names must match the number of audio pairs")
     refs = [analyze_timbre(x, sample_rate) for x in reference_audio]
     outputs = [analyze_timbre(x, sample_rate) for x in rendered_audio]
 
@@ -75,6 +80,14 @@ def summarize_timbre(reference_audio, rendered_audio, sample_rate: int = 48000) 
     reference = average(refs)
     rendered = average(outputs)
     delta = {key: float(rendered[key] - reference[key]) for key in PROFILE_KEYS}
+    per_phrase = []
+    for index, (ref, out) in enumerate(zip(refs, outputs)):
+        per_phrase.append({
+            "name": phrase_names[index] if phrase_names is not None else f"phrase-{index + 1}",
+            "reference": ref,
+            "rendered": out,
+            "delta": {key: float(out[key] - ref[key]) for key in PROFILE_KEYS},
+        })
     if delta["high_mid_ratio_db"] <= -2.0 and delta["spectral_centroid_hz"] <= -250.0:
         interpretation = (
             "The render is globally darker than the reference: upper-band balance and "
@@ -102,6 +115,7 @@ def summarize_timbre(reference_audio, rendered_audio, sample_rate: int = 48000) 
         "reference": reference,
         "rendered": rendered,
         "delta": delta,
+        "per_phrase": per_phrase,
         "interpretation": interpretation,
         "caveat": CAVEAT,
     }
