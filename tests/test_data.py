@@ -211,3 +211,33 @@ def test_phrase_frame_f0_is_cached_across_repeated_training_steps():
     assert first_voiced is second_voiced
     assert np.all(first_hz == 220.0)
     assert np.all(first_voiced)
+
+
+
+@pytest.mark.parametrize("phrase_start", [-0.05, 0.0, 0.08, 0.25])
+def test_audio_segment_matches_full_phrase_padding(phrase_start):
+    from opensv_train.data import Phrase, Utterance
+
+    audio = np.linspace(-1.0, 1.0, 12000, dtype=np.float32)
+    utterance = Utterance(
+        name="window",
+        audio=audio,
+        phones=[],
+        notes=None,
+        f0_times=np.array([], dtype=np.float64),
+        f0_values=np.array([], dtype=np.float32),
+    )
+    phrase = Phrase(
+        utterance=utterance,
+        start=phrase_start,
+        end=phrase_start + 0.4,
+        phones=[],
+        phone_frames=[20, 20, 40],
+    )
+    full = phrase.audio()
+    for start, count in ((0, 480), (960, 1440), (6000, 1920), (18000, 480)):
+        expected = full[start:start + count]
+        if len(expected) < count:
+            expected = np.pad(expected, (0, count - len(expected)))
+        actual = phrase.audio_segment(start, count)
+        np.testing.assert_array_equal(actual, expected)
