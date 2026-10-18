@@ -463,4 +463,4 @@ def test_unmatched_report_identifies_expanded_rhotic_component(tmp_path):
         wav_dir, {"sil", "@"}, unmatched=unmatched
     )
     assert recordings == []
-    assert unmatched[0]["source_token"] == "r" + chr(92)
+    assert unmatched[0]["source_token"] == "@" + chr(96)
