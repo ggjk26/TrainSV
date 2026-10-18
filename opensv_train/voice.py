@@ -63,7 +63,7 @@ class UnavailablePitchModel(torch.nn.Module):
         self.reason = (
             f"Pitch DNNI v{version} is preserved without parsing; Pitch training, "
             "Pitch-model initialization, and Pitch-network inference are unavailable. "
-            "Select acoustic-only training to keep this dependency unchanged."
+            "Choose a training configuration that does not include Pitch to keep this dependency unchanged."
         )
 
 
