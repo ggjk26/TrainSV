@@ -2,6 +2,7 @@ from opensv_train.filename_labels import parse_filename_phones
 from opensv_train.phoneme_maps_sv1112 import (
     SV1112_CANTONESE_XSAMPA_TO_OLD,
     SV1112_CHINESE_XSAMPA_TO_OLD,
+    SV1112_VOCALOID_MANDARIN_ALIASES,
 )
 from pathlib import Path
 from trainsv_gui import PAGE
@@ -27,29 +28,41 @@ def test_sv1112_chinese_uses_official_xsampa_to_old_labels():
 
 
 def test_sv1112_cantonese_preserves_legacy_consonants_vowels_and_codas():
-    phones = (
+    source_phones = (
         "ts tsh f h s l m n N w j p ph t th k kh kw kwh "
         "a 6 E e i I O o u U 9 8 y m= N= "
         ":i :y :u :m :n :N :p} :t} :k}"
     )
-    target = {"sil", *phones.split()}
+    target = {
+        "sil", "ts", "tsh", "f", "h", "s", "l", "m", "n", "N", "w", "j",
+        "p", "ph", "t", "th", "k", "kh", "kw", "kwh",
+        "a", "6", "E", "e", "i", "I", "O", "o", "u", "U", "9", "8", "y",
+        "m=", "N=", ":i", ":u", ":m", ":n", ":N", ":p_}", ":t_}", ":k_}",
+    }
     parsed = parse_filename_phones(
-        phones + "_0.wav",
+        source_phones + "_0.wav",
         target,
         source_system="sv1112-cantonese",
     )
-    assert parsed == ["sil", *phones.split(), "sil"]
+    expected = source_phones.split()
+    expected[expected.index(":y")] = ":i"
+    expected[expected.index(":p}")] = ":p_}"
+    expected[expected.index(":t}")] = ":t_}"
+    expected[expected.index(":k}")] = ":k_}"
+    assert parsed == ["sil", *expected, "sil"]
     assert len(SV1112_CANTONESE_XSAMPA_TO_OLD) == 42
 
 
 def test_mapping_tables_use_old_labels_not_2_3_romanized_labels():
     assert SV1112_CHINESE_XSAMPA_TO_OLD["O"] == ("o",)
     assert SV1112_CHINESE_XSAMPA_TO_OLD["r" + chr(92)] == ("i" + chr(92),)
-    assert SV1112_CHINESE_XSAMPA_TO_OLD["p_h"] == ("ph",)
+    assert SV1112_VOCALOID_MANDARIN_ALIASES["p_h"] == (("ph",),)
     assert SV1112_CANTONESE_XSAMPA_TO_OLD["p"] == ("p",)
     assert SV1112_CANTONESE_XSAMPA_TO_OLD["ph"] == ("ph",)
     assert SV1112_CANTONESE_XSAMPA_TO_OLD["kw"] == ("kw",)
     assert SV1112_CANTONESE_XSAMPA_TO_OLD["kwh"] == ("kwh",)
+    assert SV1112_CANTONESE_XSAMPA_TO_OLD[":y"] == (":i",)
+    assert SV1112_CANTONESE_XSAMPA_TO_OLD[":p}"] == (":p_}",)
 
 
 def test_sv1112_modes_reject_unknown_symbols_instead_of_guessing():
