@@ -14,6 +14,7 @@ on:
       - "opensv_train/filename_labels.py"
       - "opensv_train/phoneme_maps_sv1112.py"
       - "opensv_train/train.py"
+      - "opensv_train/transitions.py"
       - "opensv_train/voice.py"
       - "trainsv_gui.py"
       - "README.md"
