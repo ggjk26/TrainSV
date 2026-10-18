@@ -421,7 +421,7 @@ cmake --build build --target OpenSVParity
 
 ## 许可
 
-项目采用 GPL-3.0。感谢 [OpenSV](https://github.com/cubeww/OpenSV) 项目提供的参考实现。请通过当前仓库的 [Issues](https://github.com/ggjk26/TrainSV/issues) 提交复现步骤、底模类型和完整日志。
+本仓库目前没有声明许可证；上游作者 funnymdzz 的仓库同样没有提供许可证，使用或再分发前请先联系原作者。`parity/` 中的 OpenSV 引擎同样来自上游作者 funnymdzz 的仓库。请通过当前仓库的 [Issues](https://github.com/ggjk26/TrainSV/issues) 提交复现步骤、底模类型和完整日志。
 文件名转 LAB 现支持按源标记体系选择明确映射：`auto`、`vocaloid-mandarin`、`xsampa` 与 `synthv-xsampa`。F0 无有声帧不等同于 WAV 损坏；像 `Sil Sil k Sil_0.wav` 这样的有效静音/清辅音样本应保留，映射错误或真正无法解码的音频会单独记录到 `unmatched_phones.csv`。
 
 ## F0 分析与校准
