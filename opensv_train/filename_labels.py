@@ -193,14 +193,17 @@ def _map_rhoticized_at_pair(valid: set[str]) -> list[str] | None:
     # 'iz' when those target-native labels are present. This is the key fallback
     # when the raw X-SAMPA rhotic symbol itself is not part of the model inventory.
     vowel_mapping = _map_xsampa_mandarin("@", valid, "xsampa")
-    if vowel_mapping is None and "@" in valid:
-        vowel_mapping = ["@"]
+    if vowel_mapping is None:
+        for candidate in VOCALOID_MANDARIN_PHONE_CANDIDATES.get("@", ()):
+            if len(candidate) == 1 and all(phone in valid for phone in candidate):
+                vowel_mapping = list(candidate)
+                break
     rhotic_mapping = _map_xsampa_mandarin(rhotic, valid, "xsampa")
     if rhotic_mapping is None:
-        if rhotic in valid:
-            rhotic_mapping = [rhotic]
-        elif "r" in valid:
-            rhotic_mapping = ["r"]
+        rhotic_aliases = (rhotic, "r", "rr", "-r", ":r" + chr(92) + chr(96), "ɹ", "ɻ", "R", "R" + chr(92))
+        target_rhotic = next((phone for phone in rhotic_aliases if phone in valid), None)
+        if target_rhotic is not None:
+            rhotic_mapping = [target_rhotic]
     if vowel_mapping is not None and rhotic_mapping is not None:
         return [*vowel_mapping, *rhotic_mapping]
 
