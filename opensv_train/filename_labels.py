@@ -200,7 +200,13 @@ def _map_rhoticized_at_pair(valid: set[str]) -> list[str] | None:
                 break
     rhotic_mapping = _map_xsampa_mandarin(rhotic, valid, "xsampa")
     if rhotic_mapping is None:
-        rhotic_aliases = (rhotic, "r", "rr", "-r", ":r" + chr(92) + chr(96), "ɹ", "ɻ", "R", "R" + chr(92))
+        # In legacy SynthV Mandarin tables, the newer X-SAMPA spelling r\\
+        # corresponds to the older label i\\. Check that inverse alias when
+        # the target still uses the pre-2.3 inventory.
+        rhotic_aliases = (
+            rhotic, "i" + chr(92), "r", "rr", "-r",
+            ":r" + chr(92) + chr(96), "ɹ", "ɻ", "R", "R" + chr(92),
+        )
         target_rhotic = next((phone for phone in rhotic_aliases if phone in valid), None)
         if target_rhotic is not None:
             rhotic_mapping = [target_rhotic]
