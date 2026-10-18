@@ -31,6 +31,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from opensv_train.audit import audit_dataset
+
 ROOT = Path(__file__).resolve().parent
 TOKEN = secrets.token_urlsafe(16)
 COMMANDS = {"import-lab", "convert-dict", "evaluate", "finetune", "synthesize-dataset", "inspect", "package-svpk", "package-sfpk"}
@@ -325,6 +327,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, browse(one("path"), one("files") == "1", exts))
             if route == "check-dataset":
                 return self._send(200, check_dataset(one("path")))
+            if route == "audit-dataset":
+                return self._send(200, audit_dataset(one("path")))
             if route == "folder-info":
                 return self._send(200, folder_info(one("path")))
             if route == "resolve-voice":
@@ -584,7 +588,11 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <div id="pane-have">
     <div class="field" data-id="dataset" data-kind="path" data-mode="dir" data-label="Dataset folder" data-ph="C:\path\to\my-dataset"></div>
     <div class="status" id="dataset_st"></div>
-    <div class="actions"><button class="ghost" data-run="score">Score the original voice on this data (optional)</button></div>
+    <div class="actions">
+      <button type="button" class="secondary" data-audit="dataset">Audit missing samples and phone transitions</button>
+      <button class="ghost" data-run="score">Score the original voice on this data (optional)</button>
+    </div>
+    <pre id="datasetAudit" hidden style="white-space:pre-wrap;word-break:break-word;background:var(--code);padding:10px;border-radius:6px;max-height:320px;overflow:auto"></pre>
     <p class="hint">Optional: shows how close the starting voice already is, so you can compare after training.</p>
   </div>
 
@@ -1457,6 +1465,32 @@ function checkVoice(){
     suggest();refresh();
   },300);
 }
+async function runDatasetAudit(){
+  const path=val("dataset"),box=$("#datasetAudit");
+  if(!path){say("dataset_st","warn","Choose a dataset first.");return}
+  box.hidden=false;box.textContent="Auditing recording coverage and adjacent phone transitions…";
+  try{
+    const report=await api("audit-dataset?path="+enc(path));
+    const s=report.summary||{};
+    const view={
+      dataset:report.dataset,
+      summary:s,
+      fatal_errors:report.fatal_errors||[],
+      missing_wavs:(report.missing_wavs||[]).slice(0,20),
+      invalid_rows:(report.invalid_rows||[]).slice(0,20),
+      duplicate_names:(report.duplicate_names||[]).slice(0,20),
+      rare_phones:(report.rare_phones||[]).slice(0,30),
+      rare_transitions:(report.rare_transitions||[]).slice(0,30),
+      short_phone_examples:(report.short_phone_examples||[]).slice(0,20)
+    };
+    box.textContent=JSON.stringify(view,null,2);
+    const errors=(s.missing_wavs||0)+(s.invalid_rows||0)+(s.duplicate_names||0)+(s.unreadable_wavs||0);
+    say("dataset_st",errors?"warn":"ok",
+      "Audit complete: "+(s.trainable_rows||0)+"/"+(s.rows||0)+" trainable recordings, "+
+      (s.missing_wavs||0)+" missing WAVs, "+(s.invalid_rows||0)+" invalid rows, "+
+      (report.rare_transitions||[]).length+" rare transitions. Details below.");
+  }catch(e){box.textContent=e.message;say("dataset_st","bad","Dataset audit failed.")}
+}
 function checkDataset(){
   clearTimeout(tData);tData=setTimeout(async()=>{
     const v=val("dataset");DS=null;
@@ -1790,6 +1824,7 @@ async function init(){
     if(b.dataset.go)go(b.dataset.go);
     else if(b.dataset.run)startJob(b.dataset.run);
     else if(b.dataset.browse)openPicker(b.dataset.browse,b.dataset.mode,b.dataset.ext);
+    else if(b.dataset.audit)runDatasetAudit();
   });
   $("#stopBtn").onclick=()=>api("stop",{}).catch(e=>alert(e.message));
   $("#actToggle").onclick=()=>{const a=$("#activity");a.classList.toggle("collapsed");$("#actToggle").textContent=a.classList.contains("collapsed")?"Show details":"Hide details"};
