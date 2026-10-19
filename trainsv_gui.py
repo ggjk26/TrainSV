@@ -617,9 +617,9 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     </div>
     <div data-src="filenames" hidden>
       <div class="field" data-id="i_wavs_names" data-kind="path" data-mode="dir" data-label="Folder of WAV files" data-hint="Use spaces between phones, e.g. <code>@_n 7_0.wav</code>. Only the final _0/_1 retake suffix is removed. Choose the correct source phone convention below so symbols are mapped explicitly."></div>
-      <div class="field" data-id="i_source_system" data-kind="select" data-options="auto|Auto (language default);vocaloid-mandarin|VOCALOID Mandarin (legacy);xsampa|Standard X-SAMPA;synthv-xsampa|SynthV legacy X-SAMPA;sv1112-chinese|SynthV 1.11.2 Chinese (Old labels);sv1112-cantonese|SynthV 1.11.2 Cantonese (Old labels);none|No conversion" data-value="auto" data-label="Source phone convention" data-hint="Choose the exact notation used in filenames. Standard X-SAMPA and legacy SynthV Mandarin spellings use separate explicit maps; Auto retains the VOCALOID Mandarin mapping. In explicit modes, unknown tokens are reported rather than heuristically split."></div>
+      <div class="field" data-id="i_source_system" data-kind="select" data-options="auto|Auto (language default);vocaloid-mandarin|VOCALOID Mandarin (legacy);xsampa|Standard X-SAMPA;synthv-xsampa|SynthV legacy X-SAMPA;sv1112-chinese|SynthV 1.11.2 Chinese (Old labels);sv1112-cantonese|SynthV 1.11.2 Cantonese (Old labels);none|No conversion" data-value="auto" data-label="Source phone convention" data-hint="Choose the exact notation used in filenames. Standard X-SAMPA and legacy SynthV Mandarin spellings use separate explicit maps; Auto retains the VOCALOID Mandarin mapping. After import, inspect phone_mapping_report.csv because an existing target symbol does not prove that a source token has the right Mandarin phonetic meaning. In explicit modes, unknown tokens are reported rather than heuristically split."></div>
       <div class="field" data-id="i_phone_table" data-kind="path" data-mode="file" data-ext="json" data-label="phone_table.json (optional)" data-hint="Usually not needed when a voice is selected above. If omitted, keep “Mark word boundaries using my voice” enabled so TrainSV can read the selected voice phone set."></div>
-      <p class="note">Approximation: the first and last <code>sil</code> each take 10% of the audio; all middle phones share the remaining 80% equally. This creates labels from filename order, not acoustic forced alignment.</p>
+      <p class="note">Approximation: the first and last <code>sil</code> each take 10% of the audio; all middle phones share the remaining 80% equally. This is not acoustic forced alignment. After import, review <code>phone_mapping_report.csv</code> in the dataset folder: it lists each source token, the target voice phone(s), and the mapping rule. A technically valid mapping can still be phonetically wrong for your source convention.</p>
     </div>
     <div data-src="manifest" hidden><div class="field" data-id="i_manifest" data-kind="path" data-mode="file" data-ext="json" data-label="manifest.json"></div></div>
     <div class="status" id="i_src_st"></div>
@@ -1454,8 +1454,17 @@ function refresh(){
   });
   const warn=$("#trainWarn"),m=MODELS.filter(x=>chk("m_"+x));
   const wantsNotes=m.includes("duration")||m.includes("pitch");
-  if(wantsNotes&&DS&&DS.rows&&DS.notes<DS.rows){warn.hidden=false;warn.textContent=DS.notes?`${DS.notes} of ${DS.rows} recordings have notes. The others will train Sound only.`:"Your dataset has no notes yet, so Timing and Pitch cannot learn anything. Add notes first (for example with GAME), or untick them to train Sound only."}
+  if(wantsNotes&&DS&&DS.rows&&DS.notes<DS.rows){
+    warn.hidden=false;
+    warn.textContent=DS.notes
+      ? `${DS.notes} of ${DS.rows} recordings have notes. The others will train Sound only. Pitch correction needs complete note and word-boundary labels; the F0 preset alone cannot repair the base Pitch network.`
+      : "Your dataset has no note labels yet, so Timing and Pitch cannot learn anything. Add note_seq/note_dur plus ph_num labels (for example from a suitable GAME workflow), or untick them to train Sound only. F0 analysis presets only measure and clean the reference WAV; they do not train the score-to-F0 Pitch network.";
+  }
   else if(wantsNotes&&!DS){warn.hidden=false;warn.textContent="Timing and Pitch need a dataset with notes. Check your dataset in step 2."}
+  else if(!wantsNotes&&DS&&DS.rows&&DS.notes===0){
+    warn.hidden=false;
+    warn.textContent="This dataset has no note labels, so this run can adapt Acoustic/Sound only. It can improve phoneme realization and timbre, but it cannot correct the base voice's note-to-F0 Pitch prediction. F0 presets only analyze the reference WAV; inspect phone_mapping_report.csv for Mandarin source-to-target phoneme mappings before training.";
+  }
   else warn.hidden=true;
   $("#e_models").textContent="It will check: "+trainedModels().map(x=>MODEL_NAME[x]).join(", ")+" (the same as in Train), using the same held-out recordings as training.";
   $$("#steps li").forEach(li=>{
