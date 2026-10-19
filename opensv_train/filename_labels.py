@@ -411,6 +411,7 @@ def parse_filename_phones(
             converted = _map_vocaloid_mandarin(token, valid)
             if converted is not None and converted != [token]:
                 phones.extend(converted)
+                record_mapping([token], converted, "vocaloid-erhua-map")
                 continue
 
         # Force known Mandarin triphthongs to the explicit inventory-aware
