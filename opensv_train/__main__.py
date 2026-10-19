@@ -118,10 +118,18 @@ def finetune(arguments) -> None:
         f"isolated-octave correction={'on' if arguments.f0_octave_correction else 'off'}, "
         f"target shift={arguments.f0_shift_semitones:+g} semitones"
     )
-    if "pitch" in models and not any(phrase.pitch_example() is not None for phrase in phrases):
+    has_pitch_examples = any(phrase.pitch_example() is not None for phrase in phrases)
+    if "pitch" in models and not has_pitch_examples:
         raise SystemExit(
             "Pitch training requires note_seq/note_dur (and usable ph_num word boundaries); "
             "phoneme-only LAB labels cannot train a Pitch model. Train acoustic only, or import note-labelled data."
+        )
+    if not has_pitch_examples and "pitch" not in models:
+        print(
+            "Pitch note: this dataset has no usable note_seq/note_dur + ph_num targets, so this run will not update "
+            "the Pitch network. Acoustic/Sound training can improve phoneme realization and timbre, but it cannot "
+            "learn score-to-F0 prediction or correct the base voice's note intonation. F0 presets only analyze the "
+            "reference WAV."
         )
     if problems and set(models) & {"duration", "pitch"}:
         print(f"{len(problems)} phrases lack usable notes and train the acoustic model only; first: {problems[0]}")
