@@ -1,8 +1,8 @@
 """Generate approximate HTS/vLabeler labels from phone-encoded WAV filenames.
 
-The filename supplies only the phoneme order. This module intentionally uses the
-requested equal-duration approximation; it is not acoustic forced alignment.
-All LAB timestamps are integer 100-nanosecond ticks.
+The filename supplies phoneme order, not measured boundaries. Labels preserve the
+source-token spans and use a small coda-duration heuristic; this is not acoustic
+forced alignment. All LAB timestamps are integer 100-nanosecond ticks.
 """
 from __future__ import annotations
 
