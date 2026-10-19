@@ -576,6 +576,63 @@ def labels_from_phones(
     return entries
 
 
+# Relative weights used only when one source filename token expands into multiple
+# target phones. Mandarin nasal codas are normally shorter than their vowel nuclei.
+# This remains a heuristic (not forced alignment), but avoids giving a split coda
+# the same duration as the vowel by default.
+_SHORT_CODA_WEIGHTS = {":n": 0.40, "-n": 0.40, "N": 0.45, "ng": 0.45}
+
+def labels_from_phone_groups(
+    groups: list[list[str]] | list[tuple[str, ...]],
+    total_ticks: int,
+    silence_fraction: float = SILENCE_FRACTION,
+) -> list[tuple[int, int, str]]:
+    """Generate approximate LAB labels while preserving source-token spans.
+
+    Each group represents one source token after mapping (for example, VOCALOID
+    @_n to [@, :n]). Source-token spans share the speech interval equally, while
+    phones created by splitting one source token are weighted so nasal codas do
+    not automatically consume half of that token's duration. This is not acoustic
+    forced alignment; manually aligned LAB files remain preferable.
+    """
+    if not groups or any(not group for group in groups):
+        raise ValueError("phone groups must be non-empty")
+    flat = [phone for group in groups for phone in group]
+    if not flat or any(not isinstance(phone, str) or not phone for phone in flat):
+        raise ValueError("phone groups must contain non-empty phone symbols")
+    if total_ticks <= 0:
+        raise ValueError("audio duration must be positive")
+    if not 0 < silence_fraction < 0.5:
+        raise ValueError("silence fraction must be between 0 and 0.5")
+
+    boundary_ticks = round(total_ticks * silence_fraction)
+    middle_ticks = total_ticks - 2 * boundary_ticks
+    if boundary_ticks < 1 or middle_ticks < len(flat):
+        raise ValueError("audio is too short to give every phoneme a positive-duration interval")
+
+    entries: list[tuple[int, int, str]] = [(0, boundary_ticks, "sil")]
+    for group_index, group in enumerate(groups):
+        group_start = boundary_ticks + round(middle_ticks * group_index / len(groups))
+        group_end = boundary_ticks + round(middle_ticks * (group_index + 1) / len(groups))
+        if group_end - group_start < len(group):
+            raise ValueError("audio is too short to give every mapped phone a positive-duration interval")
+        weights = [_SHORT_CODA_WEIGHTS.get(phone, 1.0) for phone in group]
+        weight_sum = sum(weights)
+        start = group_start
+        accumulated = 0.0
+        for phone_index, (phone, weight) in enumerate(zip(group, weights)):
+            accumulated += weight
+            end = group_end if phone_index == len(group) - 1 else group_start + round(
+                (group_end - group_start) * accumulated / weight_sum
+            )
+            if end <= start:
+                raise ValueError("audio is too short to give every mapped phone a positive-duration interval")
+            entries.append((start, end, phone))
+            start = end
+    entries.append((total_ticks - boundary_ticks, total_ticks, "sil"))
+    return entries
+
+
 def is_quality_analysis_cache_wav(path: str | Path) -> bool:
     """Return true for the standalone VOCALOID vqm quality-analysis cache take."""
     stem = Path(path).stem
@@ -655,7 +712,13 @@ def filename_recordings(
             continue
         total_ticks = round(frames * TICKS_PER_SECOND / rate)
         try:
-            labels = labels_from_phones(phones, total_ticks)
+            # The mapping trace groups all target phones that came from one
+            # source token. Keep that token's estimated span intact when it
+            # expands into multiple phones (especially vowel + nasal coda).
+            groups = [row["target_phones"].split() for row in trace]
+            if [phone for group in groups for phone in group] != phones[1:-1]:
+                groups = [[phone] for phone in phones[1:-1]]
+            labels = labels_from_phone_groups(groups, total_ticks)
         except ValueError as error:
             message = f"{wav.name}: {error}"
             if unmatched is None:
