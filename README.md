@@ -168,9 +168,11 @@ Other commands:
 
 A `voice.nofs` voice is written as a `voice.nofs` with its model entries patched in place. An `info.<version>.nofs` voice (shared models) is written to the `databases/<name>/` directory given by `--output`, with changed models added to the sibling `models/<kind>/<md5>.dnni` tree. `--name` sets the singer name and `--version` the info voice's version.
 
-### Flat voices with a DNNI v3 Pitch dependency
+### Flat voices with DNNI v3 dependencies
 
-TrainSV currently parses DNNI v1/v2 model graphs. DNNI v3 files can legitimately appear as dependencies shipped with SV2-compatible Flat voicebanks; their presence alone does not mean the model file is corrupt. When an extracted/shared-model `info.<version>.nofs` references a DNNI v3 file for the **Pitch** role, TrainSV can keep that file as an opaque byte-for-byte dependency while loading the supported Duration, Acoustic, and Vocoder models. This fallback does not decode the v3 model. It enables data import and acoustic-only (or other non-Pitch) fine-tuning when the other model roles are supported; the Pitch network remains unavailable for inference, initialization, and training. The original Pitch bytes and speaker vector are preserved when saving the info voice. Do not select Pitch training for such a voice. DNNI v3 in any other model role is not covered by this fallback, and compatibility of the resulting voice still requires validation in Synthesizer V Flat.
+DNNI v3 files can legitimately appear as dependencies shipped with SV2-compatible Flat voicebanks; a v3 header alone does not mean that the file is corrupt. A complete SFPK sample inspected during development contained four DNNI dependencies, all with the v3 header. TrainSV can now preserve an opaque v3 file byte-for-byte for any model role when loading an info voice or a legacy NOFS container, and save those bytes back without attempting to rewrite the unsupported payload.
+
+**This is container-preservation compatibility, not runnable DNNI v3 support.** TrainSV still does not decode the v3 graph or tensors, and it cannot run inference or training for an opaque role. Commands that require an unavailable model role stop with an explicit error; inspection/export can preserve the dependency. Full v3 support requires a documented or otherwise legitimately accessible model representation/runtime and end-to-end validation against Synthesizer V Flat.
 
 ## WebUI packaging (experimental SVPK)
 
