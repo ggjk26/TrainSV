@@ -485,3 +485,54 @@ def test_unmatched_report_identifies_expanded_rhotic_component(tmp_path):
     )
     assert recordings == []
     assert unmatched[0]["source_token"] == "@" + chr(96)
+
+
+def test_vocaloid_mapping_report_exposes_source_to_target_aliases(tmp_path):
+    target = {
+        "sil", "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v",
+        "ng", "-n", "b", "p", "t", "d", "g", "k",
+    }
+    report = []
+    phones = parse_filename_phones(
+        "p ph @U @_n_0.wav",
+        target,
+        source_system="vocaloid-mandarin",
+        mapping_report=report,
+    )
+
+    assert phones == ["sil", "b", "p", "ou", "e/", "-n", "sil"]
+    assert [(row["source_token"], row["target_phones"]) for row in report] == [
+        ("p", "b"),
+        ("ph", "p"),
+        ("@U", "ou"),
+        ("@_n", "e/ -n"),
+    ]
+    assert all(row["mapping_rule"] for row in report)
+    assert all(row["filename"] == "p ph @U @_n_0.wav" for row in report)
+
+
+def test_filename_recordings_collects_mapping_report_only_for_usable_wavs(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    target = {
+        "sil", "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v",
+        "ng", "-n", "b", "p", "t", "d", "g", "k",
+    }
+    soundfile.write(
+        str(wav_dir / "p ph @U @_n_0.wav"),
+        np.zeros(4800, dtype=np.float32),
+        48000,
+    )
+    (wav_dir / "p ph @U @_n_1.wav").write_bytes(b"not a wav")
+    mappings = []
+    unmatched = []
+    recordings = filename_recordings(
+        wav_dir, target, source_system="vocaloid-mandarin",
+        unmatched=unmatched, mapping_report=mappings,
+    )
+
+    assert len(recordings) == 1
+    assert len(mappings) == 4
+    assert {row["filename"] for row in mappings} == {"p ph @U @_n_0.wav"}
+    assert len(unmatched) == 1
+    assert unmatched[0]["category"] == "wav_decode"
