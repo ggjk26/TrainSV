@@ -168,6 +168,8 @@ VOCALOID_MANDARIN_PHONE_CANDIDATES: dict[str, tuple[tuple[str, ...], ...]] = {
 # only when the chosen target inventory contains every symbol in a candidate.
 VOCALOID_MANDARIN_COMPOSITES: dict[str, tuple[tuple[str, ...], ...]] = {
     "@_n": (("e/", "-n"), ("e/", ":n"), ("e/", "n"), ("@", ":n"), ("@", "n")),
+    # Some VOCALOID source packs spell the same nasalized vowel as @n (without underscore).
+    "@n": (("e/", "-n"), ("e/", ":n"), ("e/", "n"), ("@", ":n"), ("@", "n")),
     "a_n": (("a", "-n"), ("a", ":n"), ("a", "n")),
     "i_n": (("i", "-n"), ("i", ":n"), ("i", "n")),
     "iE_n": (("iae", "-n"), ("iae", ":n"), ("iE", ":n"), ("iE", "-n"), ("iE", "n")),
