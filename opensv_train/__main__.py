@@ -55,6 +55,14 @@ def _validate_pitch_options(arguments) -> None:
         raise SystemExit("--f0-shift-semitones must be finite and between -24 and +24 semitones")
 
 
+def _require_supported_models(voice: Voice, roles, operation: str) -> None:
+    for role in sorted(set(roles)):
+        model = voice.models[role]
+        if not getattr(model, "supported", True):
+            reason = getattr(model, "reason", f"the selected voice's {role} model is unsupported")
+            raise SystemExit(f"{operation} is unavailable: {reason}")
+
+
 def finetune(arguments) -> None:
     _validate_pitch_options(arguments)
     voice = Voice.load(arguments.voice)
@@ -63,6 +71,10 @@ def finetune(arguments) -> None:
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
     if "pitch" in models and not getattr(voice.pitch, "supported", True):
         raise SystemExit(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
+    required = set(models) | {"acoustic"}
+    if set(models) & {"acoustic", "vocoder"}:
+        required.add("vocoder")
+    _require_supported_models(voice, required, "fine-tuning")
     if not getattr(voice.pitch, "supported", True):
         print(f"Warning: {voice.pitch.reason}")
     if arguments.pitch_model:
@@ -257,7 +269,9 @@ def import_lab(arguments) -> None:
         if arguments.voice and not arguments.phone_table:
             from .common import find_language
 
-            phone_sets = Voice.load(arguments.voice).acoustic.phone_sets
+            voice = Voice.load(arguments.voice)
+            _require_supported_models(voice, {"acoustic"}, "reading phoneme tables")
+            phone_sets = voice.acoustic.phone_sets
             phone_set = phone_sets[find_language(phone_sets, arguments.language)]
             voice_symbols = phone_set.symbols
         phones = read_phone_table(arguments.phone_table, voice_symbols)
@@ -355,7 +369,9 @@ def import_lab(arguments) -> None:
     if arguments.voice:
         from .common import find_language
 
-        phone_sets = Voice.load(arguments.voice).acoustic.phone_sets
+        voice = Voice.load(arguments.voice)
+        _require_supported_models(voice, {"acoustic"}, "reading phoneme tables")
+        phone_sets = voice.acoustic.phone_sets
         phone_set = phone_sets[find_language(phone_sets, arguments.language)]
         vowels = {s for s, c in zip(phone_set.symbols, phone_set.categories) if c in ("vowel", "diphthong")}
     for line in import_labels(recordings, arguments.output, mapping, vowels):
@@ -392,6 +408,7 @@ def evaluate(arguments) -> None:
         voice = Voice.load(path).to(device)
         if "pitch" in models and not getattr(voice.pitch, "supported", True):
             raise SystemExit(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
+        _require_supported_models(voice, set(models) | {"acoustic", "vocoder"}, "evaluation/rendering")
         phrases = [
             phrase
             for utterance in load_dataset(
@@ -466,6 +483,7 @@ def synthesize_dataset(arguments) -> None:
     voice = Voice.load(arguments.voice)
     if not getattr(voice.pitch, "supported", True):
         raise SystemExit(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
+    _require_supported_models(voice, ROLES, "synthesis")
     render_dataset(voice, arguments.output, arguments.phrases, arguments.language, arguments.seed, arguments.notes)
 
 
@@ -479,10 +497,16 @@ def inspect(arguments) -> None:
         if role == "pitch" and not getattr(model, "supported", True):
             print(f"  {role:9s} DNNI v{model_file.version} opaque / unsupported; preserved unchanged (Pitch training disabled)")
             continue
+        if not getattr(model, "supported", True):
+            print(f"  {role:9s} DNNI v{model_file.version} opaque / unsupported; preserved unchanged")
+            continue
         count = sum(parameter.numel() for parameter in model.parameters())
         print(f"  {role:9s} DNNI v{model_file.version} {count / 1e6:6.2f}M parameters")
-    for phone_set in voice.acoustic.phone_sets:
-        print(f"  {phone_set.name}: {' '.join(phone_set.symbols)}")
+    if getattr(voice.acoustic, "supported", True):
+        for phone_set in voice.acoustic.phone_sets:
+            print(f"  {phone_set.name}: {' '.join(phone_set.symbols)}")
+    else:
+        print("  phoneme tables: unavailable (opaque Acoustic DNNI v3)")
 
 
 def package_svpk_command(arguments) -> None:
