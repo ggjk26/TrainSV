@@ -64,6 +64,23 @@ def test_mapped_source_token_keeps_one_span_and_shortens_nasal_coda():
     assert all(left[1] == right[0] for left, right in zip(entries, entries[1:]))
 
 
+def test_vocaloid_at_n_alias_accepts_sta_and_art_filename_patterns():
+    simple = {"sil", "e/", "-n", "@", ":n"}
+    assert parse_filename_phones(
+        "@n_0.wav", simple, source_system="vocaloid-mandarin"
+    ) == ["sil", "e/", "-n", "sil"]
+    assert parse_filename_phones(
+        "@n @n_0.wav", simple, source_system="vocaloid-mandarin"
+    ) == ["sil", "e/", "-n", "e/", "-n", "sil"]
+    legacy = {"sil", "@", ":n"}
+    assert parse_filename_phones(
+        "@n_0.wav", legacy, source_system="vocaloid-mandarin"
+    ) == ["sil", "@", ":n", "sil"]
+    assert parse_filename_phones(
+        "@n @n_0.wav", legacy, source_system="sv1112-chinese"
+    ) == ["sil", "@", ":n", "@", ":n", "sil"]
+
+
 def test_vocaloid_u_and_uo_remain_distinct_in_legacy_phone_inventory():
     target = {"sil", "w", "u", "uo", "o", "@"}
     assert parse_filename_phones("u_0.wav", target, source_system="vocaloid-mandarin") == [
