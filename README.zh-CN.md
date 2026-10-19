@@ -428,7 +428,7 @@ cmake --build build --target OpenSVParity
 ## 许可
 
 项目采用 GPL-3.0。感谢 [OpenSV](https://github.com/cubeww/OpenSV) 项目提供的参考实现。请通过当前仓库的 [Issues](https://github.com/ggjk26/TrainSV/issues) 提交复现步骤、底模类型和完整日志。
-文件名转 LAB 现支持按源标记体系选择明确映射：`auto`、`vocaloid-mandarin`、`xsampa` 与 `synthv-xsampa`。一个 VOCALOID 源音素映射成多个目标音素时，会尽量保留该源音素对应的整体时长，并缩短 `@_n` 等组合中的鼻尾时长；这仍是启发式估算，不是真正的声学强制对齐，正式训练前建议抽查 `phone_mapping_report.csv` 和关键样本的 `.lab` 边界。VOCALOID 的 `u`（如 wu）与 `uo`（如 wo）是不同韵母，不能互相替代。F0 无有声帧不等同于 WAV 损坏；像 `Sil Sil k Sil_0.wav` 这样的有效静音/清辅音样本应保留，映射错误或真正无法解码的音频会单独记录到 `unmatched_phones.csv`。
+文件名转 LAB 现支持按源标记体系选择明确映射：`auto`、`vocaloid-mandarin`、`xsampa` 与 `synthv-xsampa`。一个 VOCALOID 源音素映射成多个目标音素时，会尽量保留该源音素对应的整体时长，并缩短 `@_n`、`@n` 等组合中的鼻尾时长；一些 VOCALOID 音源的 `sta/@n_0.wav` 和 `art/@n @n_0.wav` 这类命名现已作为同一类源音素组合解析；这仍是启发式估算，不是真正的声学强制对齐，正式训练前建议抽查 `phone_mapping_report.csv` 和关键样本的 `.lab` 边界。VOCALOID 的 `u`（如 wu）与 `uo`（如 wo）是不同韵母，不能互相替代。F0 无有声帧不等同于 WAV 损坏；像 `Sil Sil k Sil_0.wav` 这样的有效静音/清辅音样本应保留，映射错误或真正无法解码的音频会单独记录到 `unmatched_phones.csv`。
 
 ## F0 分析与校准
 
