@@ -259,7 +259,11 @@ def import_lab(arguments) -> None:
         elif source_system == "none":
             source_system = None
         unmatched: list[dict[str, str]] = []
-        recordings = filename_recordings(arguments.wavs, phones, source_system=source_system, unmatched=unmatched)
+        mapping_rows: list[dict[str, str]] = []
+        recordings = filename_recordings(
+            arguments.wavs, phones, source_system=source_system,
+            unmatched=unmatched, mapping_report=mapping_rows,
+        )
         report_path = Path(arguments.output).expanduser() / "unmatched_phones.csv"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         with report_path.open("w", newline="", encoding="utf-8-sig") as report_file:
@@ -269,6 +273,25 @@ def import_lab(arguments) -> None:
             )
             writer.writeheader()
             writer.writerows(unmatched)
+
+        mapping_path = Path(arguments.output).expanduser() / "phone_mapping_report.csv"
+        with mapping_path.open("w", newline="", encoding="utf-8-sig") as mapping_file:
+            fields = ("filename", "source_system", "source_token", "target_phones", "mapping_rule")
+            writer = csv.DictWriter(mapping_file, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(mapping_rows)
+        print(f"Phone mapping report written to {mapping_path}")
+        nontrivial = Counter(
+            (row["source_token"], row["target_phones"], row["mapping_rule"])
+            for row in mapping_rows
+            if row["mapping_rule"] not in {"exact-target-match", "silence-token"}
+        )
+        if nontrivial:
+            examples = ", ".join(
+                f"{source} → {target} ({rule}) ×{count}"
+                for (source, target, rule), count in nontrivial.most_common(12)
+            )
+            print("Review these source-to-target mappings before training: " + examples)
         wav_directory = Path(arguments.wavs).expanduser()
         discovered_wavs = [
             path for path in wav_directory.iterdir()
