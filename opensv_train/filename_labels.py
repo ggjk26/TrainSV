@@ -315,8 +315,13 @@ def _extract_symbols(document: object) -> set[str]:
     return set()
 
 
-def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], source_system: str | None = None) -> list[str]:
-    """Parse ordered phones and add fixed boundary sils without deduplication."""
+def parse_filename_phones(
+    filename: str | Path,
+    phone_table: Iterable[str],
+    source_system: str | None = None,
+    mapping_report: list[dict[str, str]] | None = None,
+) -> list[str]:
+    """Parse ordered phones and optionally record exactly how each token was mapped."""
     valid = set(phone_table)
     valid.add("sil")
     stem = Path(filename).stem
@@ -335,11 +340,24 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
 
     phones = ["sil"]
     consumed_tokens: set[int] = set()
+
+    def record_mapping(source_tokens: list[str], targets: list[str], rule: str) -> None:
+        if mapping_report is None:
+            return
+        mapping_report.append({
+            "filename": Path(filename).name,
+            "source_system": source_system or "auto/generic",
+            "source_token": " ".join(source_tokens),
+            "target_phones": " ".join(targets),
+            "mapping_rule": rule,
+        })
+
     for index, token in enumerate(raw_phones):
         if index in consumed_tokens:
             continue
         if token.casefold() == "sil":
             phones.append("sil")
+            record_mapping([token], ["sil"], "silence-token")
             continue
 
         # Official Old/X-SAMPA mapping for Synthesizer V Studio 1.11.2.
@@ -348,6 +366,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             converted = map_sv1112_phone(token, valid, source_system)
             if converted is not None:
                 phones.extend(converted)
+                record_mapping([token], converted, "sv1112-official-map")
                 continue
             raise ValueError(
                 f"{Path(filename).name}: unknown phone {token!r}; no verified "
@@ -366,6 +385,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             converted_pair = _map_rhoticized_at_pair(valid)
             if converted_pair is not None:
                 phones.extend(converted_pair)
+                record_mapping([token, raw_phones[index + 1]], converted_pair, "rhotic-pair-map")
                 consumed_tokens.add(index + 1)
                 continue
 
@@ -373,14 +393,17 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             rhotic = "r" + chr(92)
             if "@" in valid and rhotic in valid:
                 phones.extend(("@", rhotic))
+                record_mapping([token], ["@", rhotic], "rhotic-expansion")
                 continue
             if "3" in valid:
                 phones.append("3")
+                record_mapping([token], ["3"], "rhotic-vowel-alias")
                 continue
             # SynthV's simplified Mandarin inventory can expose erhua as the
             # dedicated Mandarin phone "er" without any separate rhotic symbol.
             if "er" in valid:
                 phones.append("er")
+                record_mapping([token], ["er"], "native-erhua-alias")
                 continue
             # Fall back only to curated, inventory-checked Mandarin erhua
             # representations. This also covers callers that do not specify
@@ -396,6 +419,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             converted = _map_vocaloid_mandarin(token, valid)
             if converted is not None and converted != [token]:
                 phones.extend(converted)
+                record_mapping([token], converted, "vocaloid-triphthong-map")
                 continue
         # k_h and other underscore forms are meaningful X-SAMPA aspiration
         # markers; do not rewrite them to legacy aliases in the X-SAMPA modes.
@@ -406,6 +430,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 converted = _map_vocaloid_mandarin(replacement, valid)
                 if converted is not None:
                     phones.extend(converted)
+                    record_mapping([token], converted, "vocaloid-alias-map")
                     continue
             if replacement not in valid:
                 raise ValueError(
@@ -413,11 +438,13 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                     "which is not in the phone table"
                 )
             phones.append(replacement)
+            record_mapping([token], [replacement], "known-token-replacement")
             continue
         if source_system in {"xsampa", "synthv-xsampa"}:
             converted = _map_xsampa_mandarin(token, valid, source_system)
             if converted is not None:
                 phones.extend(converted)
+                record_mapping([token], converted, "xsampa-map")
                 continue
             # Compound legacy Mandarin syllable-final tokens are not single
             # X-SAMPA symbols; resolve them through the explicit compound table.
@@ -430,11 +457,13 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 converted = _map_vocaloid_mandarin(token, valid)
                 if converted is not None:
                     phones.extend(converted)
+                    record_mapping([token], converted, "mandarin-compound-map")
                     continue
         if source_system == "vocaloid-mandarin":
             converted = _map_vocaloid_mandarin(token, valid)
             if converted is not None and (converted != [token] or token not in valid):
                 phones.extend(converted)
+                record_mapping([token], converted, "vocaloid-mandarin-map")
                 continue
             if converted is None:
                 # VOCALOID's phone spellings include dialect-specific aliases,
@@ -444,9 +473,11 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 converted = _map_xsampa_mandarin(token, valid, "xsampa")
                 if converted is not None:
                     phones.extend(converted)
+                    record_mapping([token], converted, "xsampa-bridge-for-vocaloid")
                     continue
         if token in valid:
             phones.append(token)
+            record_mapping([token], [token], "exact-target-match")
             continue
 
         # @` and 3` are valid X-SAMPA rhoticized vowels. If this target
@@ -468,6 +499,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                     + ", ".join(RHOTIC_APPROXIMANTS)
                 )
             phones.extend((base_vowel, rhotic))
+            record_mapping([token], [base_vowel, rhotic], "rhoticized-vowel-approximation")
             continue
 
         composite = COMPOSITE_PHONES.get(token)
@@ -479,6 +511,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                     f"missing phone(s) from the phone table: {', '.join(missing)}"
                 )
             phones.extend(composite)
+            record_mapping([token], list(composite), "curated-composite-expansion")
             continue
         # Explicit source conventions must never be heuristically split into
         # plausible-looking but phonetically incorrect phones. Their valid
@@ -490,6 +523,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 "the phone table and could not be split into existing phones"
             )
         phones.extend(pieces)
+        record_mapping([token], pieces, "inventory-segmentation")
     phones.append("sil")
     return phones
 
@@ -554,6 +588,7 @@ def filename_recordings(
     phone_table: Iterable[str],
     source_system: str | None = None,
     unmatched: list[dict[str, str]] | None = None,
+    mapping_report: list[dict[str, str]] | None = None,
 ) -> list[tuple[str, Path, list[tuple[int, int, str]]]]:
     """Build standard recording tuples from WAV names and actual WAV durations."""
     directory = Path(wav_directory).expanduser()
@@ -569,8 +604,11 @@ def filename_recordings(
         raise ValueError(f"no .wav files found in {directory}")
     recordings = []
     for wav in wavs:
+        trace: list[dict[str, str]] = []
         try:
-            phones = parse_filename_phones(wav.name, phone_table, source_system=source_system)
+            phones = parse_filename_phones(
+                wav.name, phone_table, source_system=source_system, mapping_report=trace
+            )
         except ValueError as error:
             if unmatched is None:
                 raise
@@ -624,6 +662,8 @@ def filename_recordings(
             unmatched.append({"filename": wav.name, "category": "label_generation", "error": message})
             continue
         recordings.append((wav.stem, wav, labels))
+        if mapping_report is not None:
+            mapping_report.extend(trace)
     return recordings
 
 
