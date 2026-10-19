@@ -6,6 +6,7 @@ import soundfile
 
 from opensv_train.filename_labels import (
     filename_recordings,
+    labels_from_phone_groups,
     labels_from_phones,
     parse_filename_phones,
     read_phone_table,
@@ -50,6 +51,27 @@ def test_equal_duration_boundaries_are_contiguous():
     assert entries[0][0] == 0 and entries[-1][1] == 20_000_000
     assert all(a[1] == b[0] for a, b in zip(entries, entries[1:]))
 
+
+def test_mapped_source_token_keeps_one_span_and_shortens_nasal_coda():
+    entries = labels_from_phone_groups([["7"], ["@", ":n"]], 1000)
+    assert entries == [
+        (0, 100, "sil"),
+        (100, 500, "7"),
+        (500, 786, "@"),
+        (786, 900, ":n"),
+        (900, 1000, "sil"),
+    ]
+    assert all(left[1] == right[0] for left, right in zip(entries, entries[1:]))
+
+
+def test_vocaloid_u_and_uo_remain_distinct_in_legacy_phone_inventory():
+    target = {"sil", "w", "u", "uo", "o", "@"}
+    assert parse_filename_phones("u_0.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "u", "sil"
+    ]
+    assert parse_filename_phones("uo_0.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "uo", "sil"
+    ]
 
 def test_reads_json_phone_table(tmp_path):
     table = tmp_path / "phone_table.json"
