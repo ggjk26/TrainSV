@@ -51,9 +51,22 @@ def model_hash(data: bytes) -> str:
     return hashlib.md5(data).hexdigest()
 
 
-def write_nofs_voice(voice: VoiceFiles, output: Path, name: str | None = None) -> Path:
+def serialize_model_for_output(model: DnniFile, role: str, acoustic_dnni_version: int = 2) -> bytes:
+    """Serialize only the acoustic model with the requested DNNI container version."""
+    if role == "acoustic":
+        return model.as_version(acoustic_dnni_version).serialize()
+    return model.serialize()
+
+
+def write_nofs_voice(
+    voice: VoiceFiles, output: Path, name: str | None = None,
+    acoustic_dnni_version: int = 2,
+) -> Path:
     keys = voice.nofs.model_keys()
-    replacements = {keys[role]: voice.models[role].serialize() for role in ROLES}
+    replacements = {
+        keys[role]: serialize_model_for_output(voice.models[role], role, acoustic_dnni_version)
+        for role in ROLES
+    }
     if name is not None:
         replacements[b".name"] = name.encode("utf-8")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -61,12 +74,15 @@ def write_nofs_voice(voice: VoiceFiles, output: Path, name: str | None = None) -
     return output
 
 
-def write_info_voice(voice: VoiceFiles, database_directory: Path, version: str, name: str | None = None) -> Path:
+def write_info_voice(
+    voice: VoiceFiles, database_directory: Path, version: str, name: str | None = None,
+    acoustic_dnni_version: int = 2,
+) -> Path:
     info = voice.info
     models_root = database_directory.parent.parent / "models"
     document = info.to_json()
     for role in ROLES:
-        data = voice.models[role].serialize()
+        data = serialize_model_for_output(voice.models[role], role, acoustic_dnni_version)
         original = info.models[role]
         reference = original.stem if data == original.read_bytes() else model_hash(data)
         target = models_root / INFO_KINDS[role] / f"{reference}.dnni"
@@ -138,12 +154,18 @@ class Voice(torch.nn.Module):
         )
         acoustic.vocal_modes = list(names)
 
-    def save(self, output, name: str | None = None, version: str | None = None) -> Path:
+    def save(
+        self, output, name: str | None = None, version: str | None = None,
+        acoustic_dnni_version: int = 2,
+    ) -> Path:
         files = self.export()
         output = Path(output).expanduser()
         if files.info is None:
-            return write_nofs_voice(files, output, name)
-        return write_info_voice(files, output, version or files.info.info.get("version", "100"), name)
+            return write_nofs_voice(files, output, name, acoustic_dnni_version)
+        return write_info_voice(
+            files, output, version or files.info.info.get("version", "100"), name,
+            acoustic_dnni_version,
+        )
 
 
 

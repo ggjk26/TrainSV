@@ -157,6 +157,8 @@ def finetune(arguments) -> None:
         pitch_smoothing_hz=arguments.pitch_smoothing_hz,
         transition_weight=arguments.transition_weight,
         transition_frames=arguments.transition_frames,
+        transition_sampling_probability=arguments.transition_sampling_probability,
+        transition_local_weight=arguments.transition_local_weight,
         brightness_weight=arguments.brightness_weight,
     )
     calibration = random.Random(arguments.seed).sample(phrases, min(40, len(phrases)))
@@ -170,7 +172,10 @@ def finetune(arguments) -> None:
             print(f"widened a {report.role} {report.node_type} input range to ±{report.limit:g} (peak {report.peak:.3g})")
         if styles and voice.files.info is not None:
             voice.files.info.mode_extras = mode_levels(voice, calibration, device)
-        saved = voice.save(arguments.output, name=arguments.name, version=version or arguments.version)
+        saved = voice.save(
+            arguments.output, name=arguments.name, version=version or arguments.version,
+            acoustic_dnni_version=arguments.acoustic_dnni_version,
+        )
         if voice.files.info is not None:
             document = json.loads(saved.read_text("utf-8"))
             current = {models_root / kind / f"{document[kind]}.dnni" for kind in ("duration", "f0", "acoustic", "vocoder")}
@@ -586,6 +591,9 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--consonant-weight", type=float, default=1.0, help="weight of consonant frames in the training audio loss (held-out scores stay unweighted)")
     command.add_argument("--transition-weight", type=float, default=1.0, help="extra weight for non-silence phoneme handoffs in the acoustic training loss; 1 disables it")
     command.add_argument("--transition-frames", type=int, default=2, help="frames on either side of each speech-phone boundary to emphasize (5 ms per frame)")
+    command.add_argument("--transition-sampling-probability", type=float, default=0.5, help="probability of centering an acoustic audio window on a non-silence phone boundary; 0 disables focused sampling")
+    command.add_argument("--transition-local-weight", type=float, default=0.25, help="extra multi-resolution spectral loss weight on a boundary-centered crop; 0 disables")
+    command.add_argument("--acoustic-dnni-version", choices=(1, 2), type=int, default=2, help="DNNI container version when saving the acoustic model; v2 by default, v1 for legacy compatibility")
     command.add_argument("--brightness-weight", type=float, default=0.0, help="optional loss weight for matching target high/mid spectral balance; 0 disables it")
     command.add_argument("--validation", type=float, default=0.1, help="phrases held out: a fraction, or a count when 1 or more")
     command.add_argument("--evaluate-every", "--val-every", type=int, default=250)

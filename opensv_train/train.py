@@ -14,7 +14,7 @@ from .data import Phrase
 from .duration import interval_log_fractions
 from .losses import SpectralLoss
 from .pitch import PitchInputs
-from .transitions import transition_frame_weights
+from .transitions import sample_transition_segment, transition_boundary_frames, transition_frame_weights
 from .voice import Voice
 
 MODELS = ("acoustic", "duration", "pitch", "vocoder")
@@ -58,6 +58,9 @@ class TrainConfig:
     pitch_smoothing_hz: float = 3.0
     transition_weight: float = 1.0
     transition_frames: int = 2
+    transition_sampling_probability: float = 0.5
+    transition_local_weight: float = 0.25
+    transition_local_context_frames: int = 8
     brightness_weight: float = 0.0
 
 
@@ -94,6 +97,12 @@ class Trainer:
             raise ValueError("transition weight must be finite and at least 1.0")
         if config.transition_frames < 0:
             raise ValueError("transition frames must be non-negative")
+        if not math.isfinite(config.transition_sampling_probability) or not 0.0 <= config.transition_sampling_probability <= 1.0:
+            raise ValueError("transition sampling probability must be between 0 and 1")
+        if not math.isfinite(config.transition_local_weight) or config.transition_local_weight < 0:
+            raise ValueError("transition-local spectral loss weight must be finite and non-negative")
+        if config.transition_local_context_frames < 5:
+            raise ValueError("transition-local context must be at least 5 frames for the 2048-point STFT")
         if not math.isfinite(config.brightness_weight) or config.brightness_weight < 0:
             raise ValueError("brightness weight must be finite and non-negative")
         self.log = log
@@ -113,6 +122,7 @@ class Trainer:
         self.spectral = SpectralLoss(brightness_weight=config.brightness_weight).to(self.device)
         self.random = random.Random(config.seed)
         self._phone_weights_cache: dict[int, np.ndarray] = {}
+        self._transition_boundaries_cache: dict[int, list[int]] = {}
         # Pitch preprocessing is deterministic for a phrase and fixed run
         # configuration, so keep it out of the per-optimizer-step hot path.
         self._pitch_cache: dict[int, PitchTrainingCache] = {}
@@ -135,7 +145,20 @@ class Trainer:
             frames = frames.detach()
         count = len(hz)
         width = count if full else min(self.config.segment_frames, count)
-        first = 0 if full else self.random.randrange(0, count - width + 1)
+        focused_boundary = None
+        if full:
+            first = 0
+        else:
+            phrase_key = id(phrase)
+            boundaries = self._transition_boundaries_cache.get(phrase_key)
+            if boundaries is None:
+                boundaries = transition_boundary_frames(phrase.phones, phrase.phone_frames)
+                self._transition_boundaries_cache[phrase_key] = boundaries
+            first, focused_boundary = sample_transition_segment(
+                count, width, boundaries, self.random,
+                probability=self.config.transition_sampling_probability,
+                context_frames=self.config.transition_local_context_frames,
+            )
         margin = 0 if full else self.config.margin_frames
         begin, end = max(0, first - margin), min(count, first + width + margin)
         rendered = vocoder(frames[begin:end], deterministic_noise=self.config.fixed_noise).samples
@@ -169,9 +192,24 @@ class Trainer:
                 np.repeat(per_frame[first:first + width], hop)
             ).to(self.device, predicted.dtype)
         terms = self.spectral(predicted, target, weights)
+        transition_local = predicted.new_zeros(())
+        if not full and focused_boundary is not None and self.config.transition_local_weight > 0:
+            local_boundary = focused_boundary - first
+            context_samples = self.config.transition_local_context_frames * hop
+            center_sample = local_boundary * hop
+            local_start, local_end = center_sample - context_samples, center_sample + context_samples
+            if local_start >= 0 and local_end <= min(len(predicted), len(target)):
+                # Extra loss on the exact boundary-centered region in the real target WAV.
+                transition_local = self.spectral(
+                    predicted[local_start:local_end], target[local_start:local_end]
+                )["total"]
+        terms["transition_local"] = transition_local
         voicing = acoustic.acoustic_normalizer.denormalize(output.normalized)[:, 0].clamp(1e-4, 1 - 1e-4)
         terms["voicing"] = F.binary_cross_entropy(voicing, target_voicing)
-        terms["acoustic"] = terms["total"] + self.config.voicing_weight * terms["voicing"]
+        terms["acoustic"] = (
+            terms["total"] + self.config.voicing_weight * terms["voicing"]
+            + self.config.transition_local_weight * transition_local
+        )
         return terms
 
     def _phone_weight(self, language: str, symbol: str) -> float:
