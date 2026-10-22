@@ -21,7 +21,7 @@ def test_boundary_collection_excludes_silence_and_preserves_frame_offsets():
     phones = _phones("sil", "n", "y", "a", "sil")
     assert transition_boundary_frames(phones, [10, 12, 8, 30, 10]) == [22, 30]
     weights = transition_frame_weights(phones, [10, 12, 8, 30, 10], weight=1.5, radius=2)
-    assert np.all(weights[10:14] == 1.5)
+    assert np.all(weights[28:32] == 1.5)
     assert np.all(weights[20:24] == 1.5)
     assert np.all(weights[:10] == 1.0)
     assert np.all(weights[60:] == 1.0)
