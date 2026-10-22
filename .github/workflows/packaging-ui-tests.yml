@@ -20,6 +20,7 @@ on:
       - "opensv_train/transitions.py"
       - "opensv_train/dnni.py"
       - "opensv_train/voice.py"
+      - "opensv_train/dnni.py"
       - "trainsv_gui.py"
       - "README.md"
       - "README.zh-CN.md"
@@ -31,6 +32,7 @@ on:
       - "tests/test_gui_performance.py"
       - "tests/test_audio_io.py"
       - "tests/test_pitch.py"
+      - "tests/test_flat_dnni_v3_passthrough.py"
       - "tests/test_packaging.py"
       - "tests/test_sfpk_packaging.py"
       - "tests/test_gui_packaging_ui.py"
@@ -68,3 +70,4 @@ jobs:
           python -m pytest -q tests/test_transition_audit.py
           python -m pytest -q tests/test_transition_sampling.py tests/test_dnni_version.py
           python -m pytest -q tests/test_timbre_profiles.py
+          python -m pytest -q tests/test_flat_dnni_v3_passthrough.py

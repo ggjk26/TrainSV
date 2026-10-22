@@ -8,7 +8,7 @@ from pathlib import Path
 
 import torch
 
-from .dnni import DnniFile, serialize_model_for_output
+from .dnni import DnniFile, OpaqueDnniFile, serialize_model_for_output
 from .nofs import InfoVoice, NofsFile, is_info_voice
 
 ROLES = ("duration", "pitch", "acoustic", "vocoder")
@@ -18,7 +18,7 @@ INFO_KINDS = {"duration": "duration", "pitch": "f0", "acoustic": "acoustic", "vo
 @dataclass
 class VoiceFiles:
     path: Path
-    models: dict[str, DnniFile]
+    models: dict[str, DnniFile | OpaqueDnniFile]
     metadata: dict[str, str]
     nofs: NofsFile | None = None
     info: InfoVoice | None = None
@@ -35,15 +35,65 @@ class VoiceFiles:
         return self.metadata.get(".feature_rap_languages", "").split()
 
 
+def _load_model_bytes(data: bytes) -> DnniFile | OpaqueDnniFile:
+    """Parse a supported DNNI model or preserve a v3 file without interpreting it.
+
+    DNNI v3 is only recognized by its container header here. Its payload,
+    graph, tensors, and inference behavior remain unsupported.
+    """
+    try:
+        return DnniFile.parse(data)
+    except ValueError as parse_error:
+        try:
+            return OpaqueDnniFile.from_bytes(data)
+        except ValueError:
+            raise parse_error
+
+
+def _load_info_model(role: str, path: Path) -> DnniFile | OpaqueDnniFile:
+    """Load one model role while preserving an opaque DNNI v3 dependency.
+
+    The role is retained by the caller for role-specific safety checks; the
+    v3 bytes are not decoded or treated as an executable network.
+    """
+    return _load_model_bytes(Path(path).read_bytes())
+
+
+class UnavailableDNNIModel(torch.nn.Module):
+    """Placeholder for an opaque DNNI dependency that cannot run inference."""
+
+    supported = False
+
+    def __init__(self, role: str, version: int):
+        super().__init__()
+        self.role = role
+        self.version = version
+        self.reason = (
+            f"{role.title()} DNNI v{version} is preserved byte-for-byte without parsing; "
+            f"{role} inference and training are unavailable."
+        )
+
+
+class UnavailablePitchModel(UnavailableDNNIModel):
+    """Role-specific message retained for compatibility with existing callers."""
+
+    def __init__(self, version: int):
+        super().__init__("pitch", version)
+        self.reason = (
+            f"Pitch training, Pitch-model initialization, and Pitch-network inference are unavailable "
+            f"because DNNI v{version} is preserved opaquely. Choose a training configuration that "
+            "does not include Pitch to keep this dependency unchanged."
+        )
+
+
 def load_voice(path, preserve_non_acoustic_models: bool = False) -> VoiceFiles:
     path = Path(path).expanduser()
     if is_info_voice(path):
         info = InfoVoice.load(path)
-        # In preservation mode, only parse the acoustic DNNI. The other model
-        # IDs remain in the info document and their binaries are never loaded
-        # into TrainSV's network implementations or rewritten on save.
+        # Preserve-mode deliberately avoids loading/validating the untouched
+        # Duration and Pitch payloads, including opaque DNNI v3 dependencies.
         roles = ("acoustic", "vocoder") if preserve_non_acoustic_models else ROLES
-        models = {role: DnniFile.load(info.models[role]) for role in roles}
+        models = {role: _load_info_model(role, info.models[role]) for role in roles}
         metadata = {".name": info.info.get("name", ""), ".language": info.info.get("language", "")}
         return VoiceFiles(
             path, models, metadata, info=info,
@@ -53,9 +103,8 @@ def load_voice(path, preserve_non_acoustic_models: bool = False) -> VoiceFiles:
         raise ValueError("preserving non-acoustic models is available only for info.nofs shared-model voicebanks")
     nofs = NofsFile.load(path)
     keys = nofs.model_keys()
-    models = {role: DnniFile.parse(nofs.read(keys[role])) for role in ROLES}
+    models = {role: _load_model_bytes(nofs.read(keys[role])) for role in ROLES}
     return VoiceFiles(path, models, nofs.metadata(), nofs=nofs)
-
 
 def model_hash(data: bytes) -> str:
     return hashlib.md5(data).hexdigest()
@@ -128,36 +177,49 @@ class Voice(torch.nn.Module):
     def __init__(self, files: VoiceFiles):
         super().__init__()
         from .acoustic import AcousticModel
+        from .duration import DurationModel
+        from .pitch import PitchModel
+        from .vocoder import Vocoder
 
         self.files = files
         info = files.info
         if files.preserve_non_acoustic_models:
             if info is None:
                 raise ValueError("preserving non-acoustic models requires an info.nofs voicebank")
-            # Acoustic loss is measured after decoding to audio, so Vocoder must
-            # remain available as a frozen decoder. Timing and Pitch are not
-            # instantiated; the original Vocoder DNNI is preserved byte-for-byte.
-            from .vocoder import Vocoder
+            acoustic_file = files.models["acoustic"]
+            vocoder_file = files.models["vocoder"]
+            # This loss renders predicted audio; the acoustic model and frozen
+            # decoder still need executable network payloads. Other roles can
+            # remain opaque and untouched in the source info voice.
+            if isinstance(acoustic_file, OpaqueDnniFile):
+                raise ValueError("acoustic training is unavailable because the source Acoustic DNNI v3 payload is opaque")
+            if isinstance(vocoder_file, OpaqueDnniFile):
+                raise ValueError("acoustic waveform training requires a runnable Vocoder; the source Vocoder DNNI v3 payload is opaque")
             self.acoustic = AcousticModel(
-                files.models["acoustic"], list(info.vocal_modes),
-                info.acoustic_speaker, info.default_style, list(info.vocal_modes.values()),
+                acoustic_file, list(info.vocal_modes), info.acoustic_speaker,
+                info.default_style, list(info.vocal_modes.values()),
             )
-            self.vocoder = Vocoder(files.models["vocoder"])
+            self.vocoder = Vocoder(vocoder_file)
             return
 
-        from .duration import DurationModel
-        from .pitch import PitchModel
-        from .vocoder import Vocoder
-
         if info is None:
-            self.duration = DurationModel(files.models["duration"])
-            self.pitch = PitchModel(files.models["pitch"])
-            self.acoustic = AcousticModel(files.models["acoustic"], files.vocal_modes)
+            duration_file = files.models["duration"]
+            pitch_file = files.models["pitch"]
+            acoustic_file = files.models["acoustic"]
+            vocoder_file = files.models["vocoder"]
+            self.duration = UnavailableDNNIModel("duration", duration_file.version) if isinstance(duration_file, OpaqueDnniFile) else DurationModel(duration_file)
+            self.pitch = UnavailablePitchModel(pitch_file.version) if isinstance(pitch_file, OpaqueDnniFile) else PitchModel(pitch_file)
+            self.acoustic = UnavailableDNNIModel("acoustic", acoustic_file.version) if isinstance(acoustic_file, OpaqueDnniFile) else AcousticModel(acoustic_file, files.vocal_modes)
+            self.vocoder = UnavailableDNNIModel("vocoder", vocoder_file.version) if isinstance(vocoder_file, OpaqueDnniFile) else Vocoder(vocoder_file)
         else:
-            self.duration = DurationModel(files.models["duration"], info.duration_voice)
-            self.pitch = PitchModel(files.models["pitch"], info.pitch_speaker)
-            self.acoustic = AcousticModel(files.models["acoustic"], list(info.vocal_modes), info.acoustic_speaker, info.default_style, list(info.vocal_modes.values()))
-        self.vocoder = Vocoder(files.models["vocoder"])
+            duration_file = files.models["duration"]
+            pitch_file = files.models["pitch"]
+            acoustic_file = files.models["acoustic"]
+            vocoder_file = files.models["vocoder"]
+            self.duration = UnavailableDNNIModel("duration", duration_file.version) if isinstance(duration_file, OpaqueDnniFile) else DurationModel(duration_file, info.duration_voice)
+            self.pitch = UnavailablePitchModel(pitch_file.version) if isinstance(pitch_file, OpaqueDnniFile) else PitchModel(pitch_file, info.pitch_speaker)
+            self.acoustic = UnavailableDNNIModel("acoustic", acoustic_file.version) if isinstance(acoustic_file, OpaqueDnniFile) else AcousticModel(acoustic_file, list(info.vocal_modes), info.acoustic_speaker, info.default_style, list(info.vocal_modes.values()))
+            self.vocoder = UnavailableDNNIModel("vocoder", vocoder_file.version) if isinstance(vocoder_file, OpaqueDnniFile) else Vocoder(vocoder_file)
 
     @classmethod
     def load(cls, path, preserve_non_acoustic_models: bool = False) -> "Voice":
@@ -173,16 +235,18 @@ class Voice(torch.nn.Module):
         for role, model in self.models.items():
             if self.files.preserve_non_acoustic_models and role != "acoustic":
                 continue
+            if not getattr(model, "supported", True):
+                continue
             export_parameters(model)
         info = self.files.info
         if info is not None:
             # Preserve mode leaves duration and Pitch embeddings in the source
             # descriptor; only acoustic embeddings are copied from the trainer.
-            if hasattr(self, "duration"):
+            if hasattr(self, "duration") and getattr(self.duration, "supported", True):
                 info.duration_voice = self.duration.voice.detach().cpu().numpy()
-            if hasattr(self, "pitch"):
+            if hasattr(self, "pitch") and getattr(self.pitch, "supported", True):
                 info.pitch_speaker = self.pitch.speaker.detach().cpu().numpy()
-            if hasattr(self, "acoustic"):
+            if hasattr(self, "acoustic") and getattr(self.acoustic, "supported", True):
                 info.acoustic_speaker = self.acoustic.speaker.detach().cpu().numpy()
                 info.default_style = self.acoustic.default_style.detach().cpu().numpy()
                 info.vocal_modes = {name: style.detach().cpu().numpy() for name, style in zip(self.acoustic.vocal_modes, self.acoustic.mode_styles)}

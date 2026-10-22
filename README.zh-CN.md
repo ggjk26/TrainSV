@@ -130,6 +130,8 @@ trainsv import-lab --from-filenames --wavs C:\\my-wavs --voice C:\\path\\to\\voi
 
 此模式按文件名从左到右排列音素，只删除末尾的 `_0` / `_1` 重录编号，保留音素内部下划线；首尾固定添加 `sil`，不会合并文件名中原有的静音。首尾静音各占音频时长的 10%，中间音素平均分配剩余 80%。**这是按规则均分的近似标注，不是声学强制对齐**；实际音素边界可能不同，建议先检查生成的 LAB。
 
+导入器还会在数据集输出目录生成 `phone_mapping_report.csv`，逐条记录源文件音素、映射后的目标音素序列和映射规则。训练普通话 VOCALOID 数据前应先检查此报告：目标音素存在于声库音素表，只说明标签可被读取，并不能证明源标记体系判断正确、发音含义一定匹配。仅凭文件名无法推断一段音频内部的真实音素边界。
+
 `--source-phoneme-system` 默认值 `auto` 会保留现有 VOCALOID 中文映射。如果要专门为 Synthesizer V Studio 1.11.2 生成标签，请选择 `sv1112-chinese`（普通话）或 `sv1112-cantonese`（粤语）。这两个显式模式根据 Dreamtonics 官方音素变更表，将指定的 X-SAMPA 音素及明确列出的 VOCALOID 普通话别名映射到 `Old` 列，也就是 2.3 版本之前的音素标签；不会输出新版简化罗马字标签。所有映射结果都必须存在于所选目标声库的音素表中，不支持的符号会被报告，不会猜测拆分或擅自加入目标音素。原有 `xsampa`、`synthv-xsampa` 和 `vocaloid-mandarin` 模式继续保留；`none` 关闭转换。参考：[Dreamtonics 官方音素变更表（Chinese / Mandarin）](https://resource.dreamtonics.com/sv230b1_phoneme_changes.html#mandarin) 与 [Cantonese](https://resource.dreamtonics.com/sv230b1_phoneme_changes.html#cantonese)。通常指定 `--voice` 读取目标音素表即可，不必准备 `phone_table.json`。无法映射的音素或无法解码的 WAV 会记录在输出目录的 `unmatched_phones.csv`，其他文件仍会继续处理。
 
 X-SAMPA 的 `@\``、`3\`` 表示卷舌化元音：若目标音素表中有完整符号则原样保留；若没有，程序会尝试用对应元音加音素表中已有的卷舌音近似拆分（优先 `r\\`，其次 `ɹ`、`ɻ`、`r` 等）。若表内既没有完整符号，也没有可用近似音，会报出更具体的错误，不会直接丢掉卷舌特征。
@@ -238,6 +240,12 @@ Pitch 面板单独管理底模 Pitch 初始化或兼容 .dnni 导入，以及旋
 - `info.<版本>.nofs` 共享模型底模输出为数据库目录和相关模型文件。
 - 默认仅将输出声学模型的 DNNI 容器格式转换为 v2（其他模型角色保留底模版本）；CLI 可用 `--acoustic-dnni-version 1` 回退旧格式。该转换只改变容器编码，不改变网络架构或训练权重，因此本身不会改善音质。往返解析测试不能替代在目标 Synthesizer V 版本中实际打开与渲染验证。
 - 保留原始底模、数据集和训练运行目录，避免覆盖唯一副本。
+
+#### Flat 声库包含 DNNI v3 依赖时
+
+DNNI v3 文件可以是随 SV2 兼容 Flat 声库分发的正常依赖；仅凭 v3 头部不能判断文件损坏。开发时检查的一个完整 SFPK 样本包含 4 个 DNNI 依赖，头部版本均为 v3。TrainSV 现在可以在读取 info 声库或旧式 NOFS 容器时，对任意模型角色的不透明 v3 文件进行逐字节保留，并在保存时原样写回，不尝试改写其内部数据。
+
+**这只表示容器保留兼容，并不代表 DNNI v3 已可运行，也不代表已支持直接导入 SFPK。** 这次提供的 SFPK 包含 `config.json`、根目录 `voice.nofs`、`models/*.dnni`、图片和音素表；它不包含当前共享模型加载器需要的 `info.<版本>.nofs`。包内的 `voice.nofs` 长度字段也为 0，无法通过 TrainSV 严格的 NOFS v10 加载校验。TrainSV 目前还不能把 SFPK 中列出的模型 ID 映射到时长、Pitch、声学、声码器角色，也不能直接导入整个压缩包。不透明 v3 保留仅适用于模型依赖已经由 TrainSV 支持读取的声库容器引用到的情况。TrainSV 仍无法解码 v3 网络图或张量，也不能对不透明模型执行推理或训练。要实现完整 v3 支持，仍需要可合法访问的模型表示或运行时，并与 Synthesizer V Flat 做端到端验证。
 
 ## 命令行使用
 
@@ -425,7 +433,7 @@ cmake --build build --target OpenSVParity
 ## 许可
 
 项目采用 GPL-3.0。感谢 [OpenSV](https://github.com/cubeww/OpenSV) 项目提供的参考实现。请通过当前仓库的 [Issues](https://github.com/ggjk26/TrainSV/issues) 提交复现步骤、底模类型和完整日志。
-文件名转 LAB 现支持按源标记体系选择明确映射：`auto`、`vocaloid-mandarin`、`xsampa` 与 `synthv-xsampa`。F0 无有声帧不等同于 WAV 损坏；像 `Sil Sil k Sil_0.wav` 这样的有效静音/清辅音样本应保留，映射错误或真正无法解码的音频会单独记录到 `unmatched_phones.csv`。
+文件名转 LAB 现支持按源标记体系选择明确映射：`auto`、`vocaloid-mandarin`、`xsampa` 与 `synthv-xsampa`。一个 VOCALOID 源音素映射成多个目标音素时，会尽量保留该源音素对应的整体时长，并缩短 `@_n`、`@n` 等组合中的鼻尾时长；一些 VOCALOID 音源的 `sta/@n_0.wav` 和 `art/@n @n_0.wav` 这类命名现已作为同一类源音素组合解析；这仍是启发式估算，不是真正的声学强制对齐，正式训练前建议抽查 `phone_mapping_report.csv` 和关键样本的 `.lab` 边界。VOCALOID 的 `u`（如 wu）与 `uo`（如 wo）是不同韵母，不能互相替代。F0 无有声帧不等同于 WAV 损坏；像 `Sil Sil k Sil_0.wav` 这样的有效静音/清辅音样本应保留，映射错误或真正无法解码的音频会单独记录到 `unmatched_phones.csv`。
 
 ## F0 分析与校准
 

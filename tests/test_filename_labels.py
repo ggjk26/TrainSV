@@ -6,6 +6,7 @@ import soundfile
 
 from opensv_train.filename_labels import (
     filename_recordings,
+    labels_from_phone_groups,
     labels_from_phones,
     parse_filename_phones,
     read_phone_table,
@@ -50,6 +51,44 @@ def test_equal_duration_boundaries_are_contiguous():
     assert entries[0][0] == 0 and entries[-1][1] == 20_000_000
     assert all(a[1] == b[0] for a, b in zip(entries, entries[1:]))
 
+
+def test_mapped_source_token_keeps_one_span_and_shortens_nasal_coda():
+    entries = labels_from_phone_groups([["7"], ["@", ":n"]], 1000)
+    assert entries == [
+        (0, 100, "sil"),
+        (100, 500, "7"),
+        (500, 786, "@"),
+        (786, 900, ":n"),
+        (900, 1000, "sil"),
+    ]
+    assert all(left[1] == right[0] for left, right in zip(entries, entries[1:]))
+
+
+def test_vocaloid_at_n_alias_accepts_sta_and_art_filename_patterns():
+    simple = {"sil", "e/", "-n", "@", ":n"}
+    assert parse_filename_phones(
+        "@n_0.wav", simple, source_system="vocaloid-mandarin"
+    ) == ["sil", "e/", "-n", "sil"]
+    assert parse_filename_phones(
+        "@n @n_0.wav", simple, source_system="vocaloid-mandarin"
+    ) == ["sil", "e/", "-n", "e/", "-n", "sil"]
+    legacy = {"sil", "@", ":n"}
+    assert parse_filename_phones(
+        "@n_0.wav", legacy, source_system="vocaloid-mandarin"
+    ) == ["sil", "@", ":n", "sil"]
+    assert parse_filename_phones(
+        "@n @n_0.wav", legacy, source_system="sv1112-chinese"
+    ) == ["sil", "@", ":n", "@", ":n", "sil"]
+
+
+def test_vocaloid_u_and_uo_remain_distinct_in_legacy_phone_inventory():
+    target = {"sil", "w", "u", "uo", "o", "@"}
+    assert parse_filename_phones("u_0.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "u", "sil"
+    ]
+    assert parse_filename_phones("uo_0.wav", target, source_system="vocaloid-mandarin") == [
+        "sil", "uo", "sil"
+    ]
 
 def test_reads_json_phone_table(tmp_path):
     table = tmp_path / "phone_table.json"
@@ -485,3 +524,54 @@ def test_unmatched_report_identifies_expanded_rhotic_component(tmp_path):
     )
     assert recordings == []
     assert unmatched[0]["source_token"] == "@" + chr(96)
+
+
+def test_vocaloid_mapping_report_exposes_source_to_target_aliases(tmp_path):
+    target = {
+        "sil", "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v",
+        "ng", "-n", "b", "p", "t", "d", "g", "k",
+    }
+    report = []
+    phones = parse_filename_phones(
+        "p ph @U @_n_0.wav",
+        target,
+        source_system="vocaloid-mandarin",
+        mapping_report=report,
+    )
+
+    assert phones == ["sil", "b", "p", "ou", "e/", "-n", "sil"]
+    assert [(row["source_token"], row["target_phones"]) for row in report] == [
+        ("p", "b"),
+        ("ph", "p"),
+        ("@U", "ou"),
+        ("@_n", "e/ -n"),
+    ]
+    assert all(row["mapping_rule"] for row in report)
+    assert all(row["filename"] == "p ph @U @_n_0.wav" for row in report)
+
+
+def test_filename_recordings_collects_mapping_report_only_for_usable_wavs(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    target = {
+        "sil", "aa", "ee", "e/", "o/", "ao", "ou", "iz", "ir", "v",
+        "ng", "-n", "b", "p", "t", "d", "g", "k",
+    }
+    soundfile.write(
+        str(wav_dir / "p ph @U @_n_0.wav"),
+        np.zeros(4800, dtype=np.float32),
+        48000,
+    )
+    (wav_dir / "p ph @U @_n_1.wav").write_bytes(b"not a wav")
+    mappings = []
+    unmatched = []
+    recordings = filename_recordings(
+        wav_dir, target, source_system="vocaloid-mandarin",
+        unmatched=unmatched, mapping_report=mappings,
+    )
+
+    assert len(recordings) == 1
+    assert len(mappings) == 4
+    assert {row["filename"] for row in mappings} == {"p ph @U @_n_0.wav"}
+    assert len(unmatched) == 1
+    assert unmatched[0]["category"] == "wav_decode"

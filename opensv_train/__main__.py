@@ -56,6 +56,14 @@ def _validate_pitch_options(arguments) -> None:
         raise SystemExit("--f0-shift-semitones must be finite and between -24 and +24 semitones")
 
 
+def _require_supported_models(voice: Voice, roles, operation: str) -> None:
+    for role in sorted(set(roles)):
+        model = voice.models[role]
+        if not getattr(model, "supported", True):
+            reason = getattr(model, "reason", f"the selected voice's {role} model is unsupported")
+            raise SystemExit(f"{operation} is unavailable: {reason}")
+
+
 def finetune(arguments) -> None:
     _validate_pitch_options(arguments)
     if arguments.preserve_non_acoustic_models and not is_info_voice(arguments.voice):
@@ -69,6 +77,14 @@ def finetune(arguments) -> None:
         raise SystemExit("--preserve-non-acoustic-models trains only the acoustic model; use --models acoustic")
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
+    if "pitch" in models and not getattr(voice.pitch, "supported", True):
+        raise SystemExit(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
+    required = set(models) | {"acoustic"}
+    if set(models) & {"acoustic", "vocoder"}:
+        required.add("vocoder")
+    _require_supported_models(voice, required, "fine-tuning")
+    if not getattr(voice.pitch, "supported", True):
+        print(f"Warning: {voice.pitch.reason}")
     if arguments.pitch_model:
         if arguments.preserve_non_acoustic_models:
             raise SystemExit("--pitch-model cannot be used when non-acoustic models are being preserved")
@@ -124,10 +140,18 @@ def finetune(arguments) -> None:
         f"isolated-octave correction={'on' if arguments.f0_octave_correction else 'off'}, "
         f"target shift={arguments.f0_shift_semitones:+g} semitones"
     )
-    if "pitch" in models and not any(phrase.pitch_example() is not None for phrase in phrases):
+    has_pitch_examples = any(phrase.pitch_example() is not None for phrase in phrases)
+    if "pitch" in models and not has_pitch_examples:
         raise SystemExit(
             "Pitch training requires note_seq/note_dur (and usable ph_num word boundaries); "
             "phoneme-only LAB labels cannot train a Pitch model. Train acoustic only, or import note-labelled data."
+        )
+    if not has_pitch_examples and "pitch" not in models:
+        print(
+            "Pitch note: this dataset has no usable note_seq/note_dur + ph_num targets, so this run will not update "
+            "the Pitch network. Acoustic/Sound training can improve phoneme realization and timbre, but it cannot "
+            "learn score-to-F0 prediction or correct the base voice's note intonation. F0 presets only analyze the "
+            "reference WAV."
         )
     if problems and set(models) & {"duration", "pitch"}:
         print(f"{len(problems)} phrases lack usable notes and train the acoustic model only; first: {problems[0]}")
@@ -266,7 +290,9 @@ def import_lab(arguments) -> None:
         if arguments.voice and not arguments.phone_table:
             from .common import find_language
 
-            phone_sets = Voice.load(arguments.voice).acoustic.phone_sets
+            voice = Voice.load(arguments.voice)
+            _require_supported_models(voice, {"acoustic"}, "reading phoneme tables")
+            phone_sets = voice.acoustic.phone_sets
             phone_set = phone_sets[find_language(phone_sets, arguments.language)]
             voice_symbols = phone_set.symbols
         phones = read_phone_table(arguments.phone_table, voice_symbols)
@@ -276,7 +302,11 @@ def import_lab(arguments) -> None:
         elif source_system == "none":
             source_system = None
         unmatched: list[dict[str, str]] = []
-        recordings = filename_recordings(arguments.wavs, phones, source_system=source_system, unmatched=unmatched)
+        mapping_rows: list[dict[str, str]] = []
+        recordings = filename_recordings(
+            arguments.wavs, phones, source_system=source_system,
+            unmatched=unmatched, mapping_report=mapping_rows,
+        )
         report_path = Path(arguments.output).expanduser() / "unmatched_phones.csv"
         report_path.parent.mkdir(parents=True, exist_ok=True)
         with report_path.open("w", newline="", encoding="utf-8-sig") as report_file:
@@ -286,6 +316,25 @@ def import_lab(arguments) -> None:
             )
             writer.writeheader()
             writer.writerows(unmatched)
+
+        mapping_path = Path(arguments.output).expanduser() / "phone_mapping_report.csv"
+        with mapping_path.open("w", newline="", encoding="utf-8-sig") as mapping_file:
+            fields = ("filename", "source_system", "source_token", "target_phones", "mapping_rule")
+            writer = csv.DictWriter(mapping_file, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(mapping_rows)
+        print(f"Phone mapping report written to {mapping_path}")
+        nontrivial = Counter(
+            (row["source_token"], row["target_phones"], row["mapping_rule"])
+            for row in mapping_rows
+            if row["mapping_rule"] not in {"exact-target-match", "silence-token"}
+        )
+        if nontrivial:
+            examples = ", ".join(
+                f"{source} → {target} ({rule}) ×{count}"
+                for (source, target, rule), count in nontrivial.most_common(12)
+            )
+            print("Review these source-to-target mappings before training: " + examples)
         wav_directory = Path(arguments.wavs).expanduser()
         discovered_wavs = [
             path for path in wav_directory.iterdir()
@@ -341,7 +390,9 @@ def import_lab(arguments) -> None:
     if arguments.voice:
         from .common import find_language
 
-        phone_sets = Voice.load(arguments.voice).acoustic.phone_sets
+        voice = Voice.load(arguments.voice)
+        _require_supported_models(voice, {"acoustic"}, "reading phoneme tables")
+        phone_sets = voice.acoustic.phone_sets
         phone_set = phone_sets[find_language(phone_sets, arguments.language)]
         vowels = {s for s, c in zip(phone_set.symbols, phone_set.categories) if c in ("vowel", "diphthong")}
     for line in import_labels(recordings, arguments.output, mapping, vowels):
@@ -373,8 +424,12 @@ def evaluate(arguments) -> None:
         ceiling=arguments.f0_ceiling,
         voicing_threshold=arguments.f0_voicing_threshold,
     )
+    models = tuple(arguments.models.split(","))
     for index, path in enumerate(arguments.voice):
         voice = Voice.load(path).to(device)
+        if "pitch" in models and not getattr(voice.pitch, "supported", True):
+            raise SystemExit(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
+        _require_supported_models(voice, set(models) | {"acoustic", "vocoder"}, "evaluation/rendering")
         phrases = [
             phrase
             for utterance in load_dataset(
@@ -394,7 +449,7 @@ def evaluate(arguments) -> None:
         gain = level_gain(voice, phrases, device)
         apply_gain(phrases, gain)
         config = TrainConfig(
-            models=tuple(arguments.models.split(",")),
+            models=models,
             device=arguments.device,
             rap_languages=voice.files.rap_languages,
             pitch_melody_weight=arguments.pitch_melody_weight,
@@ -446,7 +501,11 @@ def _render(voice: Voice, phrase, device: torch.device):
 def synthesize_dataset(arguments) -> None:
     from .synthetic import render_dataset
 
-    render_dataset(Voice.load(arguments.voice), arguments.output, arguments.phrases, arguments.language, arguments.seed, arguments.notes)
+    voice = Voice.load(arguments.voice)
+    if not getattr(voice.pitch, "supported", True):
+        raise SystemExit(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
+    _require_supported_models(voice, ROLES, "synthesis")
+    render_dataset(voice, arguments.output, arguments.phrases, arguments.language, arguments.seed, arguments.notes)
 
 
 def inspect(arguments) -> None:
@@ -454,11 +513,21 @@ def inspect(arguments) -> None:
     files = voice.files
     print(f"{files.metadata.get('.name', '?')} ({'info voice' if files.info else 'voice.nofs'}) vocal modes: {', '.join(files.vocal_modes) or '-'}")
     for role in ROLES:
+        model_file = files.models[role]
         model = voice.models[role]
+        if role == "pitch" and not getattr(model, "supported", True):
+            print(f"  {role:9s} DNNI v{model_file.version} opaque / unsupported; preserved unchanged (Pitch training disabled)")
+            continue
+        if not getattr(model, "supported", True):
+            print(f"  {role:9s} DNNI v{model_file.version} opaque / unsupported; preserved unchanged")
+            continue
         count = sum(parameter.numel() for parameter in model.parameters())
-        print(f"  {role:9s} DNNI v{files.models[role].version} {count / 1e6:6.2f}M parameters")
-    for phone_set in voice.acoustic.phone_sets:
-        print(f"  {phone_set.name}: {' '.join(phone_set.symbols)}")
+        print(f"  {role:9s} DNNI v{model_file.version} {count / 1e6:6.2f}M parameters")
+    if getattr(voice.acoustic, "supported", True):
+        for phone_set in voice.acoustic.phone_sets:
+            print(f"  {phone_set.name}: {' '.join(phone_set.symbols)}")
+    else:
+        print("  phoneme tables: unavailable (opaque Acoustic DNNI v3)")
 
 
 def package_svpk_command(arguments) -> None:
