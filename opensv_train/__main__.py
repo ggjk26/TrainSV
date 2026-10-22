@@ -83,7 +83,8 @@ def finetune(arguments) -> None:
     if set(models) & {"acoustic", "vocoder"}:
         required.add("vocoder")
     _require_supported_models(voice, required, "fine-tuning")
-    if not getattr(voice.pitch, "supported", True):
+    # Preserve mode intentionally does not construct Voice.pitch; skip all Pitch checks here.
+    if not arguments.preserve_non_acoustic_models and hasattr(voice, "pitch") and not getattr(voice.pitch, "supported", True):
         print(f"Warning: {voice.pitch.reason}")
     if arguments.pitch_model:
         if arguments.preserve_non_acoustic_models:
