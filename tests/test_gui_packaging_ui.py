@@ -272,7 +272,7 @@ def test_dynamic_webui_messages_translate_in_all_locales():
             "for (const [source, language, expected] of cases) { const actual = translateString(source, language); if (actual !== expected) { console.error(JSON.stringify({source, language, expected, actual})); process.exit(1); } }",
         ]
     )
-    result = subprocess.run([node, "-e", script], capture_output=True, text=True, check=False)
+    result = subprocess.run([node, "-"], input=script, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr or result.stdout
     assert r"source.match(/^✓ (\d+) recordings, about ([\d.]+) min" in PAGE
     assert r"source.match(/^SFPK test package created: (.+?)\. Model dependencies" in PAGE

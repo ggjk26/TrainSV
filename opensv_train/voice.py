@@ -190,7 +190,7 @@ class Voice(torch.nn.Module):
             vocoder_file = files.models["vocoder"]
             # This loss renders predicted audio; the acoustic model and frozen
             # decoder still need executable network payloads. Other roles can
-            # remain opaque and untouched in the source info voice.
+            # Timing and Pitch are not instantiated in this mode; they remain opaque and untouched in the source info voice.
             if isinstance(acoustic_file, OpaqueDnniFile):
                 raise ValueError("acoustic training is unavailable because the source Acoustic DNNI v3 payload is opaque")
             if isinstance(vocoder_file, OpaqueDnniFile):
