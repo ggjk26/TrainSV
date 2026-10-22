@@ -50,11 +50,17 @@ def measure_input_peaks(voice: Voice, phrases: list[Phrase], device: torch.devic
             for phrase in phrases:
                 hz, _ = phrase.frame_f0()
                 frames = voice.acoustic(phrase.timed_phonemes(), torch.from_numpy(np.log(hz).astype(np.float32)).to(device)).frames
-                voice.vocoder(frames)
+                # Preservation mode instantiates only the acoustic model. Calibrate
+                # its own input ranges without forcing inference through untouched
+                # duration, Pitch or Vocoder networks.
+                if hasattr(voice, "vocoder"):
+                    voice.vocoder(frames)
                 if phrase.syllables:
-                    voice.duration(voice.duration.prepare(phrase.syllables))
-                    notes, phonemes, _, _ = phrase.pitch_example()
-                    voice.pitch(voice.pitch.prepare(notes, phonemes))
+                    if hasattr(voice, "duration"):
+                        voice.duration(voice.duration.prepare(phrase.syllables))
+                    if hasattr(voice, "pitch"):
+                        notes, phonemes, _, _ = phrase.pitch_example()
+                        voice.pitch(voice.pitch.prepare(notes, phonemes))
     finally:
         for handle in handles:
             handle.remove()

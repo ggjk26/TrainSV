@@ -285,3 +285,22 @@ def test_filename_import_exposes_explicit_phone_conventions():
     assert "Standard X-SAMPA" in PAGE
     assert "SynthV legacy X-SAMPA" in PAGE
     assert '"--source-phoneme-system",val("i_source_system")||"auto"' in PAGE
+
+
+def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
+    assert 'id="t_preserve_non_acoustic_models"' in PAGE
+    assert "function syncPreserveModelsUI()" in PAGE
+    assert "Preserving non-acoustic models requires an existing info.nofs" in PAGE
+    assert 'a.push("--preserve-non-acoustic-models")' in PAGE
+    root = Path(__file__).resolve().parents[1]
+    cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
+    voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
+    calibration = (root / "opensv_train" / "calibration.py").read_text("utf-8")
+    assert '"--preserve-non-acoustic-models"' in cli
+    assert "preserve_non_acoustic_models=arguments.preserve_non_acoustic_models" in cli
+    assert "models != (\"acoustic\",)" in cli
+    assert "Do not instantiate" in voice
+    assert 'document[INFO_KINDS[role]] = reference' in voice
+    assert "target.write_bytes(info.models[role].read_bytes())" in voice
+    assert 'if hasattr(voice, "vocoder")' in calibration
+    assert 'if hasattr(voice, "pitch")' in calibration

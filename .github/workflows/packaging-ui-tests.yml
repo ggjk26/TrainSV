@@ -16,6 +16,7 @@ on:
       - "opensv_train/train.py"
       - "opensv_train/losses.py"
       - "opensv_train/timbre.py"
+      - "opensv_train/calibration.py"
       - "opensv_train/transitions.py"
       - "opensv_train/dnni.py"
       - "opensv_train/voice.py"

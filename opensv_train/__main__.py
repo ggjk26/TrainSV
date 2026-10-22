@@ -21,6 +21,7 @@ from .data import F0_PROFILES, LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_p
 from .f0 import F0_SMOOTHING_OPTIONS, resolve_f0_processing, resolve_pitch_loss_options
 from .train import MODELS, TrainConfig, Trainer, apply_gain, level_gain, mode_levels, mode_weights
 from .voice import ROLES, Voice, initialize_pitch_from_file
+from .nofs import is_info_voice
 from .packaging import build_svpk
 from .sfpk import build_sfpk
 from .timbre import summarize_timbre
@@ -57,11 +58,20 @@ def _validate_pitch_options(arguments) -> None:
 
 def finetune(arguments) -> None:
     _validate_pitch_options(arguments)
-    voice = Voice.load(arguments.voice)
+    if arguments.preserve_non_acoustic_models and not is_info_voice(arguments.voice):
+        raise SystemExit("--preserve-non-acoustic-models requires an info.nofs shared-model voicebank; regular voice.nofs files cannot use it")
+    voice = Voice.load(
+        arguments.voice,
+        preserve_non_acoustic_models=arguments.preserve_non_acoustic_models,
+    )
     models = tuple(arguments.models.split(","))
+    if arguments.preserve_non_acoustic_models and models != ("acoustic",):
+        raise SystemExit("--preserve-non-acoustic-models trains only the acoustic model; use --models acoustic")
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
     if arguments.pitch_model:
+        if arguments.preserve_non_acoustic_models:
+            raise SystemExit("--pitch-model cannot be used when non-acoustic models are being preserved")
         if "pitch" not in models:
             raise SystemExit("--pitch-model requires --models to include pitch")
         if arguments.resume:
@@ -142,11 +152,17 @@ def finetune(arguments) -> None:
     if not arguments.keep_level:
         if arguments.gain is not None:
             gain, source = arguments.gain, "given"
+            apply_gain(phrases, gain)
+        elif arguments.preserve_non_acoustic_models:
+            # Vocoder intentionally was not loaded, so do not invoke a render-based
+            # level check. Keep source WAV gain as-is unless the user supplies --gain.
+            gain, source = 1.0, "preserving the original Vocoder; automatic loudness calibration skipped"
         elif arguments.level_reference:
             gain, source = level_gain(Voice.load(arguments.level_reference).to(device), phrases, device), "reference voice"
+            apply_gain(phrases, gain)
         else:
             gain, source = level_gain(voice, phrases, device), "starting voice"
-        apply_gain(phrases, gain)
+            apply_gain(phrases, gain)
         print(f"recordings scaled by {gain:.3f} ({source})")
     config = TrainConfig(
         models=models, params=arguments.params, steps=arguments.steps, learning_rate=arguments.lr, anchor=arguments.anchor,
@@ -170,7 +186,7 @@ def finetune(arguments) -> None:
         nonlocal previous
         for report in fit_input_ranges(voice, calibration, device):
             print(f"widened a {report.role} {report.node_type} input range to ±{report.limit:g} (peak {report.peak:.3g})")
-        if styles and voice.files.info is not None:
+        if styles and voice.files.info is not None and not arguments.preserve_non_acoustic_models:
             voice.files.info.mode_extras = mode_levels(voice, calibration, device)
         saved = voice.save(
             arguments.output, name=arguments.name, version=version or arguments.version,
@@ -563,6 +579,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--output", required=True, help="voice.nofs path, or databases/<name>/ directory for info voices")
     command.add_argument("--language", required=True, type=language_name, help="default phoneme language, e.g. japanese or ja")
     command.add_argument("--models", default="acoustic", help=f"comma-separated subset of {','.join(MODELS)}")
+    command.add_argument("--preserve-non-acoustic-models", action="store_true", help="info.nofs only: train acoustic only, keep original duration/Pitch/vocoder model IDs and embeddings, and skip loading those networks")
     command.add_argument("--params", choices=("all", "embeddings"), default="all", help="train every weight, or only the per-voice speaker/style/vocal-mode vectors")
     command.add_argument("--vocal-modes", help="comma-separated vocal modes of the finetuned voice (info voices): existing ones are kept, new ones start from the default style, others are dropped")
     command.add_argument("--steps", type=int, default=2000)

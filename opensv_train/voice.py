@@ -22,6 +22,7 @@ class VoiceFiles:
     metadata: dict[str, str]
     nofs: NofsFile | None = None
     info: InfoVoice | None = None
+    preserve_non_acoustic_models: bool = False
 
     @property
     def vocal_modes(self) -> list[str]:
@@ -34,13 +35,22 @@ class VoiceFiles:
         return self.metadata.get(".feature_rap_languages", "").split()
 
 
-def load_voice(path) -> VoiceFiles:
+def load_voice(path, preserve_non_acoustic_models: bool = False) -> VoiceFiles:
     path = Path(path).expanduser()
     if is_info_voice(path):
         info = InfoVoice.load(path)
-        models = {role: DnniFile.load(info.models[role]) for role in ROLES}
+        # In preservation mode, only parse the acoustic DNNI. The other model
+        # IDs remain in the info document and their binaries are never loaded
+        # into TrainSV's network implementations or rewritten on save.
+        roles = ("acoustic",) if preserve_non_acoustic_models else ROLES
+        models = {role: DnniFile.load(info.models[role]) for role in roles}
         metadata = {".name": info.info.get("name", ""), ".language": info.info.get("language", "")}
-        return VoiceFiles(path, models, metadata, info=info)
+        return VoiceFiles(
+            path, models, metadata, info=info,
+            preserve_non_acoustic_models=preserve_non_acoustic_models,
+        )
+    if preserve_non_acoustic_models:
+        raise ValueError("preserving non-acoustic models is available only for info.nofs shared-model voicebanks")
     nofs = NofsFile.load(path)
     keys = nofs.model_keys()
     models = {role: DnniFile.parse(nofs.read(keys[role])) for role in ROLES}
@@ -74,7 +84,22 @@ def write_info_voice(
     info = voice.info
     models_root = database_directory.parent.parent / "models"
     document = info.to_json()
+    if voice.files.preserve_non_acoustic_models:
+        # Keep source embedding bytes/IDs intact for models that were not loaded.
+        document["duration_style"] = info.info["duration_style"]
+        document["f0_style"] = info.info["f0_style"]
     for role in ROLES:
+        if voice.files.preserve_non_acoustic_models and role != "acoustic":
+            # Copy the original opaque model bytes when the output database is
+            # in a different Synthesizer V installation. Never parse, instantiate,
+            # validate or reserialize this network in preservation mode.
+            reference = info.info[INFO_KINDS[role]]
+            target = models_root / INFO_KINDS[role] / f"{reference}.dnni"
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(info.models[role].read_bytes())
+            document[INFO_KINDS[role]] = reference
+            continue
         data = serialize_model_for_output(voice.models[role], role, acoustic_dnni_version)
         original = info.models[role]
         reference = original.stem if data == original.read_bytes() else model_hash(data)
@@ -97,12 +122,24 @@ class Voice(torch.nn.Module):
     def __init__(self, files: VoiceFiles):
         super().__init__()
         from .acoustic import AcousticModel
+
+        self.files = files
+        info = files.info
+        if files.preserve_non_acoustic_models:
+            if info is None:
+                raise ValueError("preserving non-acoustic models requires an info.nofs voicebank")
+            # The user explicitly asked to train Sound only. Do not instantiate
+            # Timing, Pitch or Vocoder, as their architectures may be unsupported.
+            self.acoustic = AcousticModel(
+                files.models["acoustic"], list(info.vocal_modes),
+                info.acoustic_speaker, info.default_style, list(info.vocal_modes.values()),
+            )
+            return
+
         from .duration import DurationModel
         from .pitch import PitchModel
         from .vocoder import Vocoder
 
-        self.files = files
-        info = files.info
         if info is None:
             self.duration = DurationModel(files.models["duration"])
             self.pitch = PitchModel(files.models["pitch"])
@@ -114,12 +151,12 @@ class Voice(torch.nn.Module):
         self.vocoder = Vocoder(files.models["vocoder"])
 
     @classmethod
-    def load(cls, path) -> "Voice":
-        return cls(load_voice(path))
+    def load(cls, path, preserve_non_acoustic_models: bool = False) -> "Voice":
+        return cls(load_voice(path, preserve_non_acoustic_models=preserve_non_acoustic_models))
 
     @property
     def models(self) -> dict[str, torch.nn.Module]:
-        return {"duration": self.duration, "pitch": self.pitch, "acoustic": self.acoustic, "vocoder": self.vocoder}
+        return {role: getattr(self, role) for role in ROLES if hasattr(self, role)}
 
     def export(self) -> VoiceFiles:
         from .layers import export_parameters
@@ -128,11 +165,16 @@ class Voice(torch.nn.Module):
             export_parameters(model)
         info = self.files.info
         if info is not None:
-            info.duration_voice = self.duration.voice.detach().cpu().numpy()
-            info.pitch_speaker = self.pitch.speaker.detach().cpu().numpy()
-            info.acoustic_speaker = self.acoustic.speaker.detach().cpu().numpy()
-            info.default_style = self.acoustic.default_style.detach().cpu().numpy()
-            info.vocal_modes = {name: style.detach().cpu().numpy() for name, style in zip(self.acoustic.vocal_modes, self.acoustic.mode_styles)}
+            # Preserve mode leaves duration and Pitch embeddings in the source
+            # descriptor; only acoustic embeddings are copied from the trainer.
+            if hasattr(self, "duration"):
+                info.duration_voice = self.duration.voice.detach().cpu().numpy()
+            if hasattr(self, "pitch"):
+                info.pitch_speaker = self.pitch.speaker.detach().cpu().numpy()
+            if hasattr(self, "acoustic"):
+                info.acoustic_speaker = self.acoustic.speaker.detach().cpu().numpy()
+                info.default_style = self.acoustic.default_style.detach().cpu().numpy()
+                info.vocal_modes = {name: style.detach().cpu().numpy() for name, style in zip(self.acoustic.vocal_modes, self.acoustic.mode_styles)}
         return self.files
 
     def set_vocal_modes(self, names: list[str]) -> None:
