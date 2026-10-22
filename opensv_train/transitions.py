@@ -63,6 +63,22 @@ def sample_transition_segment(
     return rng.randint(0, max_start), None
 
 
+def transition_crop_samples(
+    boundary_frame: int, total_frames: int, hop_samples: int, context_frames: int
+) -> tuple[int, int] | None:
+    """Compute sample indexes for a centered boundary crop, or None if context is incomplete."""
+    if total_frames < 1 or hop_samples < 1 or context_frames < 1:
+        raise ValueError("total frames, hop samples, and context frames must be positive")
+    if boundary_frame < 0 or boundary_frame > total_frames:
+        raise ValueError("boundary frame must be within the segment")
+    if boundary_frame < context_frames or boundary_frame + context_frames > total_frames:
+        return None
+    return (
+        (boundary_frame - context_frames) * hop_samples,
+        (boundary_frame + context_frames) * hop_samples,
+    )
+
+
 def transition_frame_weights(
     phones, phone_frames: list[int], *, weight: float = 1.0, radius: int = 2
 ) -> np.ndarray:

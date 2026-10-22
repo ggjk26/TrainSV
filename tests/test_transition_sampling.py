@@ -3,14 +3,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-import torch
 
 from opensv_train.transitions import (
     sample_transition_segment,
     transition_boundary_frames,
+    transition_crop_samples,
     transition_frame_weights,
 )
-from opensv_train.losses import SpectralLoss
 
 
 def _phones(*symbols):
@@ -48,15 +47,10 @@ def test_transition_sampling_zero_probability_matches_uniform_fallback():
     assert actual == expected
 
 
-def test_local_multiresolution_spectral_loss_backpropagates_on_transition_crop():
-    time = torch.arange(3840, dtype=torch.float32) / 48000
-    target = (0.3 * torch.sin(2 * torch.pi * 220 * time)).requires_grad_(False)
-    predicted = (target + 0.02 * torch.sin(2 * torch.pi * 1700 * time)).detach().requires_grad_(True)
-    loss = SpectralLoss()(predicted, target)["total"]
-    loss.backward()
-    assert torch.isfinite(loss)
-    assert predicted.grad is not None
-    assert torch.isfinite(predicted.grad).all()
+def test_transition_crop_samples_include_context_and_fall_back_at_edges():
+    assert transition_crop_samples(80, 160, 480, 8) == (34560, 42240)
+    assert transition_crop_samples(5, 160, 480, 8) is None
+    assert transition_crop_samples(155, 160, 480, 8) is None
 
 
 def test_transition_features_are_wired_into_training_cli_and_webui():
@@ -65,6 +59,7 @@ def test_transition_features_are_wired_into_training_cli_and_webui():
     cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
     gui = (root / "trainsv_gui.py").read_text("utf-8")
     assert "sample_transition_segment(" in trainer
+    assert "transition_crop_samples(" in trainer
     assert 'command.add_argument("--transition-sampling-probability"' in cli
     assert 'command.add_argument("--transition-local-weight"' in cli
     assert 'data-id="t_transition_sampling"' in gui

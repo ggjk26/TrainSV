@@ -8,7 +8,7 @@ from pathlib import Path
 
 import torch
 
-from .dnni import DnniFile
+from .dnni import DnniFile, serialize_model_for_output
 from .nofs import InfoVoice, NofsFile, is_info_voice
 
 ROLES = ("duration", "pitch", "acoustic", "vocoder")
@@ -49,13 +49,6 @@ def load_voice(path) -> VoiceFiles:
 
 def model_hash(data: bytes) -> str:
     return hashlib.md5(data).hexdigest()
-
-
-def serialize_model_for_output(model: DnniFile, role: str, acoustic_dnni_version: int = 2) -> bytes:
-    """Serialize only the acoustic model with the requested DNNI container version."""
-    if role == "acoustic":
-        return model.as_version(acoustic_dnni_version).serialize()
-    return model.serialize()
 
 
 def write_nofs_voice(

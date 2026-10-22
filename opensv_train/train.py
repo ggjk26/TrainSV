@@ -14,7 +14,7 @@ from .data import Phrase
 from .duration import interval_log_fractions
 from .losses import SpectralLoss
 from .pitch import PitchInputs
-from .transitions import sample_transition_segment, transition_boundary_frames, transition_frame_weights
+from .transitions import sample_transition_segment, transition_boundary_frames, transition_crop_samples, transition_frame_weights
 from .voice import Voice
 
 MODELS = ("acoustic", "duration", "pitch", "vocoder")
@@ -195,14 +195,16 @@ class Trainer:
         transition_local = predicted.new_zeros(())
         if not full and focused_boundary is not None and self.config.transition_local_weight > 0:
             local_boundary = focused_boundary - first
-            context_samples = self.config.transition_local_context_frames * hop
-            center_sample = local_boundary * hop
-            local_start, local_end = center_sample - context_samples, center_sample + context_samples
-            if local_start >= 0 and local_end <= min(len(predicted), len(target)):
-                # Extra loss on the exact boundary-centered region in the real target WAV.
-                transition_local = self.spectral(
-                    predicted[local_start:local_end], target[local_start:local_end]
-                )["total"]
+            crop = transition_crop_samples(
+                local_boundary, width, hop, self.config.transition_local_context_frames
+            )
+            if crop is not None:
+                local_start, local_end = crop
+                if local_end <= min(len(predicted), len(target)):
+                    # Extra loss on the exact boundary-centered region in the real target WAV.
+                    transition_local = self.spectral(
+                        predicted[local_start:local_end], target[local_start:local_end]
+                    )["total"]
         terms["transition_local"] = transition_local
         voicing = acoustic.acoustic_normalizer.denormalize(output.normalized)[:, 0].clamp(1e-4, 1 - 1e-4)
         terms["voicing"] = F.binary_cross_entropy(voicing, target_voicing)

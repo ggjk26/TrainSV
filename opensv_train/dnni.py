@@ -120,6 +120,13 @@ class DnniFile:
         return DnniFile(version, convert(self.root))
 
 
+def serialize_model_for_output(model: DnniFile, role: str, acoustic_dnni_version: int = 2) -> bytes:
+    """Serialize only the acoustic model with the requested DNNI container version."""
+    if role == "acoustic":
+        return model.as_version(acoustic_dnni_version).serialize()
+    return model.serialize()
+
+
 def _resolve_type(type_bytes: bytes, type_id: int, version: int) -> str:
     if version == 1:
         tag = type_bytes.split(b"\0", 1)[0]
