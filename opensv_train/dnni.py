@@ -111,7 +111,7 @@ class DnniFile:
                 encoded = node.type.encode("ascii")
                 if len(encoded) > 8:
                     raise ValueError(f"DNNI v1 type tag is longer than 8 bytes: {node.type!r}")
-                type_id = int.from_bytes(encoded.ljust(8, b"\\0"), "little")
+                type_id = int.from_bytes(encoded.ljust(8, bytes(1)), "little")
             return Node(
                 marker=node.marker, type_id=type_id, type=node.type,
                 payload=node.payload, children=[convert(child) for child in node.children],
