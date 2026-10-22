@@ -35,7 +35,8 @@ SV1112_CHINESE_XSAMPA_TO_OLD.update({
 
 # Explicit source aliases used by common VOCALOID Mandarin filename dictionaries.
 SV1112_VOCALOID_MANDARIN_ALIASES: dict[str, tuple[tuple[str, ...], ...]] = {
-    "@_n": (("@", ":n"),), "a_n": (("a", ":n"),), "i_n": (("i", ":n"),),
+    "@_n": (("@", ":n"),), "@n": (("@", ":n"),),
+    "a_n": (("a", ":n"),), "i_n": (("i", ":n"),),
     "iE_n": (("iE", ":n"),), "ua_n": (("u", "a", ":n"),),
     "u@_n": (("u", "@", ":n"),), "y_n": (("y", ":n"),),
     "y{_n": (("y{", ":n"),),

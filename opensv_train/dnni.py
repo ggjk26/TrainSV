@@ -86,6 +86,33 @@ class DnniFile:
         return b"".join(parts)
 
 
+@dataclass(frozen=True)
+class OpaqueDnniFile:
+    """A DNNI v3 container preserved byte-for-byte without parsing its payload.
+
+    This is a pass-through container only. It does not expose nodes, weights,
+    or an inference graph and must not be used as a trainable model.
+    """
+
+    data: bytes
+    version: int = 3
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "OpaqueDnniFile":
+        if len(data) < 8:
+            raise ValueError("truncated DNNI header")
+        magic, version = struct.unpack_from("<II", data, 0)
+        if magic != FILE_MAGIC:
+            raise ValueError("not a DNNI file")
+        if version != 3:
+            raise ValueError("opaque pass-through is only enabled for DNNI v3")
+        return cls(data=bytes(data), version=version)
+
+    def serialize(self) -> bytes:
+        """Return the exact original bytes; never rewrite an opaque payload."""
+        return self.data
+
+
 def _resolve_type(type_bytes: bytes, type_id: int, version: int) -> str:
     if version == 1:
         tag = type_bytes.split(b"\0", 1)[0]

@@ -1,8 +1,8 @@
 """Generate approximate HTS/vLabeler labels from phone-encoded WAV filenames.
 
-The filename supplies only the phoneme order. This module intentionally uses the
-requested equal-duration approximation; it is not acoustic forced alignment.
-All LAB timestamps are integer 100-nanosecond ticks.
+The filename supplies phoneme order, not measured boundaries. Labels preserve the
+source-token spans and use a small coda-duration heuristic; this is not acoustic
+forced alignment. All LAB timestamps are integer 100-nanosecond ticks.
 """
 from __future__ import annotations
 
@@ -168,6 +168,8 @@ VOCALOID_MANDARIN_PHONE_CANDIDATES: dict[str, tuple[tuple[str, ...], ...]] = {
 # only when the chosen target inventory contains every symbol in a candidate.
 VOCALOID_MANDARIN_COMPOSITES: dict[str, tuple[tuple[str, ...], ...]] = {
     "@_n": (("e/", "-n"), ("e/", ":n"), ("e/", "n"), ("@", ":n"), ("@", "n")),
+    # Some VOCALOID source packs spell the same nasalized vowel as @n (without underscore).
+    "@n": (("e/", "-n"), ("e/", ":n"), ("e/", "n"), ("@", ":n"), ("@", "n")),
     "a_n": (("a", "-n"), ("a", ":n"), ("a", "n")),
     "i_n": (("i", "-n"), ("i", ":n"), ("i", "n")),
     "iE_n": (("iae", "-n"), ("iae", ":n"), ("iE", ":n"), ("iE", "-n"), ("iE", "n")),
@@ -315,8 +317,13 @@ def _extract_symbols(document: object) -> set[str]:
     return set()
 
 
-def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], source_system: str | None = None) -> list[str]:
-    """Parse ordered phones and add fixed boundary sils without deduplication."""
+def parse_filename_phones(
+    filename: str | Path,
+    phone_table: Iterable[str],
+    source_system: str | None = None,
+    mapping_report: list[dict[str, str]] | None = None,
+) -> list[str]:
+    """Parse ordered phones and optionally record exactly how each token was mapped."""
     valid = set(phone_table)
     valid.add("sil")
     stem = Path(filename).stem
@@ -335,11 +342,24 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
 
     phones = ["sil"]
     consumed_tokens: set[int] = set()
+
+    def record_mapping(source_tokens: list[str], targets: list[str], rule: str) -> None:
+        if mapping_report is None:
+            return
+        mapping_report.append({
+            "filename": Path(filename).name,
+            "source_system": source_system or "auto/generic",
+            "source_token": " ".join(source_tokens),
+            "target_phones": " ".join(targets),
+            "mapping_rule": rule,
+        })
+
     for index, token in enumerate(raw_phones):
         if index in consumed_tokens:
             continue
         if token.casefold() == "sil":
             phones.append("sil")
+            record_mapping([token], ["sil"], "silence-token")
             continue
 
         # Official Old/X-SAMPA mapping for Synthesizer V Studio 1.11.2.
@@ -348,6 +368,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             converted = map_sv1112_phone(token, valid, source_system)
             if converted is not None:
                 phones.extend(converted)
+                record_mapping([token], converted, "sv1112-official-map")
                 continue
             raise ValueError(
                 f"{Path(filename).name}: unknown phone {token!r}; no verified "
@@ -366,6 +387,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             converted_pair = _map_rhoticized_at_pair(valid)
             if converted_pair is not None:
                 phones.extend(converted_pair)
+                record_mapping([token, raw_phones[index + 1]], converted_pair, "rhotic-pair-map")
                 consumed_tokens.add(index + 1)
                 continue
 
@@ -373,14 +395,17 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             rhotic = "r" + chr(92)
             if "@" in valid and rhotic in valid:
                 phones.extend(("@", rhotic))
+                record_mapping([token], ["@", rhotic], "rhotic-expansion")
                 continue
             if "3" in valid:
                 phones.append("3")
+                record_mapping([token], ["3"], "rhotic-vowel-alias")
                 continue
             # SynthV's simplified Mandarin inventory can expose erhua as the
             # dedicated Mandarin phone "er" without any separate rhotic symbol.
             if "er" in valid:
                 phones.append("er")
+                record_mapping([token], ["er"], "native-erhua-alias")
                 continue
             # Fall back only to curated, inventory-checked Mandarin erhua
             # representations. This also covers callers that do not specify
@@ -388,6 +413,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             converted = _map_vocaloid_mandarin(token, valid)
             if converted is not None and converted != [token]:
                 phones.extend(converted)
+                record_mapping([token], converted, "vocaloid-erhua-map")
                 continue
 
         # Force known Mandarin triphthongs to the explicit inventory-aware
@@ -396,6 +422,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
             converted = _map_vocaloid_mandarin(token, valid)
             if converted is not None and converted != [token]:
                 phones.extend(converted)
+                record_mapping([token], converted, "vocaloid-triphthong-map")
                 continue
         # k_h and other underscore forms are meaningful X-SAMPA aspiration
         # markers; do not rewrite them to legacy aliases in the X-SAMPA modes.
@@ -406,6 +433,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 converted = _map_vocaloid_mandarin(replacement, valid)
                 if converted is not None:
                     phones.extend(converted)
+                    record_mapping([token], converted, "vocaloid-alias-map")
                     continue
             if replacement not in valid:
                 raise ValueError(
@@ -413,11 +441,13 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                     "which is not in the phone table"
                 )
             phones.append(replacement)
+            record_mapping([token], [replacement], "known-token-replacement")
             continue
         if source_system in {"xsampa", "synthv-xsampa"}:
             converted = _map_xsampa_mandarin(token, valid, source_system)
             if converted is not None:
                 phones.extend(converted)
+                record_mapping([token], converted, "xsampa-map")
                 continue
             # Compound legacy Mandarin syllable-final tokens are not single
             # X-SAMPA symbols; resolve them through the explicit compound table.
@@ -430,11 +460,13 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 converted = _map_vocaloid_mandarin(token, valid)
                 if converted is not None:
                     phones.extend(converted)
+                    record_mapping([token], converted, "mandarin-compound-map")
                     continue
         if source_system == "vocaloid-mandarin":
             converted = _map_vocaloid_mandarin(token, valid)
             if converted is not None and (converted != [token] or token not in valid):
                 phones.extend(converted)
+                record_mapping([token], converted, "vocaloid-mandarin-map")
                 continue
             if converted is None:
                 # VOCALOID's phone spellings include dialect-specific aliases,
@@ -444,9 +476,11 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 converted = _map_xsampa_mandarin(token, valid, "xsampa")
                 if converted is not None:
                     phones.extend(converted)
+                    record_mapping([token], converted, "xsampa-bridge-for-vocaloid")
                     continue
         if token in valid:
             phones.append(token)
+            record_mapping([token], [token], "exact-target-match")
             continue
 
         # @` and 3` are valid X-SAMPA rhoticized vowels. If this target
@@ -468,6 +502,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                     + ", ".join(RHOTIC_APPROXIMANTS)
                 )
             phones.extend((base_vowel, rhotic))
+            record_mapping([token], [base_vowel, rhotic], "rhoticized-vowel-approximation")
             continue
 
         composite = COMPOSITE_PHONES.get(token)
@@ -479,6 +514,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                     f"missing phone(s) from the phone table: {', '.join(missing)}"
                 )
             phones.extend(composite)
+            record_mapping([token], list(composite), "curated-composite-expansion")
             continue
         # Explicit source conventions must never be heuristically split into
         # plausible-looking but phonetically incorrect phones. Their valid
@@ -490,6 +526,7 @@ def parse_filename_phones(filename: str | Path, phone_table: Iterable[str], sour
                 "the phone table and could not be split into existing phones"
             )
         phones.extend(pieces)
+        record_mapping([token], pieces, "inventory-segmentation")
     phones.append("sil")
     return phones
 
@@ -541,6 +578,63 @@ def labels_from_phones(
     return entries
 
 
+# Relative weights used only when one source filename token expands into multiple
+# target phones. Mandarin nasal codas are normally shorter than their vowel nuclei.
+# This remains a heuristic (not forced alignment), but avoids giving a split coda
+# the same duration as the vowel by default.
+_SHORT_CODA_WEIGHTS = {":n": 0.40, "-n": 0.40, "N": 0.45, "ng": 0.45}
+
+def labels_from_phone_groups(
+    groups: list[list[str]] | list[tuple[str, ...]],
+    total_ticks: int,
+    silence_fraction: float = SILENCE_FRACTION,
+) -> list[tuple[int, int, str]]:
+    """Generate approximate LAB labels while preserving source-token spans.
+
+    Each group represents one source token after mapping (for example, VOCALOID
+    @_n to [@, :n]). Source-token spans share the speech interval equally, while
+    phones created by splitting one source token are weighted so nasal codas do
+    not automatically consume half of that token's duration. This is not acoustic
+    forced alignment; manually aligned LAB files remain preferable.
+    """
+    if not groups or any(not group for group in groups):
+        raise ValueError("phone groups must be non-empty")
+    flat = [phone for group in groups for phone in group]
+    if not flat or any(not isinstance(phone, str) or not phone for phone in flat):
+        raise ValueError("phone groups must contain non-empty phone symbols")
+    if total_ticks <= 0:
+        raise ValueError("audio duration must be positive")
+    if not 0 < silence_fraction < 0.5:
+        raise ValueError("silence fraction must be between 0 and 0.5")
+
+    boundary_ticks = round(total_ticks * silence_fraction)
+    middle_ticks = total_ticks - 2 * boundary_ticks
+    if boundary_ticks < 1 or middle_ticks < len(flat):
+        raise ValueError("audio is too short to give every phoneme a positive-duration interval")
+
+    entries: list[tuple[int, int, str]] = [(0, boundary_ticks, "sil")]
+    for group_index, group in enumerate(groups):
+        group_start = boundary_ticks + round(middle_ticks * group_index / len(groups))
+        group_end = boundary_ticks + round(middle_ticks * (group_index + 1) / len(groups))
+        if group_end - group_start < len(group):
+            raise ValueError("audio is too short to give every mapped phone a positive-duration interval")
+        weights = [_SHORT_CODA_WEIGHTS.get(phone, 1.0) for phone in group]
+        weight_sum = sum(weights)
+        start = group_start
+        accumulated = 0.0
+        for phone_index, (phone, weight) in enumerate(zip(group, weights)):
+            accumulated += weight
+            end = group_end if phone_index == len(group) - 1 else group_start + round(
+                (group_end - group_start) * accumulated / weight_sum
+            )
+            if end <= start:
+                raise ValueError("audio is too short to give every mapped phone a positive-duration interval")
+            entries.append((start, end, phone))
+            start = end
+    entries.append((total_ticks - boundary_ticks, total_ticks, "sil"))
+    return entries
+
+
 def is_quality_analysis_cache_wav(path: str | Path) -> bool:
     """Return true for the standalone VOCALOID vqm quality-analysis cache take."""
     stem = Path(path).stem
@@ -554,6 +648,7 @@ def filename_recordings(
     phone_table: Iterable[str],
     source_system: str | None = None,
     unmatched: list[dict[str, str]] | None = None,
+    mapping_report: list[dict[str, str]] | None = None,
 ) -> list[tuple[str, Path, list[tuple[int, int, str]]]]:
     """Build standard recording tuples from WAV names and actual WAV durations."""
     directory = Path(wav_directory).expanduser()
@@ -569,8 +664,11 @@ def filename_recordings(
         raise ValueError(f"no .wav files found in {directory}")
     recordings = []
     for wav in wavs:
+        trace: list[dict[str, str]] = []
         try:
-            phones = parse_filename_phones(wav.name, phone_table, source_system=source_system)
+            phones = parse_filename_phones(
+                wav.name, phone_table, source_system=source_system, mapping_report=trace
+            )
         except ValueError as error:
             if unmatched is None:
                 raise
@@ -616,7 +714,13 @@ def filename_recordings(
             continue
         total_ticks = round(frames * TICKS_PER_SECOND / rate)
         try:
-            labels = labels_from_phones(phones, total_ticks)
+            # The mapping trace groups all target phones that came from one
+            # source token. Keep that token's estimated span intact when it
+            # expands into multiple phones (especially vowel + nasal coda).
+            groups = [row["target_phones"].split() for row in trace]
+            if [phone for group in groups for phone in group] != phones[1:-1]:
+                groups = [[phone] for phone in phones[1:-1]]
+            labels = labels_from_phone_groups(groups, total_ticks)
         except ValueError as error:
             message = f"{wav.name}: {error}"
             if unmatched is None:
@@ -624,6 +728,8 @@ def filename_recordings(
             unmatched.append({"filename": wav.name, "category": "label_generation", "error": message})
             continue
         recordings.append((wav.stem, wav, labels))
+        if mapping_report is not None:
+            mapping_report.extend(trace)
     return recordings
 
 
