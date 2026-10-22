@@ -579,7 +579,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--output", required=True, help="voice.nofs path, or databases/<name>/ directory for info voices")
     command.add_argument("--language", required=True, type=language_name, help="default phoneme language, e.g. japanese or ja")
     command.add_argument("--models", default="acoustic", help=f"comma-separated subset of {','.join(MODELS)}")
-    command.add_argument("--preserve-non-acoustic-models", action="store_true", help="info.nofs only: train acoustic only, keep original duration/Pitch/vocoder model IDs and embeddings, and skip loading those networks")
+    command.add_argument("--preserve-non-acoustic-models", action="store_true", help="info.nofs only: train acoustic; omit Timing/Pitch, preserve original non-acoustic IDs/bytes and embeddings, use Vocoder as frozen decoder, and skip Vocoder range fitting")
     command.add_argument("--params", choices=("all", "embeddings"), default="all", help="train every weight, or only the per-voice speaker/style/vocal-mode vectors")
     command.add_argument("--vocal-modes", help="comma-separated vocal modes of the finetuned voice (info voices): existing ones are kept, new ones start from the default style, others are dropped")
     command.add_argument("--steps", type=int, default=2000)

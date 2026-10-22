@@ -32,6 +32,8 @@ def measure_input_peaks(voice: Voice, phrases: list[Phrase], device: torch.devic
     peaks: dict[int, list] = {}
     handles = []
     for role, model in voice.models.items():
+        if voice.files.preserve_non_acoustic_models and role != "acoustic":
+            continue
         for layer in model.modules():
             if isinstance(layer, (Dense, Conv)):
                 nodes = [node for node in _nodes_of(layer) if node.type in ("prim4", "prim5")]
@@ -53,9 +55,9 @@ def measure_input_peaks(voice: Voice, phrases: list[Phrase], device: torch.devic
                 # Preservation mode instantiates only the acoustic model. Calibrate
                 # its own input ranges without forcing inference through untouched
                 # duration, Pitch or Vocoder networks.
-                if hasattr(voice, "vocoder"):
+                if not voice.files.preserve_non_acoustic_models and hasattr(voice, "vocoder"):
                     voice.vocoder(frames)
-                if phrase.syllables:
+                if phrase.syllables and not voice.files.preserve_non_acoustic_models:
                     if hasattr(voice, "duration"):
                         voice.duration(voice.duration.prepare(phrase.syllables))
                     if hasattr(voice, "pitch"):

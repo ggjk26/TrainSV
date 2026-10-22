@@ -53,7 +53,7 @@ def test_preserve_mode_loads_only_acoustic_and_keeps_other_model_bytes(voice_pat
 
     source = load_voice(voice_path, preserve_non_acoustic_models=True)
     assert source.info is not None
-    assert set(source.models) == {"acoustic"}
+    assert set(source.models) == {"acoustic", "vocoder"}
     original_ids = {
         role: source.info.info[INFO_KINDS[role]]
         for role in ROLES if role != "acoustic"
@@ -66,7 +66,9 @@ def test_preserve_mode_loads_only_acoustic_and_keeps_other_model_bytes(voice_pat
     f0_style = source.info.info["f0_style"]
 
     voice = Voice(source)
-    assert set(voice.models) == {"acoustic"}
+    assert set(voice.models) == {"acoustic", "vocoder"}
+    assert not hasattr(voice, "duration")
+    assert not hasattr(voice, "pitch")
     database = tmp_path / "synthv" / "databases" / "PreservedVoice"
     acoustic_version = source.models["acoustic"].version
     output = voice.save(

@@ -283,7 +283,7 @@ trainsv finetune \
 
 支持的语言名/代码：`japanese/ja`、`mandarin/zh`、`english/en`、`cantonese/yue`、`spanish/es`。
 
-如果起始声库是共享模型 `info.nofs`，可在 Training 选项卡勾选“保留原声库模型（声学模型除外）”，或在命令行使用 `--preserve-non-acoustic-models --models acoustic`。该模式只加载/训练声学网络；输出 `info.nofs` 会保留原始 Timing、Pitch/F0、Vocoder 的模型 ID 与 DNNI 原始字节，以及原始 duration/F0 嵌入参数，并跳过这些网络的实例化、结构校验与依赖声码器的响度校准；输入范围拟合只作用于声学模型。普通单文件 `voice.nofs` 不支持此模式。注意：训练 WAV 的 F0 提取仍会执行，因为声学模型仍需要 F0 作为条件输入。
+如果起始声库是共享模型 `info.nofs`，可在 Training 选项卡勾选“保留原声库模型（声学模型除外）”，或在命令行使用 `--preserve-non-acoustic-models --models acoustic`。该模式只训练声学网络，Timing/Pitch 网络不会加载；为了计算波形损失，原声 Vocoder 仍须作为冻结解码器使用。输出 `info.nofs` 会保留原始 Timing、Pitch/F0、Vocoder 的模型 ID 与 DNNI 原始字节，以及原始 duration/F0 嵌入参数，并跳过依赖声码器的自动响度校准；输入范围拟合只作用于声学模型。普通单文件 `voice.nofs` 不支持此模式。训练 WAV 的 F0 提取仍会执行，因为声学模型需要 F0 作为条件输入。
 
 ### 评估训练结果
 
