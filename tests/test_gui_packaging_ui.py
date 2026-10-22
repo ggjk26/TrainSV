@@ -301,6 +301,7 @@ def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert "models != (\"acoustic\",)" in cli
     assert "Timing and Pitch are not" in voice
     assert 'document[INFO_KINDS[role]] = reference' in voice
-    assert "target.write_bytes(info.models[role].read_bytes())" in voice
+    assert "original_bytes = info.models[role].read_bytes()" in voice
+    assert "target.write_bytes(original_bytes)" in voice
     assert 'if not voice.files.preserve_non_acoustic_models and hasattr(voice, "vocoder")' in calibration
     assert 'if hasattr(voice, "pitch")' in calibration
