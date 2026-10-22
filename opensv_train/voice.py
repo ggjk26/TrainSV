@@ -42,7 +42,7 @@ def load_voice(path, preserve_non_acoustic_models: bool = False) -> VoiceFiles:
         # In preservation mode, only parse the acoustic DNNI. The other model
         # IDs remain in the info document and their binaries are never loaded
         # into TrainSV's network implementations or rewritten on save.
-        roles = ("acoustic",) if preserve_non_acoustic_models else ROLES
+        roles = ("acoustic", "vocoder") if preserve_non_acoustic_models else ROLES
         models = {role: DnniFile.load(info.models[role]) for role in roles}
         metadata = {".name": info.info.get("name", ""), ".language": info.info.get("language", "")}
         return VoiceFiles(
@@ -95,9 +95,15 @@ def write_info_voice(
             # validate or reserialize this network in preservation mode.
             reference = info.info[INFO_KINDS[role]]
             target = models_root / INFO_KINDS[role] / f"{reference}.dnni"
+            original_bytes = info.models[role].read_bytes()
             if not target.exists():
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(info.models[role].read_bytes())
+                target.write_bytes(original_bytes)
+            elif target.read_bytes() != original_bytes:
+                raise ValueError(
+                    f"existing preserved model differs from the source model: {target}; "
+                    "refusing to overwrite or reference different bytes"
+                )
             document[INFO_KINDS[role]] = reference
             continue
         data = serialize_model_for_output(voice.models[role], role, acoustic_dnni_version)
@@ -128,12 +134,15 @@ class Voice(torch.nn.Module):
         if files.preserve_non_acoustic_models:
             if info is None:
                 raise ValueError("preserving non-acoustic models requires an info.nofs voicebank")
-            # The user explicitly asked to train Sound only. Do not instantiate
-            # Timing, Pitch or Vocoder, as their architectures may be unsupported.
+            # Acoustic loss is measured after decoding to audio, so Vocoder must
+            # remain available as a frozen decoder. Timing and Pitch are not
+            # instantiated; the original Vocoder DNNI is preserved byte-for-byte.
+            from .vocoder import Vocoder
             self.acoustic = AcousticModel(
                 files.models["acoustic"], list(info.vocal_modes),
                 info.acoustic_speaker, info.default_style, list(info.vocal_modes.values()),
             )
+            self.vocoder = Vocoder(files.models["vocoder"])
             return
 
         from .duration import DurationModel
@@ -161,7 +170,9 @@ class Voice(torch.nn.Module):
     def export(self) -> VoiceFiles:
         from .layers import export_parameters
 
-        for model in self.models.values():
+        for role, model in self.models.items():
+            if self.files.preserve_non_acoustic_models and role != "acoustic":
+                continue
             export_parameters(model)
         info = self.files.info
         if info is not None:
