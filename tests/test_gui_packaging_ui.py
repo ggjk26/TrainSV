@@ -301,6 +301,9 @@ def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert "models != (\"acoustic\",)" in cli
     assert 'if not arguments.preserve_non_acoustic_models and hasattr(voice, "pitch")' in cli
     assert "Timing and Pitch are not" in voice
+    writer = voice[voice.index("def write_info_voice("):voice.index("\n\nclass Voice(", voice.index("def write_info_voice("))]
+    assert "voice.preserve_non_acoustic_models" in writer
+    assert "voice.files.preserve_non_acoustic_models" not in writer
     assert 'document[INFO_KINDS[role]] = reference' in voice
     assert "original_bytes = info.models[role].read_bytes()" in voice
     assert "target.write_bytes(original_bytes)" in voice

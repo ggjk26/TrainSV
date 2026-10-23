@@ -133,12 +133,12 @@ def write_info_voice(
     info = voice.info
     models_root = database_directory.parent.parent / "models"
     document = info.to_json()
-    if voice.files.preserve_non_acoustic_models:
+    if voice.preserve_non_acoustic_models:
         # Keep source embedding bytes/IDs intact for models that were not loaded.
         document["duration_style"] = info.info["duration_style"]
         document["f0_style"] = info.info["f0_style"]
     for role in ROLES:
-        if voice.files.preserve_non_acoustic_models and role != "acoustic":
+        if voice.preserve_non_acoustic_models and role != "acoustic":
             # Copy the original opaque model bytes when the output database is
             # in a different Synthesizer V installation. Never parse, instantiate,
             # validate or reserialize this network in preservation mode.
