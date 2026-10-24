@@ -86,14 +86,29 @@ class UnavailablePitchModel(UnavailableDNNIModel):
         )
 
 
-def load_voice(path, preserve_non_acoustic_models: bool = False) -> VoiceFiles:
+def load_voice(
+    path,
+    preserve_non_acoustic_models: bool = False,
+    model_overrides: dict[str, str | Path] | None = None,
+) -> VoiceFiles:
     path = Path(path).expanduser()
+    model_overrides = dict(model_overrides or {})
+    if model_overrides and preserve_non_acoustic_models:
+        raise ValueError("custom DNNI overrides cannot be combined with preservation mode")
+    if unknown := set(model_overrides) - {"duration", "pitch", "vocoder"}:
+        raise ValueError(f"custom DNNI overrides support duration, pitch, and vocoder only; unsupported roles: {', '.join(sorted(unknown))}")
     if is_info_voice(path):
         info = InfoVoice.load(path)
         # Preserve-mode deliberately avoids loading/validating the untouched
         # Duration and Pitch payloads, including opaque DNNI v3 dependencies.
         roles = ("acoustic", "vocoder") if preserve_non_acoustic_models else ROLES
         models = {role: _load_info_model(role, info.models[role]) for role in roles}
+        if model_overrides:
+            for role, override_path in model_overrides.items():
+                external = Path(override_path).expanduser()
+                if external.suffix.lower() != ".dnni" or not external.is_file():
+                    raise FileNotFoundError(f"custom {role} model must be an existing .dnni file: {external}")
+                models[role] = _load_model_bytes(external.read_bytes())
         metadata = {".name": info.info.get("name", ""), ".language": info.info.get("language", "")}
         return VoiceFiles(
             path, models, metadata, info=info,
@@ -101,6 +116,8 @@ def load_voice(path, preserve_non_acoustic_models: bool = False) -> VoiceFiles:
         )
     if preserve_non_acoustic_models:
         raise ValueError("preserving non-acoustic models is available only for info.nofs shared-model voicebanks")
+    if model_overrides:
+        raise ValueError("custom DNNI model files are supported only for info.nofs shared-model voicebanks")
     nofs = NofsFile.load(path)
     keys = nofs.model_keys()
     models = {role: _load_model_bytes(nofs.read(keys[role])) for role in ROLES}
@@ -222,8 +239,15 @@ class Voice(torch.nn.Module):
             self.vocoder = UnavailableDNNIModel("vocoder", vocoder_file.version) if isinstance(vocoder_file, OpaqueDnniFile) else Vocoder(vocoder_file)
 
     @classmethod
-    def load(cls, path, preserve_non_acoustic_models: bool = False) -> "Voice":
-        return cls(load_voice(path, preserve_non_acoustic_models=preserve_non_acoustic_models))
+    def load(
+        cls, path, preserve_non_acoustic_models: bool = False,
+        model_overrides: dict[str, str | Path] | None = None,
+    ) -> "Voice":
+        return cls(load_voice(
+            path,
+            preserve_non_acoustic_models=preserve_non_acoustic_models,
+            model_overrides=model_overrides,
+        ))
 
     @property
     def models(self) -> dict[str, torch.nn.Module]:

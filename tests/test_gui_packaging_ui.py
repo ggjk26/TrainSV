@@ -301,6 +301,11 @@ def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert "models != (\"acoustic\",)" in cli
     assert 'if not arguments.preserve_non_acoustic_models and hasattr(voice, "pitch")' in cli
     assert "Timing and Pitch are not" in voice
+    model_tools = (root / "opensv_train" / "model_tools.py").read_text("utf-8")
+    assert 'commands.add_parser("replace-model"' in cli
+    assert "replace_info_model" in cli
+    assert "Acoustic is intentionally excluded" in model_tools
+    assert "OpaqueDnniFile.from_bytes(data)" in model_tools
     writer = voice[voice.index("def write_info_voice("):voice.index("\n\nclass Voice(", voice.index("def write_info_voice("))]
     assert "voice.preserve_non_acoustic_models" in writer
     assert "voice.files.preserve_non_acoustic_models" not in writer
@@ -309,3 +314,28 @@ def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert "target.write_bytes(original_bytes)" in voice
     assert 'if not voice.files.preserve_non_acoustic_models and hasattr(voice, "vocoder")' in calibration
     assert 'if hasattr(voice, "pitch")' in calibration
+
+
+def test_custom_non_acoustic_dnn_is_available_in_training_and_more_tools():
+    assert 'data-id="t_custom_duration_dnni"' in PAGE
+    assert 'data-id="t_custom_pitch_dnni"' in PAGE
+    assert 'data-id="t_custom_vocoder_dnni"' in PAGE
+    assert 'data-run="replaceModel"' in PAGE
+    assert 'data-id="rm_source"' in PAGE
+    assert 'data-id="rm_role"' in PAGE
+    assert 'data-id="rm_model"' in PAGE
+    assert 'data-id="rm_output"' in PAGE
+    root = Path(__file__).resolve().parents[1]
+    cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
+    voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
+    model_tools = (root / "opensv_train" / "model_tools.py").read_text("utf-8")
+    assert 'commands.add_parser("replace-model"' in cli
+    assert 'command.add_argument("--custom-duration-dnni"' in cli
+    assert 'command.add_argument("--custom-pitch-dnni"' in cli
+    assert 'command.add_argument("--custom-vocoder-dnni"' in cli
+    assert "model_overrides=model_overrides" in cli
+    assert "custom DNNI overrides cannot be combined with --resume" in cli
+    assert "model_overrides: dict[str, str | Path] | None = None" in voice
+    assert "custom DNNI overrides cannot be combined with preservation mode" in voice
+    assert "replace_info_model" in cli
+    assert "Acoustic is intentionally excluded" in model_tools

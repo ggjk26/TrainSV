@@ -270,3 +270,14 @@ The CLI also accepts `trainsv finetune --pitch-base-model <path-to-pitch.dnni>`.
 - `opensv_train/`: the CLI, dataset, model, training and export code
 - `parity/`: the vendored OpenSV engine and the harness the tests compare against
 - `tests/`: parity and training tests
+
+
+## Custom non-acoustic DNNI models
+
+Training's advanced settings can replace the complete Duration, Pitch/F0, or Vocoder model in an `info.nofs` voicebank with a `.dnni` from another voicebank. This is different from the pretrained Pitch option, which initializes weights rather than replacing the whole model. Regular binary `voice.nofs` files are not supported, Acoustic is excluded, and custom replacements cannot be combined with “Preserve original voicebank models”.
+
+DNNI v1/v2 files are checked with the corresponding TrainSV role parser. DNNI v3 is only passed through opaquely and is not guaranteed to be trainable or runnable. Cross-voicebank phoneme tables, embedding dimensions, and network layouts may be incompatible. Training writes new model references without modifying the selected source DNNI file.
+
+## Edit models in an existing info.nofs
+
+The GUI's **More tools** page includes **Replace a non-acoustic DNNI model**. Choose a source JSON `info.nofs`, one of Duration / Pitch/F0 / Vocoder, the replacement `.dnni`, and a new output `info.nofs` path. The tool keeps the Acoustic reference and embeddings, copies unchanged model bytes, derives a new model ID from the replacement bytes, and checks that all output references resolve. It never overwrites the source descriptor; place the output at a path whose directory layout resolves the expected `models` directory.

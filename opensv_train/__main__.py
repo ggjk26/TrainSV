@@ -25,6 +25,7 @@ from .nofs import is_info_voice
 from .packaging import build_svpk
 from .sfpk import build_sfpk
 from .timbre import summarize_timbre
+from .model_tools import replace_info_model
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -68,10 +69,29 @@ def finetune(arguments) -> None:
     _validate_pitch_options(arguments)
     if arguments.preserve_non_acoustic_models and not is_info_voice(arguments.voice):
         raise SystemExit("--preserve-non-acoustic-models requires an info.nofs shared-model voicebank; regular voice.nofs files cannot use it")
-    voice = Voice.load(
-        arguments.voice,
-        preserve_non_acoustic_models=arguments.preserve_non_acoustic_models,
-    )
+    model_overrides = {
+        role: path for role, path in (
+            ("duration", arguments.custom_duration_dnni),
+            ("pitch", arguments.custom_pitch_dnni),
+            ("vocoder", arguments.custom_vocoder_dnni),
+        ) if path
+    }
+    if arguments.preserve_non_acoustic_models and model_overrides:
+        raise SystemExit("custom DNNI overrides cannot be combined with --preserve-non-acoustic-models")
+    if arguments.resume and model_overrides:
+        raise SystemExit("custom DNNI overrides cannot be combined with --resume; use a separate run directory")
+    if model_overrides and not is_info_voice(arguments.voice):
+        raise SystemExit("custom DNNI model files are available only for info.nofs shared-model voicebanks")
+    if arguments.custom_pitch_dnni and arguments.pitch_model:
+        raise SystemExit("choose either --custom-pitch-dnni (replace the base Pitch model) or --pitch-model (initialize Pitch weights), not both")
+    try:
+        voice = Voice.load(
+            arguments.voice,
+            preserve_non_acoustic_models=arguments.preserve_non_acoustic_models,
+            model_overrides=model_overrides,
+        )
+    except (OSError, ValueError) as error:
+        raise SystemExit(f"cannot load the selected voice/model files: {error}") from error
     models = tuple(arguments.models.split(","))
     if arguments.preserve_non_acoustic_models and models != ("acoustic",):
         raise SystemExit("--preserve-non-acoustic-models trains only the acoustic model; use --models acoustic")
@@ -639,6 +659,24 @@ def audit_data_command(arguments) -> None:
         raise SystemExit(2)
 
 
+def replace_model_command(arguments) -> None:
+    try:
+        result = replace_info_model(
+            arguments.voice,
+            arguments.role,
+            arguments.model,
+            arguments.output,
+        )
+    except (OSError, ValueError, KeyError, RuntimeError) as error:
+        raise SystemExit(f"cannot replace {arguments.role} DNNI: {error}") from error
+    print(f"Created updated info.nofs: {result['output']}")
+    print(f"{arguments.role}: {result['old_model_id']} -> {result['new_model_id']} (DNNI v{result['dnni_version']})")
+    if result["warning"]:
+        print(f"Warning: {result['warning']}")
+    else:
+        print("The selected DNNI passed TrainSV's structural role validation; Synthesizer V runtime compatibility is not guaranteed.")
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trainsv")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -669,6 +707,9 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--pitch-smoothing-hz", type=float, default=None, help="override the default low-pass cutoff for the Pitch model's smooth melody contour, 0 < cutoff < 100 Hz")
     command.add_argument("--pitch-melody-weight", type=float, default=None, help="override the default Pitch model smooth-melody loss weight")
     command.add_argument("--pitch-motion-weight", type=float, default=None, help="override the default Pitch model fast-motion/vibrato loss weight")
+    command.add_argument("--custom-duration-dnni", help="replace the base Duration model with a supported .dnni from another info voicebank; output remains a new voicebank")
+    command.add_argument("--custom-pitch-dnni", help="replace the base Pitch/F0 model with a supported .dnni; use instead of --pitch-model when changing the complete base model")
+    command.add_argument("--custom-vocoder-dnni", help="replace the base Vocoder with a supported .dnni from another info voicebank")
     command.add_argument("--pitch-model", "--pitch-base-model", dest="pitch_model", help="initialize Pitch from a compatible pretrained .dnni; target speaker embedding is preserved")
     command.add_argument("--lr", type=float, help="learning rate (default 2e-5 for all, 3e-3 for embeddings)")
     command.add_argument("--warmup", type=int, default=0, help="steps of linear learning-rate warmup")
@@ -805,6 +846,13 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--profile", help="optional avatar PNG to include as profile.png in the SFPK")
     command.add_argument("--background", help="optional background PNG to include as background.png in the SFPK")
     command.set_defaults(handler=package_sfpk_command)
+
+    command = commands.add_parser("replace-model", help="create a new info.nofs with a replacement Duration, Pitch/F0, or Vocoder DNNI")
+    command.add_argument("--voice", required=True, help="source info.nofs JSON voicebank; the source remains unchanged")
+    command.add_argument("--role", required=True, choices=("duration", "pitch", "vocoder"), help="non-acoustic model role to replace; Acoustic is not allowed")
+    command.add_argument("--model", required=True, help="replacement .dnni file from another voicebank")
+    command.add_argument("--output", required=True, help="new info.nofs path at the same directory depth as an installed info voice")
+    command.set_defaults(handler=replace_model_command)
 
     for command in commands.choices.values():
         command.add_argument("--config", action="append", default=[], metavar="FILE", help="JSON file of option values; repeat for several, later files win and command-line options override them")

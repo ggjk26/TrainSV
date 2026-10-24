@@ -460,3 +460,14 @@ Sensitive 预设使用 35–1800 Hz 和 0.30 阈值，并以 15 ms 轻度平滑�
 CLI 的 finetune 和 evaluate 支持 --pitch-smoothing-hz、--pitch-melody-weight 和 --pitch-motion-weight，默认分别为 3 Hz、1.0 和 1.0。Pitch 训练需要有效的 note_seq / note_dur 与词边界标注；如果希望改善整体音色，还需训练并验证 Sound / Acoustic。
 
 TrainSV 可导入外部预训练 Pitch 权重（.dnni），CLI 对应 --pitch-base-model <path-to-pitch.dnni>。程序会严格检查网络架构、音素表、归一化缓冲区、稀疏结构与参数形状；仅在兼容时复制非 speaker 参数，保留目标声库自己的 speaker 向量。仓库**尚未随包附带经过验证的通用神经 Pitch 权重**，不同架构或音素表也不会因此自动兼容。
+
+
+## 自定义非声学 DNNI 模型
+
+Training 的高级设置支持为 info.nofs 声库指定其他声库的 Duration、Pitch/F0 或 Vocoder `.dnni`。这些选项会替换完整的基础模型，不同于仅初始化权重的 Pitch 预训练选项。普通二进制 `voice.nofs` 不支持此功能；Acoustic 声学模型也不能通过自定义选项替换。启用“保留原声库模型（声学模型除外）”时不能同时使用自定义替换。
+
+DNNI v1/v2 会通过相应角色的 TrainSV 模型解析器检查结构；DNNI v3 只支持不透明原样透传，不能保证可训练或可运行。跨声库的音素表、嵌入维度和网络结构可能不兼容。训练输出会创建新的模型引用，不会改写被选作来源的 DNNI 文件。
+
+## 修改已有 info.nofs 的模型引用
+
+GUI 的“更多工具”新增“替换非声学 DNNI 模型”。选择原始 JSON `info.nofs`、Duration / Pitch/F0 / Vocoder 之一、替换用 `.dnni` 和新的输出 `info.nofs` 路径。工具会保留 Acoustic 引用和向量，复制未替换模型的原始字节，按新模型内容生成模型 ID，并在写入后重新检查所有模型引用。它不会覆盖源 `info.nofs`；输出文件必须放在能按现有目录规则解析 `models` 文件夹的位置。
