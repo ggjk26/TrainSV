@@ -470,8 +470,10 @@ DNNI v1/v2 会通过相应角色的 TrainSV 模型解析器检查结构；DNNI v
 
 ## 批量替换已有 info.nofs 的非声学模型
 
-GUI“更多工具”中的“批量替换非声学 DNNI 模型”可以在一次操作中替换 Duration、Pitch/F0、Vocoder 中的任意组合，Acoustic 声学模型始终不变。请同时指定源 JSON `info.nofs`、**Synthesizer V 安装目录下包含 duration、f0、acoustic、vocoder 子目录的 models 文件夹**、一项或多项替换用 `.dnni`，以及新的输出 `info.nofs` 路径。
+GUI“更多工具”中的“批量替换非声学 DNNI 模型”可以在一次操作中替换 Duration、Pitch/F0、Vocoder 中的任意组合，Acoustic 声学模型始终不变。请选择源 JSON `info.nofs`、**Synthesizer V 安装目录下直接包含 duration、f0、acoustic、vocoder 子目录的 models 文件夹**、一项或多项替换用的 `.dnni` 文件，以及一个独立且可写的输出文件夹。
 
-显式选择 models 文件夹是为了避免源 `info.nofs` 所在目录与实际模型库不一致时，错误地从 TrainSV 项目目录查找模型。工具会先验证所有原始模型引用与所选替换文件；对未替换模型复制原始字节，为新模型按内容生成 ID，并在写入后重新检查引用。源 `info.nofs` 和源 DNNI 不会被覆盖。输出文件仍需放在符合声库目录规则的位置。
+TrainSV 会在输出文件夹内自动创建 `database/voices/<声库名>/info.<版本>.nofs` 和 `database/models/`。这样不会根据浅层的输出文件路径推算出 `C:\\Users\\models`，也不会把模型复制进 Synthesizer V 已安装的 models 文件夹。**请勿将已安装的 models 文件夹作为输出文件夹**。
+
+工具会先验证源模型引用和所选替换文件；未替换的模型保留原始字节，替换模型按内容生成新 ID，并在写入后重新检查所有引用。源 `info.nofs` 和源 DNNI 不会被覆盖。如果仍需使用命令行指定单独的 `info.nofs` 文件，路径必须位于 `.../voices/<声库名>/info.<版本>.nofs` 的目录结构中，否则程序会拒绝写入，而不是尝试创建系统级的 `models` 目录。
 
 DNNI v1/v2 会由对应角色的 TrainSV 解析器检查结构；DNNI v3 仅原样复制，不能确认其内部角色、音素表或运行兼容性。

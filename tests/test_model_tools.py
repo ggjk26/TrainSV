@@ -13,6 +13,20 @@ from opensv_train.model_tools import replace_info_model, replace_info_models
 DNNI_MAGIC = 0x7FCA00FF
 
 
+
+class InfoVoiceForTest:
+    def __init__(self, path: Path):
+        self.path = path
+        self.document = json.loads(path.read_text("utf-8"))
+        self.models_root = path.parents[2] / "models"
+
+    def all_models_resolve(self) -> bool:
+        return all(
+            (self.models_root / folder / f"{self.document[key]}.dnni").is_file()
+            for key, folder in (("duration", "duration"), ("f0", "f0"), ("acoustic", "acoustic"), ("vocoder", "vocoder"))
+        )
+
+
 def _dnni_v3(payload: bytes) -> bytes:
     return struct.pack("<II", DNNI_MAGIC, 3) + payload
 
@@ -161,3 +175,68 @@ def test_batch_replace_requires_at_least_one_role_and_reports_missing_model_root
     missing_root.mkdir()
     with pytest.raises(FileNotFoundError, match="Choose the Synthesizer V models directory"):
         replace_info_models(source, {"pitch": tmp_path / "pitch.dnni"}, output, models_root=missing_root)
+
+
+def test_output_package_folder_creates_writable_self_contained_layout(tmp_path: Path):
+    source, source_models = _make_info_voice(tmp_path / "source-package")
+    source_bytes = source.read_bytes()
+    replacement = tmp_path / "external" / "pitch.dnni"
+    replacement.parent.mkdir(parents=True)
+    replacement_bytes = _dnni_v3(b"external pitch model")
+    replacement.write_bytes(replacement_bytes)
+    output_root = tmp_path / "TrainSV-output"
+
+    result = replace_info_models(
+        source,
+        {"pitch": replacement},
+        output_root,
+    )
+
+    output_info = output_root / "database" / "voices" / "Source" / "info.100.nofs"
+    output_models = output_root / "database" / "models"
+    assert Path(result["output"]) == output_info
+    assert Path(result["output_package"]) == output_root.resolve()
+    assert output_info.is_file()
+    document = json.loads(output_info.read_text("utf-8"))
+    assert document["acoustic"] == "3" * 32
+    assert document["f0"] == hashlib.md5(replacement_bytes).hexdigest()
+    assert (output_models / "f0" / f"{document['f0']}.dnni").read_bytes() == replacement_bytes
+    assert (output_models / "acoustic" / f"{document['acoustic']}.dnni").read_bytes() == source_models["acoustic"].read_bytes()
+    assert source.read_bytes() == source_bytes
+    assert InfoVoiceForTest(output_info).all_models_resolve()
+
+
+def test_shallow_standalone_output_path_is_rejected_instead_of_writing_users_models(tmp_path: Path):
+    source, _ = _make_info_voice(tmp_path / "source-package")
+    replacement = tmp_path / "external.dnni"
+    replacement.write_bytes(_dnni_v3(b"candidate"))
+    shallow_output = tmp_path / "info.101.nofs"
+
+    with pytest.raises(ValueError, match="output info.nofs path is too shallow.*output package folder"):
+        replace_info_models(source, {"pitch": replacement}, shallow_output)
+    assert not (tmp_path / "models").exists()
+
+
+def test_output_cannot_be_the_models_folder_itself(tmp_path: Path):
+    source, _ = _make_info_voice(tmp_path / "source-package")
+    replacement = tmp_path / "external.dnni"
+    replacement.write_bytes(_dnni_v3(b"candidate"))
+    models_output = tmp_path / "SynthV" / "models"
+    for folder in ("duration", "f0", "acoustic", "vocoder"):
+        (models_output / folder).mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(ValueError, match="output package folder cannot be a models directory"):
+        replace_info_models(source, {"duration": replacement}, models_output)
+    assert not (models_output / "database").exists()
+
+
+def test_standalone_info_output_refuses_to_write_under_users_root(tmp_path: Path):
+    source, _ = _make_info_voice(tmp_path / "source-package")
+    replacement = tmp_path / "external.dnni"
+    replacement.write_bytes(_dnni_v3(b"candidate"))
+    # Emulate C:\\Users\\voices\\Source\\info.101.nofs: the computed
+    # output models directory would be C:\\Users\\models.
+    shallow_user_root = tmp_path / "Users" / "voices" / "Source" / "info.101.nofs"
+    with pytest.raises(ValueError, match="Windows system/user root"):
+        replace_info_models(source, {"pitch": replacement}, shallow_user_root)
+    assert not (tmp_path / "Users" / "models").exists()

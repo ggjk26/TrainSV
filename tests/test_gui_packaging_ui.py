@@ -302,6 +302,12 @@ def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert 'if not arguments.preserve_non_acoustic_models and hasattr(voice, "pitch")' in cli
     assert "Timing and Pitch are not" in voice
     model_tools = (root / "opensv_train" / "model_tools.py").read_text("utf-8")
+    assert "_resolve_output_info_path" in model_tools
+    assert "refusing to create a models directory under the Windows system/user root" in model_tools
+    assert "output package folder (recommended" in cli
+    assert "_resolve_output_info_path" in model_tools
+    assert "output info.nofs path is too shallow" in model_tools
+    assert "output package folder (recommended" in cli
     assert 'commands.add_parser("replace-model"' in cli
     assert 'command.add_argument("--models-root"' in cli
     assert 'command.add_argument("--duration-model"' in cli
@@ -333,6 +339,8 @@ def test_custom_non_acoustic_dnn_is_available_in_training_and_more_tools():
     assert 'data-id="rm_vocoder_model"' in PAGE
     assert 'data-run="replaceModel"' in PAGE
     assert 'data-id="rm_output"' in PAGE
+    assert 'data-id="rm_output" data-kind="path" data-mode="dir"' in PAGE
+    assert 'data-label="Output package folder"' in PAGE
     root = Path(__file__).resolve().parents[1]
     cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
     voice = (root / "opensv_train" / "voice.py").read_text("utf-8")

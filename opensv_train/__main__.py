@@ -871,7 +871,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--vocoder-model", help="replacement Vocoder .dnni; optional")
     command.add_argument("--role", choices=("duration", "pitch", "vocoder"), help="legacy single-model role syntax")
     command.add_argument("--model", help="legacy single-model replacement .dnni")
-    command.add_argument("--output", required=True, help="new info.nofs path at the same directory depth as an installed info voice")
+    command.add_argument("--output", required=True, help="output package folder (recommended; creates database/voices/<name>/info.<version>.nofs and database/models/), or a correctly nested .../voices/<name>/info.<version>.nofs path")
     command.set_defaults(handler=replace_model_command)
 
     for command in commands.choices.values():

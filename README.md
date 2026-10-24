@@ -280,8 +280,10 @@ DNNI v1/v2 files are checked with the corresponding TrainSV role parser. DNNI v3
 
 ## Batch replace non-acoustic models in an existing info.nofs
 
-The GUI's **More tools** page includes **Batch replace non-acoustic DNNI models**. In one operation, replace any combination of Duration, Pitch/F0, and Vocoder; the Acoustic model is never changed. Select the source JSON `info.nofs`, the **Synthesizer V installation's models folder containing duration, f0, acoustic, and vocoder subfolders**, one or more replacement `.dnni` files, and a new output `info.nofs` path.
+The GUI's **More tools** page includes **Batch replace non-acoustic DNNI models**. Replace any combination of Duration, Pitch/F0, and Vocoder in one operation; the Acoustic model is never changed. Select the source JSON `info.nofs`, the **Synthesizer V installation's models folder containing direct subfolders `duration`, `f0`, `acoustic`, and `vocoder`**, one or more replacement `.dnni` files, and a separate writable output folder.
 
-Explicitly choosing the models folder fixes cases where the info descriptor is stored separately from its referenced model library and automatic path derivation looks in the TrainSV project folder instead. The tool validates source references and replacement files, copies the raw bytes of unchanged models, creates content-derived IDs for replacements, and checks all output references. It never overwrites the source info.nofs or source DNNI files. The output descriptor still needs to follow the expected installed voicebank directory layout.
+TrainSV creates `database/voices/<voice name>/info.<version>.nofs` and `database/models/` within the output folder. This avoids deriving a bad path such as `C:\\Users\\models` from a shallow output filename and does not copy model files into the installed Synthesizer V models directory. **Do not select the installed `models` folder as the output folder.**
+
+The tool validates source references and the selected replacement files, copies unchanged models byte-for-byte, creates content-derived IDs for replaced models, and checks all output references. It never overwrites the source descriptor or source DNNIs. If using the CLI with a standalone output `info.nofs` file instead, the path must follow `.../voices/<voice name>/info.<version>.nofs`; shallow paths are rejected rather than creating a system-level `models` directory.
 
 DNNI v1/v2 files are checked with the selected role's TrainSV parser. DNNI v3 is only copied opaquely; its internal role, phoneme table, and runtime compatibility cannot be verified.
