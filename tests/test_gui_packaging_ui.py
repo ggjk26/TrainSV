@@ -303,6 +303,11 @@ def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert "Timing and Pitch are not" in voice
     model_tools = (root / "opensv_train" / "model_tools.py").read_text("utf-8")
     assert 'commands.add_parser("replace-model"' in cli
+    assert 'command.add_argument("--models-root"' in cli
+    assert 'command.add_argument("--duration-model"' in cli
+    assert 'command.add_argument("--pitch-model-file"' in cli
+    assert 'command.add_argument("--vocoder-model"' in cli
+    assert "replace_info_models(" in cli
     assert "replace_info_model" in cli
     assert "Acoustic is intentionally excluded" in model_tools
     assert "OpaqueDnniFile.from_bytes(data)" in model_tools
@@ -322,8 +327,11 @@ def test_custom_non_acoustic_dnn_is_available_in_training_and_more_tools():
     assert 'data-id="t_custom_vocoder_dnni"' in PAGE
     assert 'data-run="replaceModel"' in PAGE
     assert 'data-id="rm_source"' in PAGE
-    assert 'data-id="rm_role"' in PAGE
-    assert 'data-id="rm_model"' in PAGE
+    assert 'data-id="rm_models_root"' in PAGE
+    assert 'data-id="rm_duration_model"' in PAGE
+    assert 'data-id="rm_pitch_model"' in PAGE
+    assert 'data-id="rm_vocoder_model"' in PAGE
+    assert 'data-run="replaceModel"' in PAGE
     assert 'data-id="rm_output"' in PAGE
     root = Path(__file__).resolve().parents[1]
     cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")

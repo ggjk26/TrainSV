@@ -3,11 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import struct
+import shutil
 from pathlib import Path
 
 import pytest
 
-from opensv_train.model_tools import replace_info_model
+from opensv_train.model_tools import replace_info_model, replace_info_models
 
 DNNI_MAGIC = 0x7FCA00FF
 
@@ -104,3 +105,59 @@ def test_replace_model_never_overwrites_existing_output(tmp_path: Path):
         replace_info_model(source, "pitch", model, output)
 
     assert output.read_text("utf-8") == "keep-me"
+
+
+def test_batch_replace_duration_pitch_and_vocoder_with_explicit_models_root(tmp_path: Path):
+    source, source_models = _make_info_voice(tmp_path / "source-package")
+    source_bytes = source.read_bytes()
+    original_info = json.loads(source_bytes.decode("utf-8"))
+    installed_models = tmp_path / "synthv-install" / "models"
+    for role, original in source_models.items():
+        target = installed_models / original.parent.name / original.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(original, target)
+
+    # Reproduce the reported issue: the default path derived from info.nofs is
+    # missing a referenced model, but the installed Synthesizer V models root has it.
+    source_models["duration"].unlink()
+    replacements = {}
+    for role, payload in (
+        ("duration", b"external duration model"),
+        ("pitch", b"external pitch/f0 model"),
+        ("vocoder", b"external vocoder model"),
+    ):
+        path = tmp_path / "other-voicebank" / f"{role}.dnni"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(_dnni_v3(payload))
+        replacements[role] = path
+    output = tmp_path / "output-package" / "database" / "voices" / "source" / "info.101.nofs"
+
+    result = replace_info_models(source, replacements, output, models_root=installed_models)
+
+    assert set(result["replaced"]) == {"duration", "pitch", "vocoder"}
+    assert result["models_root"] == str(installed_models.resolve())
+    document = json.loads(output.read_text("utf-8"))
+    assert document["acoustic"] == original_info["acoustic"]
+    assert document["duration"] == hashlib.md5(replacements["duration"].read_bytes()).hexdigest()
+    assert document["f0"] == hashlib.md5(replacements["pitch"].read_bytes()).hexdigest()
+    assert document["vocoder"] == hashlib.md5(replacements["vocoder"].read_bytes()).hexdigest()
+    assert document["version"] == "101"
+    for role, path in replacements.items():
+        key = {"duration": "duration", "pitch": "f0", "vocoder": "vocoder"}[role]
+        target = output.parent.parent.parent / "models" / key / f"{document[key]}.dnni"
+        assert target.read_bytes() == path.read_bytes()
+    acoustic_target = output.parent.parent.parent / "models" / "acoustic" / f"{document['acoustic']}.dnni"
+    assert acoustic_target.read_bytes() == source_models["acoustic"].read_bytes()
+    assert source.read_bytes() == source_bytes
+
+
+def test_batch_replace_requires_at_least_one_role_and_reports_missing_model_root(tmp_path: Path):
+    source, _ = _make_info_voice(tmp_path / "source-package")
+    output = tmp_path / "out" / "info.101.nofs"
+    with pytest.raises(ValueError, match="select at least one model"):
+        replace_info_models(source, {}, output)
+
+    missing_root = tmp_path / "not-the-models-folder"
+    missing_root.mkdir()
+    with pytest.raises(FileNotFoundError, match="Choose the Synthesizer V models directory"):
+        replace_info_models(source, {"pitch": tmp_path / "pitch.dnni"}, output, models_root=missing_root)

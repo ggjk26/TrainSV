@@ -468,6 +468,10 @@ Training 的高级设置支持为 info.nofs 声库指定其他声库的 Duration
 
 DNNI v1/v2 会通过相应角色的 TrainSV 模型解析器检查结构；DNNI v3 只支持不透明原样透传，不能保证可训练或可运行。跨声库的音素表、嵌入维度和网络结构可能不兼容。训练输出会创建新的模型引用，不会改写被选作来源的 DNNI 文件。
 
-## 修改已有 info.nofs 的模型引用
+## 批量替换已有 info.nofs 的非声学模型
 
-GUI 的“更多工具”新增“替换非声学 DNNI 模型”。选择原始 JSON `info.nofs`、Duration / Pitch/F0 / Vocoder 之一、替换用 `.dnni` 和新的输出 `info.nofs` 路径。工具会保留 Acoustic 引用和向量，复制未替换模型的原始字节，按新模型内容生成模型 ID，并在写入后重新检查所有模型引用。它不会覆盖源 `info.nofs`；输出文件必须放在能按现有目录规则解析 `models` 文件夹的位置。
+GUI“更多工具”中的“批量替换非声学 DNNI 模型”可以在一次操作中替换 Duration、Pitch/F0、Vocoder 中的任意组合，Acoustic 声学模型始终不变。请同时指定源 JSON `info.nofs`、**Synthesizer V 安装目录下包含 duration、f0、acoustic、vocoder 子目录的 models 文件夹**、一项或多项替换用 `.dnni`，以及新的输出 `info.nofs` 路径。
+
+显式选择 models 文件夹是为了避免源 `info.nofs` 所在目录与实际模型库不一致时，错误地从 TrainSV 项目目录查找模型。工具会先验证所有原始模型引用与所选替换文件；对未替换模型复制原始字节，为新模型按内容生成 ID，并在写入后重新检查引用。源 `info.nofs` 和源 DNNI 不会被覆盖。输出文件仍需放在符合声库目录规则的位置。
+
+DNNI v1/v2 会由对应角色的 TrainSV 解析器检查结构；DNNI v3 仅原样复制，不能确认其内部角色、音素表或运行兼容性。

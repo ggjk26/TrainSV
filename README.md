@@ -278,6 +278,10 @@ Training's advanced settings can replace the complete Duration, Pitch/F0, or Voc
 
 DNNI v1/v2 files are checked with the corresponding TrainSV role parser. DNNI v3 is only passed through opaquely and is not guaranteed to be trainable or runnable. Cross-voicebank phoneme tables, embedding dimensions, and network layouts may be incompatible. Training writes new model references without modifying the selected source DNNI file.
 
-## Edit models in an existing info.nofs
+## Batch replace non-acoustic models in an existing info.nofs
 
-The GUI's **More tools** page includes **Replace a non-acoustic DNNI model**. Choose a source JSON `info.nofs`, one of Duration / Pitch/F0 / Vocoder, the replacement `.dnni`, and a new output `info.nofs` path. The tool keeps the Acoustic reference and embeddings, copies unchanged model bytes, derives a new model ID from the replacement bytes, and checks that all output references resolve. It never overwrites the source descriptor; place the output at a path whose directory layout resolves the expected `models` directory.
+The GUI's **More tools** page includes **Batch replace non-acoustic DNNI models**. In one operation, replace any combination of Duration, Pitch/F0, and Vocoder; the Acoustic model is never changed. Select the source JSON `info.nofs`, the **Synthesizer V installation's models folder containing duration, f0, acoustic, and vocoder subfolders**, one or more replacement `.dnni` files, and a new output `info.nofs` path.
+
+Explicitly choosing the models folder fixes cases where the info descriptor is stored separately from its referenced model library and automatic path derivation looks in the TrainSV project folder instead. The tool validates source references and replacement files, copies the raw bytes of unchanged models, creates content-derived IDs for replacements, and checks all output references. It never overwrites the source info.nofs or source DNNI files. The output descriptor still needs to follow the expected installed voicebank directory layout.
+
+DNNI v1/v2 files are checked with the selected role's TrainSV parser. DNNI v3 is only copied opaquely; its internal role, phoneme table, and runtime compatibility cannot be verified.

@@ -25,7 +25,7 @@ from .nofs import is_info_voice
 from .packaging import build_svpk
 from .sfpk import build_sfpk
 from .timbre import summarize_timbre
-from .model_tools import replace_info_model
+from .model_tools import replace_info_models
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -660,21 +660,37 @@ def audit_data_command(arguments) -> None:
 
 
 def replace_model_command(arguments) -> None:
+    replacements = {
+        role: path for role, path in (
+            ("duration", arguments.duration_model),
+            ("pitch", arguments.pitch_model_file),
+            ("vocoder", arguments.vocoder_model),
+        ) if path
+    }
+    # Keep compatibility with the original one-role CLI syntax.
+    if arguments.role or arguments.model:
+        if not arguments.role or not arguments.model:
+            raise SystemExit("legacy --role and --model must be supplied together")
+        if arguments.role in replacements:
+            raise SystemExit(f"{arguments.role} model was specified more than once")
+        replacements[arguments.role] = arguments.model
     try:
-        result = replace_info_model(
+        result = replace_info_models(
             arguments.voice,
-            arguments.role,
-            arguments.model,
+            replacements,
             arguments.output,
+            models_root=arguments.models_root,
         )
     except (OSError, ValueError, KeyError, RuntimeError) as error:
-        raise SystemExit(f"cannot replace {arguments.role} DNNI: {error}") from error
+        raise SystemExit(f"cannot replace DNNI model(s): {error}") from error
     print(f"Created updated info.nofs: {result['output']}")
-    print(f"{arguments.role}: {result['old_model_id']} -> {result['new_model_id']} (DNNI v{result['dnni_version']})")
-    if result["warning"]:
-        print(f"Warning: {result['warning']}")
-    else:
-        print("The selected DNNI passed TrainSV's structural role validation; Synthesizer V runtime compatibility is not guaranteed.")
+    print(f"Source models root: {result['models_root']}")
+    for role, item in result["replaced"].items():
+        print(f"{role}: {item['old_model_id']} -> {item['new_model_id']} (DNNI v{item['dnni_version']})")
+        if not item["role_checked"]:
+            print(f"Warning ({role}): {item['warning']}")
+        else:
+            print(f"{role}: passed TrainSV structural validation; Synthesizer V runtime compatibility is not guaranteed.")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -847,10 +863,14 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--background", help="optional background PNG to include as background.png in the SFPK")
     command.set_defaults(handler=package_sfpk_command)
 
-    command = commands.add_parser("replace-model", help="create a new info.nofs with a replacement Duration, Pitch/F0, or Vocoder DNNI")
+    command = commands.add_parser("replace-model", help="create a new info.nofs with one or more non-acoustic DNNI models replaced")
     command.add_argument("--voice", required=True, help="source info.nofs JSON voicebank; the source remains unchanged")
-    command.add_argument("--role", required=True, choices=("duration", "pitch", "vocoder"), help="non-acoustic model role to replace; Acoustic is not allowed")
-    command.add_argument("--model", required=True, help="replacement .dnni file from another voicebank")
+    command.add_argument("--models-root", help="directory containing duration/, f0/, acoustic/, and vocoder/ model folders; choose the Synthesizer V models directory if auto-detection fails")
+    command.add_argument("--duration-model", help="replacement Duration .dnni; optional")
+    command.add_argument("--pitch-model-file", help="replacement Pitch/F0 .dnni; optional")
+    command.add_argument("--vocoder-model", help="replacement Vocoder .dnni; optional")
+    command.add_argument("--role", choices=("duration", "pitch", "vocoder"), help="legacy single-model role syntax")
+    command.add_argument("--model", help="legacy single-model replacement .dnni")
     command.add_argument("--output", required=True, help="new info.nofs path at the same directory depth as an installed info voice")
     command.set_defaults(handler=replace_model_command)
 
