@@ -220,18 +220,32 @@ def replace_info_models(
         info_key = ROLE_TO_KIND[role]
         if role in replacements:
             data = replacement_data[role]
-            new_id = hashlib.md5(data).hexdigest()
+            # DNNI files are content-addressed dependencies in many voicebanks.
+            # If the selected file is byte-for-byte the same as the source model,
+            # retain the existing ID and explain why no descriptor change is needed.
+            same_as_source = data == source_models[role].read_bytes()
+            new_id = source_document[info_key] if same_as_source else hashlib.md5(data).hexdigest()
             result_models[role] = (output_models_root / info_key / f"{new_id}.dnni", data)
             output_document[info_key] = new_id
+            if same_as_source:
+                warning = (
+                    "The selected DNNI is byte-for-byte identical to the source model; "
+                    "this role is unchanged and its original model ID is retained."
+                )
+            elif validation[role][1]:
+                warning = ""
+            else:
+                warning = (
+                    "DNNI v3 was copied opaquely. Its internal model role, architecture, "
+                    "phoneme tables and runtime compatibility could not be verified."
+                )
             role_results[role] = {
                 "old_model_id": source_document[info_key],
                 "new_model_id": new_id,
                 "dnni_version": validation[role][0],
                 "role_checked": validation[role][1],
-                "warning": "" if validation[role][1] else (
-                    "DNNI v3 was copied opaquely. Its internal model role, architecture, "
-                    "phoneme tables and runtime compatibility could not be verified."
-                ),
+                "unchanged": same_as_source,
+                "warning": warning,
             }
         else:
             original_id = source_document[info_key]
@@ -268,8 +282,17 @@ def replace_info_models(
         )
 
         generated = InfoVoice.load(output_info_path)
+        # Verify both the serialized descriptor ID and the resolved model bytes.
+        # This catches stale/original IDs independently of the path round-trip.
+        written_document = json.loads(output_info_path.read_text("utf-8"))
         for role in ALL_ROLES:
             expected_path, expected_data = result_models[role]
+            expected_id = output_document[ROLE_TO_KIND[role]]
+            if written_document.get(ROLE_TO_KIND[role]) != expected_id:
+                raise RuntimeError(
+                    f"generated info.nofs did not retain the expected {role} model ID "
+                    f"(expected {expected_id}, got {written_document.get(ROLE_TO_KIND[role])!r})"
+                )
             if generated.models[role] != expected_path or generated.models[role].read_bytes() != expected_data:
                 raise RuntimeError(f"generated info.nofs failed the {role} model-reference round-trip check")
     except OSError as error:

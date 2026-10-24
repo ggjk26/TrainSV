@@ -683,13 +683,15 @@ def replace_model_command(arguments) -> None:
         )
     except (OSError, ValueError, KeyError, RuntimeError) as error:
         raise SystemExit(f"cannot replace DNNI model(s): {error}") from error
-    print(f"Created updated info.nofs: {result['output']}")
+    print(f"Output info.nofs: {result['output']}")
+    print("The source info.nofs was left unchanged.")
     print(f"Source models root: {result['models_root']}")
     for role, item in result["replaced"].items():
-        print(f"{role}: {item['old_model_id']} -> {item['new_model_id']} (DNNI v{item['dnni_version']})")
-        if not item["role_checked"]:
+        status = "UNCHANGED (identical file)" if item.get("unchanged") else "REPLACED"
+        print(f"{role}: {status}; {item['old_model_id']} -> {item['new_model_id']} (DNNI v{item['dnni_version']})")
+        if item["warning"]:
             print(f"Warning ({role}): {item['warning']}")
-        else:
+        elif item["role_checked"]:
             print(f"{role}: passed TrainSV structural validation; Synthesizer V runtime compatibility is not guaranteed.")
 
 

@@ -240,3 +240,24 @@ def test_standalone_info_output_refuses_to_write_under_users_root(tmp_path: Path
     with pytest.raises(ValueError, match="Windows system/user root"):
         replace_info_models(source, {"pitch": replacement}, shallow_user_root)
     assert not (tmp_path / "Users" / "models").exists()
+
+
+def test_identical_replacement_is_reported_as_unchanged_and_keeps_original_id(tmp_path: Path):
+    source, source_models = _make_info_voice(tmp_path / "source-package")
+    original_doc = json.loads(source.read_text("utf-8"))
+    output_root = tmp_path / "output-package"
+
+    result = replace_info_models(
+        source,
+        {"duration": source_models["duration"]},
+        output_root,
+    )
+
+    output_info = Path(result["output"])
+    document = json.loads(output_info.read_text("utf-8"))
+    item = result["replaced"]["duration"]
+    assert document["duration"] == original_doc["duration"]
+    assert item["old_model_id"] == item["new_model_id"] == original_doc["duration"]
+    assert item["unchanged"] is True
+    assert "byte-for-byte identical" in item["warning"]
+    assert (output_root / "database" / "models" / "duration" / f"{original_doc['duration']}.dnni").read_bytes() == source_models["duration"].read_bytes()
