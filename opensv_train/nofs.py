@@ -196,10 +196,19 @@ class InfoVoice:
             if not models[role].is_file():
                 raise FileNotFoundError(models[role])
         styles = {style["name"]: hex_vector(style["data"]) for style in info["styles"]}
+        # Some real-world info.nofs files omit the synthetic "(default)" style.
+        # The acoustic speaker/base vector is a safe deterministic fallback; keep
+        # all named vocal modes intact. This also lets the voice load before any
+        # training starts instead of raising KeyError("(default)").
+        try:
+            base_style = styles.pop("(base)")
+        except KeyError as error:
+            raise ValueError(f"{path} is missing the required '(base)' style entry") from error
+        default_style = styles.pop("(default)", base_style.copy())
         return cls(
             path, info, models,
             hex_vector(info["duration_style"]), hex_vector(info["f0_style"]),
-            styles.pop("(base)"), styles.pop("(default)"), styles,
+            base_style, default_style, styles,
         )
 
     def to_json(self) -> dict:

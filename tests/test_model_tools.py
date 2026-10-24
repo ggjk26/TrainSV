@@ -261,3 +261,23 @@ def test_identical_replacement_is_reported_as_unchanged_and_keeps_original_id(tm
     assert item["unchanged"] is True
     assert "byte-for-byte identical" in item["warning"]
     assert (output_root / "database" / "models" / "duration" / f"{original_doc['duration']}.dnni").read_bytes() == source_models["duration"].read_bytes()
+
+
+
+def test_info_voice_without_default_style_loads_using_base_fallback(tmp_path: Path):
+    from opensv_train.nofs import InfoVoice
+
+    source, _ = _make_info_voice(tmp_path / "voice-package")
+    document = json.loads(source.read_text("utf-8"))
+    base = next(style for style in document["styles"] if style["name"] == "(base)")
+    document["styles"] = [
+        style for style in document["styles"] if style["name"] != "(default)"
+    ]
+    document["styles"].append({"name": "Power", "data": base["data"]})
+    source.write_text(json.dumps(document), encoding="utf-8")
+
+    loaded = InfoVoice.load(source)
+
+    assert loaded.default_style.tolist() == loaded.acoustic_speaker.tolist()
+    assert "Power" in loaded.vocal_modes
+    assert "(default)" not in loaded.vocal_modes
