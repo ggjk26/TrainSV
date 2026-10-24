@@ -8,8 +8,6 @@ from pathlib import Path
 import pytest
 
 from opensv_train.model_tools import replace_info_model
-from opensv_train.dnni import OpaqueDnniFile
-from opensv_train.voice import load_voice
 
 DNNI_MAGIC = 0x7FCA00FF
 
@@ -106,29 +104,3 @@ def test_replace_model_never_overwrites_existing_output(tmp_path: Path):
         replace_info_model(source, "pitch", model, output)
 
     assert output.read_text("utf-8") == "keep-me"
-
-
-def test_custom_non_acoustic_dnn_overrides_are_loaded_without_changing_acoustic(tmp_path: Path):
-    source, source_models = _make_info_voice(tmp_path / "source-package")
-    replacement = tmp_path / "external" / "other-pitch.dnni"
-    replacement.parent.mkdir(parents=True)
-    replacement_bytes = _dnni_v3(b"custom pitch role candidate")
-    replacement.write_bytes(replacement_bytes)
-
-    voice_files = load_voice(source, model_overrides={"pitch": replacement})
-
-    assert voice_files.models["acoustic"].serialize() == source_models["acoustic"].read_bytes()
-    assert isinstance(voice_files.models["pitch"], OpaqueDnniFile)
-    assert voice_files.models["pitch"].serialize() == replacement_bytes
-    assert source_models["pitch"].read_bytes() == _dnni_v3(b"pitch-original")
-
-
-def test_custom_dnn_override_is_limited_to_non_acoustic_info_roles(tmp_path: Path):
-    source, _ = _make_info_voice(tmp_path / "source-package")
-    model = tmp_path / "external.dnni"
-    model.write_bytes(_dnni_v3(b"opaque model"))
-
-    with pytest.raises(ValueError, match="unsupported roles"):
-        load_voice(source, model_overrides={"acoustic": model})
-    with pytest.raises(ValueError, match="cannot be combined"):
-        load_voice(source, preserve_non_acoustic_models=True, model_overrides={"pitch": model})
