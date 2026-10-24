@@ -16,14 +16,19 @@ on:
       - "opensv_train/train.py"
       - "opensv_train/losses.py"
       - "opensv_train/timbre.py"
+      - "opensv_train/calibration.py"
       - "opensv_train/transitions.py"
+      - "opensv_train/dnni.py"
       - "opensv_train/voice.py"
+      - "opensv_train/model_tools.py"
       - "opensv_train/dnni.py"
       - "trainsv_gui.py"
       - "README.md"
       - "README.zh-CN.md"
       - "tests/test_data.py"
       - "tests/test_transition_audit.py"
+      - "tests/test_transition_sampling.py"
+      - "tests/test_dnni_version.py"
       - "tests/test_timbre_profiles.py"
       - "tests/test_gui_performance.py"
       - "tests/test_audio_io.py"
@@ -32,6 +37,7 @@ on:
       - "tests/test_packaging.py"
       - "tests/test_sfpk_packaging.py"
       - "tests/test_gui_packaging_ui.py"
+      - "tests/test_model_tools.py"
       - "tests/test_f0_profile.py"
       - "tests/test_f0_tracking.py"
       - "tests/test_filename_labels.py"
@@ -58,11 +64,12 @@ jobs:
         run: python -m compileall -q opensv_train tests
       - name: Run packaging, Pitch/F0 and WebUI regression tests
         run: |
-          python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py tests/test_f0_profile.py
+          python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py tests/test_f0_profile.py tests/test_model_tools.py
           python -m pytest -q tests/test_filename_labels.py -k "not f0_at"
           python -m pytest -q tests/test_phoneme_maps_sv1112.py
           python -m pytest -q tests/test_audio_io.py tests/test_f0_tracking.py
           python -m pytest -q tests/test_gui_performance.py
           python -m pytest -q tests/test_transition_audit.py
+          python -m pytest -q tests/test_transition_sampling.py tests/test_dnni_version.py
           python -m pytest -q tests/test_timbre_profiles.py
           python -m pytest -q tests/test_flat_dnni_v3_passthrough.py
