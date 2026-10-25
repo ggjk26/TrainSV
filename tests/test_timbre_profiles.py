@@ -60,6 +60,15 @@ def test_brightness_and_preset_controls_are_wired_into_training_and_webui():
     assert "self.brightness_weight * brightness" in loss
     assert 'data-id="t_timbre_preset"' in gui
     assert 'data-id="t_brightness_weight"' in gui
+    assert 'natural|Natural transitions (conservative)' in gui
+    assert 'clarity-lite|Light source-faithful clarity (experimental)' in gui
+    assert 'natural:{t_params:"all",t_steps:"2500"' in gui
+    assert 't_transition_weight:"1.15"' in gui
+    assert '"clarity-lite":{t_params:"all",t_steps:"2500"' in gui
+    assert 't_brightness_weight:"0.025"' in gui
+    assert 'id="timbrePresetHelp"' in gui
+    assert "轻度清晰度适配（实验）" in gui
+    assert "自然衔接（保守）" in gui
     assert "function applyTimbrePreset(name)" in gui
     assert "timbre_diagnostics.json" in cli
     assert "phrase_names=phrase_names" in cli
