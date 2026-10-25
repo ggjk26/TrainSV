@@ -254,7 +254,7 @@ The tool accepts WAV, FLAC and AIFF files. It tracks F0 with Praat autocorrelati
 CLI example:
 
 ```powershell
-trainsv audio-to-midi --input "recording.wav" --output "recording.mid" --pitch-floor 65 --pitch-ceiling 1100 --voicing-threshold 0.45 --min-note-ms 70 --median-window 5 --a4-hz 440 --transpose-semitones 0 --tempo-bpm 120
+trainsv audio-to-midi --input "recording.wav" --output "recording.mid" --pitch-floor 65 --pitch-ceiling 1100 --voicing-threshold 0.45 --min-note-ms 70 --median-window 5 --note-change-ms 120 --a4-hz 440 --transpose-semitones 0 --tempo-bpm 120
 ```
 
 The output contains note events only, without lyrics or phoneme labels. In Synthesizer V, assign the desired voicebank and use the imported MIDI as a repeatable melody for pitch and rendering checks. If the result contains octave errors, adjust the pitch floor/ceiling and compare against a clean monophonic vocal source; MIDI extraction cannot recover a correct melody from every noisy or polyphonic recording.
