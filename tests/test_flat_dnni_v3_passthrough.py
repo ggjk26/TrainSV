@@ -65,5 +65,6 @@ def test_preservation_mode_loads_only_selected_roles_and_keeps_unselected_dnnies
     assert "role not in voice.training_models" in voice
     assert "original_bytes = info.models[role].read_bytes()" in voice
     assert '"--preserve-original-models"' in cli
-    assert "--models duration and/or pitch" in cli
+    assert "--models acoustic" in cli
+    assert "--custom-acoustic-dnni" in cli
 
