@@ -272,7 +272,6 @@ def test_dynamic_webui_messages_translate_in_all_locales():
             "for (const [source, language, expected] of cases) { const actual = translateString(source, language); if (actual !== expected) { console.error(JSON.stringify({source, language, expected, actual})); process.exit(1); } }",
         ]
     )
-    # Send the generated script over stdin: the embedded I18N table can exceed OS argv limits.
     result = subprocess.run([node, "-"], input=script, capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr or result.stdout
     assert r"source.match(/^✓ (\d+) recordings, about ([\d.]+) min" in PAGE
@@ -286,3 +285,73 @@ def test_filename_import_exposes_explicit_phone_conventions():
     assert "Standard X-SAMPA" in PAGE
     assert "SynthV legacy X-SAMPA" in PAGE
     assert '"--source-phoneme-system",val("i_source_system")||"auto"' in PAGE
+
+
+def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
+    assert 'id="t_preserve_non_acoustic_models"' in PAGE
+    assert "function syncPreserveModelsUI()" in PAGE
+    assert "Preserving non-acoustic models requires an existing info.nofs" in PAGE
+    assert 'a.push("--preserve-non-acoustic-models")' in PAGE
+    root = Path(__file__).resolve().parents[1]
+    cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
+    voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
+    calibration = (root / "opensv_train" / "calibration.py").read_text("utf-8")
+    assert '"--preserve-non-acoustic-models"' in cli
+    assert "preserve_non_acoustic_models=arguments.preserve_non_acoustic_models" in cli
+    assert "models != (\"acoustic\",)" in cli
+    assert 'if not arguments.preserve_non_acoustic_models and hasattr(voice, "pitch")' in cli
+    assert "Timing and Pitch are not" in voice
+    model_tools = (root / "opensv_train" / "model_tools.py").read_text("utf-8")
+    assert "_resolve_output_info_path" in model_tools
+    assert "refusing to create a models directory under the Windows system/user root" in model_tools
+    assert "output package folder (recommended" in cli
+    assert "_resolve_output_info_path" in model_tools
+    assert "output info.nofs path is too shallow" in model_tools
+    assert "output package folder (recommended" in cli
+    assert 'commands.add_parser("replace-model"' in cli
+    assert 'command.add_argument("--models-root"' in cli
+    assert 'command.add_argument("--duration-model"' in cli
+    assert 'command.add_argument("--pitch-model-file"' in cli
+    assert 'command.add_argument("--vocoder-model"' in cli
+    assert "replace_info_models(" in cli
+    assert "replace_info_model" in cli
+    assert "Acoustic is intentionally excluded" in model_tools
+    assert "OpaqueDnniFile.from_bytes(data)" in model_tools
+    writer = voice[voice.index("def write_info_voice("):voice.index("\n\nclass Voice(", voice.index("def write_info_voice("))]
+    assert "voice.preserve_non_acoustic_models" in writer
+    assert "voice.files.preserve_non_acoustic_models" not in writer
+    assert 'document[INFO_KINDS[role]] = reference' in voice
+    assert "original_bytes = info.models[role].read_bytes()" in voice
+    assert "target.write_bytes(original_bytes)" in voice
+    assert 'if not voice.files.preserve_non_acoustic_models and hasattr(voice, "vocoder")' in calibration
+    assert 'if hasattr(voice, "pitch")' in calibration
+
+
+def test_custom_non_acoustic_dnn_is_available_in_training_and_more_tools():
+    assert 'data-id="t_custom_duration_dnni"' in PAGE
+    assert 'data-id="t_custom_pitch_dnni"' in PAGE
+    assert 'data-id="t_custom_vocoder_dnni"' in PAGE
+    assert 'data-run="replaceModel"' in PAGE
+    assert 'data-id="rm_source"' in PAGE
+    assert 'data-id="rm_models_root"' in PAGE
+    assert 'data-id="rm_duration_model"' in PAGE
+    assert 'data-id="rm_pitch_model"' in PAGE
+    assert 'data-id="rm_vocoder_model"' in PAGE
+    assert 'data-run="replaceModel"' in PAGE
+    assert 'data-id="rm_output"' in PAGE
+    assert 'data-id="rm_output" data-kind="path" data-mode="dir"' in PAGE
+    assert 'data-label="Output package folder"' in PAGE
+    root = Path(__file__).resolve().parents[1]
+    cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
+    voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
+    model_tools = (root / "opensv_train" / "model_tools.py").read_text("utf-8")
+    assert 'commands.add_parser("replace-model"' in cli
+    assert 'command.add_argument("--custom-duration-dnni"' in cli
+    assert 'command.add_argument("--custom-pitch-dnni"' in cli
+    assert 'command.add_argument("--custom-vocoder-dnni"' in cli
+    assert "model_overrides=model_overrides" in cli
+    assert "custom DNNI overrides cannot be combined with --resume" in cli
+    assert "model_overrides: dict[str, str | Path] | None = None" in voice
+    assert "custom DNNI overrides cannot be combined with preservation mode" in voice
+    assert "replace_info_model" in cli
+    assert "Acoustic is intentionally excluded" in model_tools
