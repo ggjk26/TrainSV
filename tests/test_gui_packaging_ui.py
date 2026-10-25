@@ -290,7 +290,7 @@ def test_filename_import_exposes_explicit_phone_conventions():
 def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert 'id="t_preserve_non_acoustic_models"' in PAGE
     assert "function syncPreserveModelsUI()" in PAGE
-    assert '["m_acoustic","m_vocoder"]' in PAGE
+    assert 'const acoustic=$("#m_acoustic"),vocoder=$("#m_vocoder")' in PAGE
     assert "Preserving non-acoustic models requires an existing info.nofs" in PAGE
     assert 'a.push("--preserve-original-models")' in PAGE
     assert 'a.push("--custom-vocoder-dnni",replacement)' in PAGE
