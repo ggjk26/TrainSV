@@ -162,6 +162,7 @@ def test_octave_correction_can_be_disabled_for_intentional_short_octave_notes():
         frequencies,
         min_note_ms=20,
         median_window=1,
+        note_change_ms=20,
         octave_correction=False,
     )
     assert [note[2] for note in notes] == [69, 81, 69]
