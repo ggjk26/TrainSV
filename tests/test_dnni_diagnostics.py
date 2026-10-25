@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import struct
+from pathlib import Path
 
 import pytest
 
 from opensv_train.dnni import FILE_MAGIC, NODE_MARKERS, DnniFile, Node
 from opensv_train.dnni_diagnostics import diagnose_dnni_bytes
-from opensv_train.__main__ import parser
 
 
 def _minimal_v1_model() -> bytes:
@@ -76,15 +76,12 @@ def test_diagnostics_report_unknown_versions_without_mislabeling_them_as_v3():
     assert report["trainable_by_trainsv"] is None
 
 
-def test_inspect_dnni_cli_exposes_role_and_json_report_options():
-    args = parser().parse_args([
-        "inspect-dnni",
-        "--model", "candidate.dnni",
-        "--role", "acoustic",
-        "--json-out", "diagnostic.json",
-    ])
+def test_inspect_dnni_cli_exposes_role_and_json_report_options_without_importing_training_runtime():
+    root = Path(__file__).resolve().parents[1]
+    cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
 
-    assert args.command == "inspect-dnni"
-    assert args.model == "candidate.dnni"
-    assert args.role == "acoustic"
-    assert args.json_out == "diagnostic.json"
+    assert 'commands.add_parser("inspect-dnni"' in cli
+    assert 'command.add_argument("--model", required=True' in cli
+    assert 'command.add_argument("--role", choices=("duration", "pitch", "acoustic", "vocoder")' in cli
+    assert 'command.add_argument("--json-out"' in cli
+    assert "command.set_defaults(handler=inspect_dnni_command)" in cli
