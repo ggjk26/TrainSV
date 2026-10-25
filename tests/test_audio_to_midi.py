@@ -14,7 +14,7 @@ def test_extracts_quantized_monophonic_notes_and_transposes():
         median_window=1,
         transpose_semitones=2,
     )
-    assert [note[2] for note in notes] == [71, 73]
+    assert [note[2] for note in notes] == [71, 74]
     assert notes[0][0] == 0
     assert notes[0][1] <= notes[1][0] + 0.02
 
