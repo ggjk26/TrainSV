@@ -98,7 +98,11 @@ def finetune(arguments) -> None:
     if arguments.resume and model_overrides:
         raise SystemExit("custom DNNI overrides cannot be combined with --resume; use a separate run directory")
     if model_overrides and not is_info_voice(arguments.voice):
-        raise SystemExit("custom DNNI model files are available only for info.nofs shared-model voicebanks")
+        if unsupported_overrides := set(model_overrides) - {"acoustic"}:
+            raise SystemExit(
+                "regular voice.nofs files support only --custom-acoustic-dnni; "
+                f"other custom model roles require an info.nofs voicebank: {', '.join(sorted(unsupported_overrides))}"
+            )
     if arguments.custom_pitch_dnni and arguments.pitch_model:
         raise SystemExit("choose either --custom-pitch-dnni (replace the base Pitch model) or --pitch-model (initialize Pitch weights), not both")
     models = tuple(arguments.models.split(","))

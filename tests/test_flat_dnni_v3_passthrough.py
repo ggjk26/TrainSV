@@ -44,7 +44,8 @@ def test_info_and_nofs_voice_loaders_preserve_v3_for_any_role_and_block_unsuppor
 
     assert "def _load_model_bytes(data: bytes)" in voice
     assert "return _load_model_bytes(Path(path).read_bytes())" in voice
-    assert "models = {role: _load_model_bytes(nofs.read(keys[role])) for role in ROLES}" in voice
+    assert 'if role == "acoustic" and role in model_overrides:' in voice
+    assert "Do not even parse the Acoustic bytes embedded in the target voice.nofs" in voice
     assert "class UnavailableDNNIModel" in voice
     assert "class UnavailablePitchModel" in voice
     assert "if not getattr(model, \"supported\", True):" in voice

@@ -296,6 +296,8 @@ trainsv finetune \
 
 支持的语言名/代码：`japanese/ja`、`mandarin/zh`、`english/en`、`cantonese/yue`、`spanish/es`。
 
+如果起始声库是普通 `voice.nofs`，只需在 Training 的 “Acoustic training base model (.dnni)” 里选择一个可解析的 DNNI v1/v2 Acoustic 底模；TrainSV 会在读取目标声库时跳过它内部的源 Acoustic，直接加载所选底模进行训练，并把新模型写回输出 `voice.nofs`。普通声库模式只允许替换 Acoustic，Duration/Pitch/Vocoder 自定义依赖仍仅支持共享模型 `info.nofs`。
+
 如果起始声库是共享模型 `info.nofs`，可在 Training 选项卡启用“Train Acoustic from an alternate base”。必须选择一个可解析的 DNNI v1/v2 Acoustic 文件（`--custom-acoustic-dnni`）作为初始化网络，TrainSV 不加载目标声库的源 Acoustic（因此目标 Acoustic 即使是 DNNI v3 也不会被解析）；而是使用所选网络权重在当前数据集上训练，并将训练后的 Acoustic 写为新的输出模型依赖。还必须选择一个可运行的 DNNI v1/v2 Vocoder（`--custom-vocoder-dnni`），因为 Acoustic 的波形损失需要它参与前向计算；不支持用只能原样保留的 DNNI v3 Vocoder 来训练。命令行示例：`trainsv finetune --voice /path/to/info.100.nofs --data /path/to/dataset --language zh --models acoustic --custom-acoustic-dnni /path/to/base-acoustic.dnni --custom-vocoder-dnni /path/to/replacement-vocoder.dnni --preserve-original-models --params all --output out/my-voice`。可在 `--models` 中额外加入 `duration` 和/或 `pitch`。未选中的 Duration/Pitch 依赖保持不变。若所选 Acoustic 的说话人/风格向量宽度与目标 `info.nofs` 不兼容，TrainSV 会在开始训练前给出明确错误；请选择结构兼容的 Acoustic 底模。普通单文件 `voice.nofs` 不支持此模式。
 
 ### 评估训练结果

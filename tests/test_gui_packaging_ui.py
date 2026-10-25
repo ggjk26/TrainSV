@@ -377,6 +377,19 @@ def test_custom_non_acoustic_dnn_is_available_in_training_and_more_tools():
 
 
 
+
+def test_regular_voice_nofs_accepts_only_an_alternate_acoustic_base():
+    root = Path(__file__).resolve().parents[1]
+    voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
+    cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
+    gui = PAGE
+    assert 'set(model_overrides) - {"acoustic"}' in voice
+    assert 'if role == "acoustic" and role in model_overrides:' in voice
+    assert "Do not even parse the Acoustic bytes embedded in the target voice.nofs" in voice
+    assert "regular voice.nofs files support only --custom-acoustic-dnni" in cli
+    assert "For any voice.nofs, selecting an Acoustic .dnni replaces the target Acoustic before loading" in gui
+
+
 def test_alternate_acoustic_base_is_wired_as_trained_model():
     root = Path(__file__).resolve().parents[1]
     cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")

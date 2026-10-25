@@ -169,11 +169,24 @@ def load_voice(
         )
     if preserve_non_acoustic_models:
         raise ValueError("preserving unselected models is available only for info.nofs shared-model voicebanks")
-    if model_overrides:
-        raise ValueError("custom DNNI model files are supported only for info.nofs shared-model voicebanks")
+    if unsupported_overrides := set(model_overrides) - {"acoustic"}:
+        raise ValueError(
+            "regular voice.nofs files support only --custom-acoustic-dnni; "
+            f"other custom model roles require an info.nofs voicebank: {', '.join(sorted(unsupported_overrides))}"
+        )
     nofs = NofsFile.load(path)
     keys = nofs.model_keys()
-    models = {role: _load_model_bytes(nofs.read(keys[role])) for role in ROLES}
+    models: dict[str, DnniFile | OpaqueDnniFile] = {}
+    for role in ROLES:
+        if role == "acoustic" and role in model_overrides:
+            external = Path(model_overrides[role]).expanduser()
+            if external.suffix.lower() != ".dnni" or not external.is_file():
+                raise FileNotFoundError(f"custom Acoustic model must be an existing .dnni file: {external}")
+            # Do not even parse the Acoustic bytes embedded in the target voice.nofs;
+            # the selected donor is the one trained and later written into output.
+            models[role] = _load_model_bytes(external.read_bytes())
+        else:
+            models[role] = _load_model_bytes(nofs.read(keys[role]))
     return VoiceFiles(path, models, nofs.metadata(), nofs=nofs)
 def model_hash(data: bytes) -> str:
     return hashlib.md5(data).hexdigest()

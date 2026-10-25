@@ -710,8 +710,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <div class="field" data-id="t_evalevery" data-label="Test every (steps)" data-ph="250"></div>
       <div class="field" data-id="t_logevery" data-label="Report every (steps)" data-ph="25"></div>
     </div>
-    <h4>Custom base DNNI models (info.nofs only)</h4>
-    <p class="hint">Choose a parseable DNNI v1/v2 Acoustic model to initialize Acoustic training. In alternate-base mode, this is mandatory and the target Acoustic is never loaded; the trained Acoustic is written as a new output dependency. A runnable DNNI v1/v2 Vocoder is also required because Acoustic training uses it for waveform loss. Duration/Pitch overrides cannot be combined with this mode.</p>
+    <h4>Custom base DNNI models</h4>
+    <p class="hint">For any voice.nofs, selecting an Acoustic .dnni replaces the target Acoustic before loading and lets you fine-tune it, including when the target Acoustic is DNNI v3. Custom Duration/Pitch/Vocoder files remain info.nofs-only. In alternate-base mode, the selected parseable DNNI v1/v2 Acoustic and a runnable replacement DNNI v1/v2 Vocoder are mandatory; unselected Duration/Pitch dependencies are preserved.</p>
     <div class="grid2">
       <div class="field" data-id="t_custom_acoustic_dnni" data-kind="path" data-mode="file" data-ext="dnni" data-label="Acoustic training base model (.dnni)" data-hint="Required in alternate-base mode. Supplies starting network weights and architecture; TrainSV trains these weights on the selected target dataset. A compatible speaker/style embedding width is required."></div>
       <div class="field" data-id="t_custom_duration_dnni" data-kind="path" data-mode="file" data-ext="dnni" data-label="Custom Duration model (.dnni)"></div>
@@ -1605,6 +1605,7 @@ function syncPreserveModelsUI(){
   ["m_duration","m_pitch"].forEach(id=>{const control=$("#"+id);if(control)control.disabled=false;});
   const pitchPanel=$("#pitchTrainingPanel");if(pitchPanel)pitchPanel.disabled=false;
   ["t_levelref","t_gain","t_custom_duration_dnni","t_custom_pitch_dnni","t_pitch_source","t_pitch_model"].forEach(id=>{const control=$("#"+id);if(control)control.disabled=active;});
+  ["t_custom_duration_dnni","t_custom_pitch_dnni","t_custom_vocoder_dnni"].forEach(id=>{const control=$("#"+id);if(control)control.disabled=active||!infoPath;});
   const params=$("#t_params");if(params&&active){params.value="all";params.disabled=true;}else if(params)params.disabled=false;
 }
 
