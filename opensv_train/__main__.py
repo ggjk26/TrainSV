@@ -132,7 +132,15 @@ def finetune(arguments) -> None:
             if isinstance(model_file, OpaqueDnniFile):
                 role_label = role.title()
                 if role == "acoustic":
-                    detail = "Acoustic must be parsed and trainable for every acoustic fine-tune."
+                    if role not in model_overrides:
+                        detail = (
+                            "Acoustic must be parsed and trainable for every acoustic fine-tune. "
+                            "In Training, select a supported DNNI v1/v2 file under "
+                            "'Acoustic training base model (.dnni)' to replace the target Acoustic before loading; "
+                            "for info.nofs alternate-base mode, also choose a runnable replacement Vocoder."
+                        )
+                    else:
+                        detail = "The selected replacement Acoustic must be parsed and trainable."
                 elif role == "vocoder":
                     detail = "The Vocoder must be runnable even when frozen, because acoustic waveform loss uses it."
                 else:

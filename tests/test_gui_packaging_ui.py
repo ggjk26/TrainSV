@@ -388,6 +388,7 @@ def test_regular_voice_nofs_accepts_only_an_alternate_acoustic_base():
     assert "Do not even parse the Acoustic bytes embedded in the target voice.nofs" in voice
     assert "regular voice.nofs files support only --custom-acoustic-dnni" in cli
     assert "For any voice.nofs, selecting an Acoustic .dnni replaces the target Acoustic before loading" in gui
+    assert "select a supported DNNI v1/v2 file under" in cli
 
 
 def test_alternate_acoustic_base_is_wired_as_trained_model():
