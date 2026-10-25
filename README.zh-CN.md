@@ -442,6 +442,20 @@ cmake --build build --target OpenSVParity
 项目采用 GPL-3.0。感谢 [OpenSV](https://github.com/cubeww/OpenSV) 项目提供的参考实现。请通过当前仓库的 [Issues](https://github.com/ggjk26/TrainSV/issues) 提交复现步骤、底模类型和完整日志。
 文件名转 LAB 现支持按源标记体系选择明确映射：`auto`、`vocaloid-mandarin`、`xsampa` 与 `synthv-xsampa`。一个 VOCALOID 源音素映射成多个目标音素时，会尽量保留该源音素对应的整体时长，并缩短 `@_n`、`@n` 等组合中的鼻尾时长；一些 VOCALOID 音源的 `sta/@n_0.wav` 和 `art/@n @n_0.wav` 这类命名现已作为同一类源音素组合解析；这仍是启发式估算，不是真正的声学强制对齐，正式训练前建议抽查 `phone_mapping_report.csv` 和关键样本的 `.lab` 边界。VOCALOID 的 `u`（如 wu）与 `uo`（如 wo）是不同韵母，不能互相替代。F0 无有声帧不等同于 WAV 损坏；像 `Sil Sil k Sil_0.wav` 这样的有效静音/清辅音样本应保留，映射错误或真正无法解码的音频会单独记录到 `unmatched_phones.csv`。
 
+## 音频转 MIDI 与音准校准
+
+WebUI 的 **更多工具 → 将音频转换为 MIDI 以校准音准** 会从人声录音中提取单声部基频旋律，并导出可直接导入 Synthesizer V Studio 的标准单轨 MIDI。你可以用它让声库演唱同一段旋律，再将渲染音高与原始录音进行比较。这是基于基频的单旋律提取，不是复调音乐转录；和弦密集或伴奏复杂的音频可能产生不可靠的音符。
+
+工具支持 WAV、FLAC 和 AIFF。它使用 Praat 自相关跟踪 F0，在有声音段内先对连续半音音高曲线做中值平滑，再谨慎修复短暂、孤立的八度跳变，最后转换为 MIDI 音符。半音边界迟滞和短碎音符合并可减少颤音造成的音符抖动；只有当前后音高一致时才会跨越极短的无声间隙。音符边界会尽可能在相邻帧之间估算，而不是简单取整到 10 ms 网格。工具仍提供最短音符时长、A4 参考频率、半音移调和 MIDI 速度设置。默认启用短暂孤立八度跳变修复；若确实需要保留真实且很短的八度跳变，高级命令行用户可添加 `--no-octave-correction` 关闭它。这些改进能提升音符提取质量，但不会重建原音频的音色或完整连续音高/颤音曲线。
+
+命令行示例：
+
+```powershell
+trainsv audio-to-midi --input "recording.wav" --output "recording.mid" --pitch-floor 65 --pitch-ceiling 1100 --voicing-threshold 0.45 --min-note-ms 70 --median-window 5 --a4-hz 440 --transpose-semitones 0 --tempo-bpm 120
+```
+
+输出仅包含音符事件，不含歌词或音素标注。在 Synthesizer V 中为导入的 MIDI 指定待测声库，即可使用同一段旋律反复检查音准与渲染效果。如果出现八度错误，可以调整音高上下限，并尽量使用清晰的单声部人声；对于噪声严重或复调复杂的音频，MIDI 提取无法保证还原出正确旋律。
+
 ## F0 分析与校准
 
 Training 页面的 F0 Analysis & Calibration 面板专门处理输入 WAV 的基频分析和训练目标清理，与 Pitch 网络的训练设置分开。
