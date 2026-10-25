@@ -85,3 +85,6 @@ def test_inspect_dnni_cli_exposes_role_and_json_report_options_without_importing
     assert 'command.add_argument("--role", choices=("duration", "pitch", "acoustic", "vocoder")' in cli
     assert 'command.add_argument("--json-out"' in cli
     assert "command.set_defaults(handler=inspect_dnni_command)" in cli
+    assert "Changing --acoustic-dnni-version affects output only" in cli
+    assert "Run trainsv inspect --voice" in cli
+    assert "Run trainsv inspect-dnni --model" in cli

@@ -103,15 +103,6 @@ def finetune(arguments) -> None:
         for role in sorted(required):
             model_file = files.models[role]
             if isinstance(model_file, OpaqueDnniFile):
-                source_path = (
-                    model_overrides[role]
-                    if role in model_overrides
-                    else (
-                        files.info.models[role]
-                        if files.info is not None and role in files.info.models
-                        else files.path
-                    )
-                )
                 role_label = role.title()
                 if role == "acoustic":
                     detail = "Acoustic must be parsed and trainable for every acoustic fine-tune."
@@ -119,10 +110,23 @@ def finetune(arguments) -> None:
                     detail = "The Vocoder must be runnable even when frozen, because acoustic waveform loss uses it."
                 else:
                     detail = f"The selected {role_label} model cannot be trained while its payload is opaque."
+                if role in model_overrides:
+                    diagnostic = (
+                        f"Run trainsv inspect-dnni --model \"{model_overrides[role]}\" --role {role} "
+                        "for a diagnostic report."
+                    )
+                elif files.info is not None and role in files.info.models:
+                    diagnostic = (
+                        f"Run trainsv inspect-dnni --model \"{files.info.models[role]}\" --role {role} "
+                        "for a diagnostic report."
+                    )
+                else:
+                    diagnostic = (
+                        f"Run trainsv inspect --voice \"{files.path}\" to inspect the embedded model roles."
+                    )
                 raise ValueError(
                     f"{role_label} DNNI v3 is opaque and is currently preservation-only; {detail} "
-                    f"Run trainsv inspect-dnni --model \"{source_path}\" --role {role} for a diagnostic report. "
-                    "Changing --acoustic-dnni-version affects output only; it does not decode an input v3 model."
+                    f"{diagnostic} Changing --acoustic-dnni-version affects output only; it does not decode an input v3 model."
                 )
         voice = Voice(files)
     except (OSError, ValueError) as error:
