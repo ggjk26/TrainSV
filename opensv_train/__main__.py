@@ -710,6 +710,7 @@ def audio_to_midi_command(arguments) -> None:
             a4_hz=arguments.a4_hz,
             transpose_semitones=arguments.transpose_semitones,
             tempo_bpm=arguments.tempo_bpm,
+            octave_correction=arguments.octave_correction,
         )
     except (OSError, ValueError, RuntimeError) as error:
         raise SystemExit(f"audio-to-MIDI conversion failed: {error}") from error
@@ -905,6 +906,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--voicing-threshold", type=float, default=0.45, help="Praat voicing threshold from 0.05 to 1.0 (default 0.45)")
     command.add_argument("--min-note-ms", type=float, default=70.0, help="discard extracted notes shorter than this duration in ms (default 70)")
     command.add_argument("--median-window", type=int, choices=(1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21), default=5, help="odd median filter width in 10 ms frames; 1 disables pitch smoothing")
+    command.add_argument("--no-octave-correction", action="store_false", dest="octave_correction", default=True, help="disable conservative repair of short, isolated octave tracking errors")
     command.add_argument("--a4-hz", type=float, default=440.0, help="reference frequency for MIDI note 69 (default 440 Hz)")
     command.add_argument("--transpose-semitones", type=int, default=0, help="transpose detected notes by -24 to +24 semitones")
     command.add_argument("--tempo-bpm", type=float, default=120.0, help="MIDI tempo metadata in BPM (default 120; note timing remains aligned to the audio)")
