@@ -208,6 +208,7 @@ Training 页面提供以下音色微调预设起始配置：
 - **Gentle target adaptation（温和适配）**：较低的全权重学习率并加强 Anchor 约束，适合希望谨慎适配目标音源的场景。
 - **Balanced VOCALOID fit（平衡拟合）**：使用常规全权重学习率，作为无额外过渡／明亮度损失的对照基线。
 - **Natural transitions（自然衔接，保守）**：学习率 1e-5、Anchor 1.5、过渡权重 1.15、范围 2 帧、明亮度权重 0。适合 VOCALOID／UTAU 声源的音素交界听起来突兀时作为起始实验；它只调整训练时边界附近的损失，不会对输出波形做平滑。
+- **Softer consonants（柔化辅音，实验）**：辅音帧权重 0.85，其余过渡与明亮度额外损失关闭。适合辅音起音过尖时尝试，但可能削弱塞音／擦音的清晰度，应在留出短语上试听。
 - **Light source-faithful clarity（轻度清晰度适配，实验）**：明亮度平衡权重 0.025，适合渲染结果相对源 WAV 明显发闷时进行轻度对照。
 - **Brightness / clarity experiment（明亮度／通透度实验）**：明亮度平衡权重 0.05，属于更强的实验档。
 - **Higher detail fit（更强细节拟合，实验）**：明亮度权重 0.10，且 Anchor 更弱，是最激进的选项，应最后尝试并仔细 A/B 对比。
