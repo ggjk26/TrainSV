@@ -451,7 +451,7 @@ WebUI 的 **更多工具 → 将音频转换为 MIDI 以校准音准** 会从人
 命令行示例：
 
 ```powershell
-trainsv audio-to-midi --input "recording.wav" --output "recording.mid" --pitch-floor 65 --pitch-ceiling 1100 --voicing-threshold 0.45 --min-note-ms 70 --median-window 5 --a4-hz 440 --transpose-semitones 0 --tempo-bpm 120
+trainsv audio-to-midi --input "recording.wav" --output "recording.mid" --pitch-floor 65 --pitch-ceiling 1100 --voicing-threshold 0.45 --min-note-ms 70 --median-window 5 --note-change-ms 120 --a4-hz 440 --transpose-semitones 0 --tempo-bpm 120
 ```
 
 输出仅包含音符事件，不含歌词或音素标注。在 Synthesizer V 中为导入的 MIDI 指定待测声库，即可使用同一段旋律反复检查音准与渲染效果。如果出现八度错误，可以调整音高上下限，并尽量使用清晰的单声部人声；对于噪声严重或复调复杂的音频，MIDI 提取无法保证还原出正确旋律。
