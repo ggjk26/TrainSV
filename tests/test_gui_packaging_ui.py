@@ -91,6 +91,15 @@ def test_embedded_webui_javascript_has_valid_syntax():
 
 
 
+
+def test_audio_to_midi_webui_exposes_note_change_stability_control():
+    assert 'data-id="am_change_ms"' in PAGE
+    assert 'data-value="120"' in PAGE
+    assert '["--note-change-ms","am_change_ms"]' in PAGE
+    assert "Pitch-change confirmation must be between 20 and 500 ms." in PAGE
+    assert "A pitch change must persist for this long before a separate MIDI note is created." in PAGE
+
+
 def test_audio_to_midi_accepts_windows_audio_and_midi_extensions():
     # A literal dot must be escaped once in JavaScript regex source. The old
     # double-backslash pattern incorrectly required a backslash before an
