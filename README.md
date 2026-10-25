@@ -241,6 +241,20 @@ The top toolbar now includes a language selector for **English**, **简体中文
 - `parity/`: the vendored OpenSV engine and the harness the tests compare against
 - `tests/`: parity and training tests
 
+## Audio-to-MIDI pitch calibration
+
+The WebUI's **More tools → Convert audio to MIDI for pitch calibration** extracts a monophonic F0 melody from a vocal recording and exports a standard single-track MIDI file for direct import into Synthesizer V Studio. Use it to render the same melody with a voicebank and compare its notes against the original audio. It is a pitch-guided melody extractor, not polyphonic transcription; dense chords and instrumental mixes may produce unreliable notes.
+
+The tool accepts WAV, FLAC and AIFF files. It uses Praat autocorrelation, semitone quantization, optional median smoothing, a minimum note duration, and a configurable A4 reference / semitone transpose. The MIDI tempo metadata is configurable, while note timings remain aligned to the source audio duration.
+
+CLI example:
+
+```powershell
+trainsv audio-to-midi --input "recording.wav" --output "recording.mid" --pitch-floor 65 --pitch-ceiling 1100 --voicing-threshold 0.45 --min-note-ms 70 --median-window 5 --a4-hz 440 --transpose-semitones 0 --tempo-bpm 120
+```
+
+The output contains note events only, without lyrics or phoneme labels. In Synthesizer V, assign the desired voicebank and use the imported MIDI as a repeatable melody for pitch and rendering checks. If the result contains octave errors, adjust the pitch floor/ceiling and compare against a clean monophonic vocal source; MIDI extraction cannot recover a correct melody from every noisy or polyphonic recording.
+
 ## F0 analysis & calibration
 
 The Training page has a dedicated **F0 Analysis & Calibration** panel. These controls process the fundamental-frequency targets measured from the recorded WAV; they are separate from the Pitch network's training objective.
