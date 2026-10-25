@@ -1737,7 +1737,7 @@ let PK=null;
 async function openPicker(id,mode,ext){
   if(mode==="dynamic")mode=isInfo(val("voice"))?"dir":"save";
   const cur=val(id);
-  PK={id,mode,ext,dir:"",name:mode==="save"?(cur&&/\.\w+$/.test(basename(cur))?basename(cur):(ext==="json"?"history.json":ext==="svpk"?"voice.svpk":"voice.nofs")):""};
+  PK={id,mode,ext,dir:"",name:mode==="save"?(cur&&/\.\w+$/.test(basename(cur))?basename(cur):(ext==="json"?"history.json":ext==="svpk"?"voice.svpk":ext==="mid"?"audio.mid":"voice.nofs")):""};
   $("#pkTitle").textContent=mode==="dir"?"Choose a folder":mode==="save"?"Choose a folder and file name":"Choose a file";
   await pkLoad(cur&&mode!=="dir"&&/\.\w+$/.test(basename(cur))?dirname(cur):cur);
   $("#picker").showModal();
