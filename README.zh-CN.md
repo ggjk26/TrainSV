@@ -247,6 +247,8 @@ DNNI v3 文件可以是随 SV2 兼容 Flat 声库分发的正常依赖；仅凭 
 
 **这只表示容器保留兼容，并不代表 DNNI v3 已可运行，也不代表已支持直接导入 SFPK。** 这次提供的 SFPK 包含 `config.json`、根目录 `voice.nofs`、`models/*.dnni`、图片和音素表；它不包含当前共享模型加载器需要的 `info.<版本>.nofs`。包内的 `voice.nofs` 长度字段也为 0，无法通过 TrainSV 严格的 NOFS v10 加载校验。TrainSV 目前还不能把 SFPK 中列出的模型 ID 映射到时长、Pitch、声学、声码器角色，也不能直接导入整个压缩包。不透明 v3 保留仅适用于模型依赖已经由 TrainSV 支持读取的声库容器引用到的情况。TrainSV 仍无法解码 v3 网络图或张量，也不能对不透明模型执行推理或训练。要实现完整 v3 支持，仍需要可合法访问的模型表示或运行时，并与 Synthesizer V Flat 做端到端验证。
 
+若要单独检查模型文件而不尝试将其加载为声库，可运行 `trainsv inspect-dnni --model /path/to/model.dnni --role acoustic --json-out dnni-report.json`。该命令报告头部、文件大小、SHA-256、抽样字节熵，并在可能时列出 v1/v2 的通用节点结构。高熵样本只能说明其分布与加密、压缩或其他编码相符，不能确定具体机制。即使 v1/v2 容器树解析成功，也不能证明角色架构兼容或能在 Synthesizer V 运行。常规的 `trainsv inspect --voice ...` 现在也会将 v3 模型明确标为“仅可保留”，并显示抽样字节熵。
+
 ## 命令行使用
 
 ### 检查底模
