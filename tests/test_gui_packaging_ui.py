@@ -384,7 +384,7 @@ def test_alternate_acoustic_base_is_wired_as_trained_model():
     acoustic = (root / "opensv_train" / "acoustic.py").read_text("utf-8")
     assert '("acoustic", arguments.custom_acoustic_dnni)' in cli
     assert 'command.add_argument("--custom-acoustic-dnni"' in cli
-    assert 'if role in model_overrides:' in voice
+    assert 'override_path = model_overrides.get(role)' in voice
     assert "Target Acoustic/Vocoder are deliberately never read" in voice
     assert "choose a structurally compatible Acoustic .dnni" in acoustic
 
