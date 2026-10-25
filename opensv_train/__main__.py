@@ -104,9 +104,13 @@ def finetune(arguments) -> None:
             model_file = files.models[role]
             if isinstance(model_file, OpaqueDnniFile):
                 source_path = (
-                    files.info.models[role]
-                    if files.info is not None and role in files.info.models
-                    else files.path
+                    model_overrides[role]
+                    if role in model_overrides
+                    else (
+                        files.info.models[role]
+                        if files.info is not None and role in files.info.models
+                        else files.path
+                    )
                 )
                 role_label = role.title()
                 if role == "acoustic":

@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 import struct
 
-from .dnni import DNNI_V2_OUTPUT_SEED, FILE_MAGIC, KNOWN_TYPES, DnniFile, OpaqueDnniFile
+from .dnni import FILE_MAGIC, KNOWN_TYPES, DnniFile, OpaqueDnniFile
 
 ENTROPY_SAMPLE_LIMIT = 256 * 1024
 VALID_ROLES = ("duration", "pitch", "acoustic", "vocoder")
