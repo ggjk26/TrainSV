@@ -44,7 +44,8 @@ def test_info_and_nofs_voice_loaders_preserve_v3_for_any_role_and_block_unsuppor
 
     assert "def _load_model_bytes(data: bytes)" in voice
     assert "return _load_model_bytes(Path(path).read_bytes())" in voice
-    assert "models = {role: _load_model_bytes(nofs.read(keys[role])) for role in ROLES}" in voice
+    assert 'if role == "acoustic" and role in model_overrides:' in voice
+    assert "Do not even parse the Acoustic bytes embedded in the target voice.nofs" in voice
     assert "class UnavailableDNNIModel" in voice
     assert "class UnavailablePitchModel" in voice
     assert "if not getattr(model, \"supported\", True):" in voice
@@ -53,3 +54,19 @@ def test_info_and_nofs_voice_loaders_preserve_v3_for_any_role_and_block_unsuppor
     assert "def _require_supported_models(voice: Voice, roles, operation: str)" in cli
     assert '_require_supported_models(voice, ROLES, "synthesis")' in cli
     assert 'print("  phoneme tables: unavailable (opaque Acoustic DNNI v3)")' in cli
+
+def test_preservation_mode_loads_only_selected_roles_and_keeps_unselected_dnnies():
+    root = Path(__file__).resolve().parents[1]
+    voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
+    cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
+
+    assert "training_models: tuple[str, ...] | None = None" in voice
+    assert "roles_to_load = set(selected)" in voice
+    assert 'roles_to_load.update(("acoustic", "vocoder"))' in voice
+    assert 'preservation mode must train Acoustic from the selected alternate base model' in voice
+    assert "role not in voice.training_models" in voice
+    assert "original_bytes = info.models[role].read_bytes()" in voice
+    assert '"--preserve-original-models"' in cli
+    assert "--models acoustic" in cli
+    assert "--custom-acoustic-dnni" in cli
+

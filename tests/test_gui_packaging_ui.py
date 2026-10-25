@@ -290,17 +290,32 @@ def test_filename_import_exposes_explicit_phone_conventions():
 def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert 'id="t_preserve_non_acoustic_models"' in PAGE
     assert "function syncPreserveModelsUI()" in PAGE
+    assert 'const acoustic=$("#m_acoustic"),vocoder=$("#m_vocoder")' in PAGE
     assert "Preserving non-acoustic models requires an existing info.nofs" in PAGE
-    assert 'a.push("--preserve-non-acoustic-models")' in PAGE
+    assert 'a.push("--preserve-original-models")' in PAGE
+    assert 'a.push("--custom-vocoder-dnni",replacement)' in PAGE
+    assert "The target Vocoder is not loaded" in PAGE
+    assert "Replacement Vocoder model (.dnni)" in PAGE
+    assert "Train Acoustic from an alternate base" in PAGE
+    assert 'data-id="t_custom_acoustic_dnni"' in PAGE
+    assert "replaces the target Acoustic before loading" in PAGE
+    assert 'a.push("--custom-acoustic-dnni",acousticBase)' in PAGE
     root = Path(__file__).resolve().parents[1]
     cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
     voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
     calibration = (root / "opensv_train" / "calibration.py").read_text("utf-8")
     assert '"--preserve-non-acoustic-models"' in cli
     assert "preserve_non_acoustic_models=arguments.preserve_non_acoustic_models" in cli
-    assert "models != (\"acoustic\",)" in cli
+    assert 'set(models) & {"acoustic", "vocoder"}' in cli
+    assert 'training_models=models' in cli
     assert 'if not arguments.preserve_non_acoustic_models and hasattr(voice, "pitch")' in cli
-    assert "Timing and Pitch are not" in voice
+    assert "training_models: tuple[str, ...]" in voice
+    assert "role not in voice.training_models" in voice
+    assert 'if "duration" not in voice.training_models' in voice
+    assert 'if "pitch" not in voice.training_models' in voice
+    assert "Timing and Pitch are not" not in voice
+    assert "--preserve-original-models requires --custom-acoustic-dnni" in cli
+    assert "--preserve-original-models requires --custom-vocoder-dnni" in cli
     model_tools = (root / "opensv_train" / "model_tools.py").read_text("utf-8")
     assert "_resolve_output_info_path" in model_tools
     assert "refusing to create a models directory under the Windows system/user root" in model_tools
@@ -323,7 +338,8 @@ def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert 'document[INFO_KINDS[role]] = reference' in voice
     assert "original_bytes = info.models[role].read_bytes()" in voice
     assert "target.write_bytes(original_bytes)" in voice
-    assert 'if not voice.files.preserve_non_acoustic_models and hasattr(voice, "vocoder")' in calibration
+    assert 'if voice.files.preserve_non_acoustic_models and role not in voice.files.training_models' in calibration
+    assert 'if hasattr(voice, "acoustic")' in calibration
     assert 'if hasattr(voice, "pitch")' in calibration
 
 
@@ -346,12 +362,61 @@ def test_custom_non_acoustic_dnn_is_available_in_training_and_more_tools():
     voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
     model_tools = (root / "opensv_train" / "model_tools.py").read_text("utf-8")
     assert 'commands.add_parser("replace-model"' in cli
+    assert 'command.add_argument("--custom-acoustic-dnni"' in cli
     assert 'command.add_argument("--custom-duration-dnni"' in cli
     assert 'command.add_argument("--custom-pitch-dnni"' in cli
     assert 'command.add_argument("--custom-vocoder-dnni"' in cli
     assert "model_overrides=model_overrides" in cli
     assert "custom DNNI overrides cannot be combined with --resume" in cli
     assert "model_overrides: dict[str, str | Path] | None = None" in voice
-    assert "custom DNNI overrides cannot be combined with preservation mode" in voice
+    assert "preservation mode accepts only an alternate Acoustic base model and a replacement Vocoder" in voice
+    assert "output_model_overrides" in voice
+    assert "replacement Vocoder" in voice
     assert "replace_info_model" in cli
     assert "Acoustic is intentionally excluded" in model_tools
+
+
+
+
+def test_regular_voice_nofs_accepts_only_an_alternate_acoustic_base():
+    root = Path(__file__).resolve().parents[1]
+    voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
+    cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
+    gui = PAGE
+    assert 'set(model_overrides) - {"acoustic"}' in voice
+    assert 'if role == "acoustic" and role in model_overrides:' in voice
+    assert "Do not even parse the Acoustic bytes embedded in the target voice.nofs" in voice
+    assert "regular voice.nofs files support only --custom-acoustic-dnni" in cli
+    assert "For any voice.nofs, selecting an Acoustic .dnni replaces the target Acoustic before loading" in gui
+    assert "select a supported DNNI v1/v2 file under" in cli
+
+
+def test_alternate_acoustic_base_is_wired_as_trained_model():
+    root = Path(__file__).resolve().parents[1]
+    cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
+    voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
+    acoustic = (root / "opensv_train" / "acoustic.py").read_text("utf-8")
+    assert '("acoustic", arguments.custom_acoustic_dnni)' in cli
+    assert 'command.add_argument("--custom-acoustic-dnni"' in cli
+    assert 'override_path = model_overrides.get(role)' in voice
+    assert "Target Acoustic/Vocoder are deliberately never read" in voice
+    assert "choose a structurally compatible Acoustic .dnni" in acoustic
+
+
+def test_i18n_rows_keep_simplified_chinese_and_japanese_columns_separate():
+    start = PAGE.index("const I18N_ROWS = [")
+    end = PAGE.index("\nconst I18N_MAP", start)
+    block = PAGE[start:end]
+    rows = re.findall(r'\["((?:\\.|[^"\\])*)","((?:\\.|[^"\\])*)","((?:\\.|[^"\\])*)"\]', block)
+    assert len(rows) > 500
+
+    kana = re.compile(r"[\u3040-\u30ff]")
+    cjk = re.compile(r"[\u3400-\u9fff]")
+    bad_chinese_targets = [zh for _, zh, _ in rows if kana.search(zh)]
+    reversed_locale_rows = [
+        (en, zh) for en, zh, _ in rows
+        if cjk.search(en) and not cjk.search(zh) and re.search(r"[A-Za-z]{3,}", zh)
+    ]
+    assert not bad_chinese_targets, bad_chinese_targets[:3]
+    assert not reversed_locale_rows, reversed_locale_rows[:3]
+    assert any(en == "Choose the WAV folder. The filename mode creates LAB labels from space-separated phones; only a final _0/_1 retake suffix is removed." and cjk.search(zh) for en, zh, _ in rows)

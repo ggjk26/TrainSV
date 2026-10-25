@@ -250,6 +250,8 @@ DNNI v3 文件可以是随 SV2 兼容 Flat 声库分发的正常依赖；仅凭 
 
 **这只表示容器保留兼容，并不代表 DNNI v3 已可运行，也不代表已支持直接导入 SFPK。** 这次提供的 SFPK 包含 `config.json`、根目录 `voice.nofs`、`models/*.dnni`、图片和音素表；它不包含当前共享模型加载器需要的 `info.<版本>.nofs`。包内的 `voice.nofs` 长度字段也为 0，无法通过 TrainSV 严格的 NOFS v10 加载校验。TrainSV 目前还不能把 SFPK 中列出的模型 ID 映射到时长、Pitch、声学、声码器角色，也不能直接导入整个压缩包。不透明 v3 保留仅适用于模型依赖已经由 TrainSV 支持读取的声库容器引用到的情况。TrainSV 仍无法解码 v3 网络图或张量，也不能对不透明模型执行推理或训练。要实现完整 v3 支持，仍需要可合法访问的模型表示或运行时，并与 Synthesizer V Flat 做端到端验证。
 
+若要单独检查模型文件而不尝试将其加载为声库，可运行 `trainsv inspect-dnni --model /path/to/model.dnni --role acoustic --json-out dnni-report.json`。该命令报告头部、文件大小、SHA-256、抽样字节熵，并在可能时列出 v1/v2 的通用节点结构。高熵样本只能说明其分布与加密、压缩或其他编码相符，不能确定具体机制。即使 v1/v2 容器树解析成功，也不能证明角色架构兼容或能在 Synthesizer V 运行。常规的 `trainsv inspect --voice ...` 现在也会将 v3 模型明确标为“仅可保留”，并显示抽样字节熵。
+
 ## 命令行使用
 
 ### 检查底模
@@ -294,7 +296,9 @@ trainsv finetune \
 
 支持的语言名/代码：`japanese/ja`、`mandarin/zh`、`english/en`、`cantonese/yue`、`spanish/es`。
 
-如果起始声库是共享模型 `info.nofs`，可在 Training 选项卡勾选“保留原声库模型（声学模型除外）”，或在命令行使用 `--preserve-non-acoustic-models --models acoustic`。该模式只训练声学网络，Timing/Pitch 网络不会加载；为了计算波形损失，原声 Vocoder 仍须作为冻结解码器使用。输出 `info.nofs` 会保留原始 Timing、Pitch/F0、Vocoder 的模型 ID 与 DNNI 原始字节，以及原始 duration/F0 嵌入参数，并跳过依赖声码器的自动响度校准；输入范围拟合只作用于声学模型。普通单文件 `voice.nofs` 不支持此模式。训练 WAV 的 F0 提取仍会执行，因为声学模型需要 F0 作为条件输入。
+如果起始声库是普通 `voice.nofs`，只需在 Training 的 “Acoustic training base model (.dnni)” 里选择一个可解析的 DNNI v1/v2 Acoustic 底模；TrainSV 会在读取目标声库时跳过它内部的源 Acoustic，直接加载所选底模进行训练，并把新模型写回输出 `voice.nofs`。普通声库模式只允许替换 Acoustic，Duration/Pitch/Vocoder 自定义依赖仍仅支持共享模型 `info.nofs`。
+
+如果起始声库是共享模型 `info.nofs`，可在 Training 选项卡启用“Train Acoustic from an alternate base”。必须选择一个可解析的 DNNI v1/v2 Acoustic 文件（`--custom-acoustic-dnni`）作为初始化网络，TrainSV 不加载目标声库的源 Acoustic（因此目标 Acoustic 即使是 DNNI v3 也不会被解析）；而是使用所选网络权重在当前数据集上训练，并将训练后的 Acoustic 写为新的输出模型依赖。还必须选择一个可运行的 DNNI v1/v2 Vocoder（`--custom-vocoder-dnni`），因为 Acoustic 的波形损失需要它参与前向计算；不支持用只能原样保留的 DNNI v3 Vocoder 来训练。命令行示例：`trainsv finetune --voice /path/to/info.100.nofs --data /path/to/dataset --language zh --models acoustic --custom-acoustic-dnni /path/to/base-acoustic.dnni --custom-vocoder-dnni /path/to/replacement-vocoder.dnni --preserve-original-models --params all --output out/my-voice`。可在 `--models` 中额外加入 `duration` 和/或 `pitch`。未选中的 Duration/Pitch 依赖保持不变。若所选 Acoustic 的说话人/风格向量宽度与目标 `info.nofs` 不兼容，TrainSV 会在开始训练前给出明确错误；请选择结构兼容的 Acoustic 底模。普通单文件 `voice.nofs` 不支持此模式。
 
 ### 评估训练结果
 
@@ -467,7 +471,7 @@ TrainSV 可导入外部预训练 Pitch 权重（.dnni），CLI 对应 --pitch-ba
 
 ## 自定义非声学 DNNI 模型
 
-Training 的高级设置支持为 info.nofs 声库指定其他声库的 Duration、Pitch/F0 或 Vocoder `.dnni`。这些选项会替换完整的基础模型，不同于仅初始化权重的 Pitch 预训练选项。普通二进制 `voice.nofs` 不支持此功能；Acoustic 声学模型也不能通过自定义选项替换。启用“保留原声库模型（声学模型除外）”时不能同时使用自定义替换。
+Training 的高级设置支持为 info.nofs 声库指定其他声库的 Duration、Pitch/F0 或 Vocoder `.dnni`。这些选项会替换完整的基础模型，不同于仅初始化权重的 Pitch 预训练选项。普通二进制 `voice.nofs` 不支持此功能；Acoustic 声学模型不能通过自定义选项替换。启用“保留原声库模型”后，Duration/Pitch 自定义替换不可用；需要在自定义模型区域选择替代 Vocoder，源声码器会被丢弃。
 
 DNNI v1/v2 会通过相应角色的 TrainSV 模型解析器检查结构；DNNI v3 只支持不透明原样透传，不能保证可训练或可运行。跨声库的音素表、嵌入维度和网络结构可能不兼容。训练输出会创建新的模型引用，不会改写被选作来源的 DNNI 文件。
 
