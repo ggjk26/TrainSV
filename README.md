@@ -56,6 +56,16 @@ trainsv finetune --voice <voice> --data <dataset> --language ja --output <out-vo
 trainsv evaluate --voice <voice> --voice <out-voice> --data <dataset> --language ja --out <eval-directory>
 ```
 
+### Audio-to-MIDI pitch test
+
+Use a clean, preferably isolated vocal recording to create a standard MIDI file that can be imported into Synthesizer V for voicebank pitch testing:
+
+```sh
+trainsv audio-to-midi --audio vocal.wav --output out/vocal.mid --pitch-floor 65 --pitch-ceiling 1100
+```
+
+The converter estimates one monophonic melody from the recording, rounds detected F0 to the nearest semitone, and preserves note timing. It does not transcribe lyrics or reliably separate overlapping singers/instruments. Review the generated notes in Synthesizer V before using them to judge pitch calibration.
+
 For example:
 
 ```sh
