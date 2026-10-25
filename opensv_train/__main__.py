@@ -78,9 +78,20 @@ def finetune(arguments) -> None:
             ("vocoder", arguments.custom_vocoder_dnni),
         ) if path
     }
-    if arguments.preserve_non_acoustic_models and model_overrides:
-        raise SystemExit("custom DNNI overrides cannot be combined with --preserve-non-acoustic-models")
-    if arguments.resume and model_overrides:
+    if arguments.preserve_non_acoustic_models:
+        if unsupported_overrides := set(model_overrides) - {"vocoder"}:
+            raise SystemExit(
+                "--preserve-original-models accepts only --custom-vocoder-dnni; "
+                f"Duration/Pitch replacement is not available in this mode: {', '.join(sorted(unsupported_overrides))}"
+            )
+        if not arguments.custom_vocoder_dnni:
+            raise SystemExit(
+                "--preserve-original-models requires --custom-vocoder-dnni. The source Vocoder is discarded "
+                "and replaced in the output voicebank; Acoustic is kept byte-for-byte but is not loaded for training."
+            )
+    if arguments.resume and model_overrides and not (
+        arguments.preserve_non_acoustic_models and set(model_overrides) == {"vocoder"}
+    ):
         raise SystemExit("custom DNNI overrides cannot be combined with --resume; use a separate run directory")
     if model_overrides and not is_info_voice(arguments.voice):
         raise SystemExit("custom DNNI model files are available only for info.nofs shared-model voicebanks")
@@ -90,9 +101,9 @@ def finetune(arguments) -> None:
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
     if arguments.preserve_non_acoustic_models and set(models) & {"acoustic", "vocoder"}:
-        raise SystemExit("--preserve-original-models keeps the source Acoustic and Vocoder unchanged; select Timing and/or Pitch only")
+        raise SystemExit("--preserve-original-models trains Timing and/or Pitch only; Acoustic is retained but not loaded, and source Vocoder is replaced")
     if arguments.preserve_non_acoustic_models and not (set(models) & {"duration", "pitch"}):
-        raise SystemExit("--preserve-original-models requires --models duration and/or pitch; Acoustic/Vocoder are copied unchanged")
+        raise SystemExit("--preserve-original-models requires --models duration and/or pitch; choose a replacement Vocoder with --custom-vocoder-dnni")
     if arguments.preserve_non_acoustic_models and arguments.vocal_modes is not None:
         raise SystemExit("--preserve-original-models cannot change Acoustic vocal modes because Acoustic is preserved")
     required = set(models)

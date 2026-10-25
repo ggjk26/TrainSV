@@ -293,6 +293,9 @@ def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert '["m_acoustic","m_vocoder"]' in PAGE
     assert "Preserving non-acoustic models requires an existing info.nofs" in PAGE
     assert 'a.push("--preserve-original-models")' in PAGE
+    assert 'a.push("--custom-vocoder-dnni",replacement)' in PAGE
+    assert "source Vocoder is discarded" in PAGE
+    assert "Replacement Vocoder model (.dnni)" in PAGE
     assert "Train Timing and/or Pitch" in PAGE
     root = Path(__file__).resolve().parents[1]
     cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
@@ -305,7 +308,10 @@ def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert 'if not arguments.preserve_non_acoustic_models and hasattr(voice, "pitch")' in cli
     assert "training_models: tuple[str, ...]" in voice
     assert "role not in voice.training_models" in voice
+    assert 'if "duration" not in voice.training_models' in voice
+    assert 'if "pitch" not in voice.training_models' in voice
     assert "Timing and Pitch are not" not in voice
+    assert "--preserve-original-models requires --custom-vocoder-dnni" in cli
     model_tools = (root / "opensv_train" / "model_tools.py").read_text("utf-8")
     assert "_resolve_output_info_path" in model_tools
     assert "refusing to create a models directory under the Windows system/user root" in model_tools
@@ -358,6 +364,27 @@ def test_custom_non_acoustic_dnn_is_available_in_training_and_more_tools():
     assert "model_overrides=model_overrides" in cli
     assert "custom DNNI overrides cannot be combined with --resume" in cli
     assert "model_overrides: dict[str, str | Path] | None = None" in voice
-    assert "custom DNNI overrides cannot be combined with preservation mode" in voice
+    assert "preservation mode accepts only a replacement Vocoder" in voice
+    assert "output_model_overrides" in voice
+    assert "replacement Vocoder" in voice
     assert "replace_info_model" in cli
     assert "Acoustic is intentionally excluded" in model_tools
+
+
+def test_i18n_rows_keep_simplified_chinese_and_japanese_columns_separate():
+    start = PAGE.index("const I18N_ROWS = [")
+    end = PAGE.index("\nconst I18N_MAP", start)
+    block = PAGE[start:end]
+    rows = re.findall(r'\["((?:\\.|[^"\\])*)","((?:\\.|[^"\\])*)","((?:\\.|[^"\\])*)"\]', block)
+    assert len(rows) > 500
+
+    kana = re.compile(r"[\u3040-\u30ff]")
+    cjk = re.compile(r"[\u3400-\u9fff]")
+    bad_chinese_targets = [zh for _, zh, _ in rows if kana.search(zh)]
+    reversed_locale_rows = [
+        (en, zh) for en, zh, _ in rows
+        if cjk.search(en) and not cjk.search(zh) and re.search(r"[A-Za-z]{3,}", zh)
+    ]
+    assert not bad_chinese_targets, bad_chinese_targets[:3]
+    assert not reversed_locale_rows, reversed_locale_rows[:3]
+    assert any(en == "Choose the WAV folder. The filename mode creates LAB labels from space-separated phones; only a final _0/_1 retake suffix is removed." and cjk.search(zh) for en, zh, _ in rows)

@@ -296,7 +296,7 @@ trainsv finetune \
 
 支持的语言名/代码：`japanese/ja`、`mandarin/zh`、`english/en`、`cantonese/yue`、`spanish/es`。
 
-如果起始声库是共享模型 `info.nofs`，可在 Training 选项卡勾选“保留原声库模型”，并选择训练 Timing 和/或 Pitch；命令行可使用 `--preserve-original-models --models duration` 或 `--preserve-original-models --models pitch`。未选中的模型（包括 Acoustic 与 Vocoder）会按原始 DNNI 字节保留，不加载、不校验，也不会因为其 DNNI v3 不透明而阻断训练。此模式不能训练 Acoustic/Vocoder，因为波形训练需要可运行的 Acoustic 与 Vocoder 网络。普通单文件 `voice.nofs` 不支持此模式。
+如果起始声库是共享模型 `info.nofs`，可在 Training 选项卡勾选“保留原声库模型”，选择训练 Timing 和/或 Pitch，并在“替代声码器模型（.dnni）”中选择新的声码器。命令行可使用 `--preserve-original-models --models duration --custom-vocoder-dnni <替代模型.dnni>`，或将 `duration` 换为 `pitch`。源 Acoustic 不会在训练时加载或校验，并会在输出声库中按原始字节保留，因为有效声库仍需要 Acoustic 依赖；源 Vocoder 则会被丢弃，输出改为引用所选的替代 Vocoder，因此最终合成不会再调用原声码器。未选中的 Duration/Pitch 依赖保持不变。若替代模型为 DNNI v3，TrainSV 只能原样复制，无法验证运行时兼容性，需要在 Synthesizer V 中实际测试。普通单文件 `voice.nofs` 不支持此模式。
 
 ### 评估训练结果
 
@@ -469,7 +469,7 @@ TrainSV 可导入外部预训练 Pitch 权重（.dnni），CLI 对应 --pitch-ba
 
 ## 自定义非声学 DNNI 模型
 
-Training 的高级设置支持为 info.nofs 声库指定其他声库的 Duration、Pitch/F0 或 Vocoder `.dnni`。这些选项会替换完整的基础模型，不同于仅初始化权重的 Pitch 预训练选项。普通二进制 `voice.nofs` 不支持此功能；Acoustic 声学模型也不能通过自定义选项替换。启用“保留原声库模型（声学模型除外）”时不能同时使用自定义替换。
+Training 的高级设置支持为 info.nofs 声库指定其他声库的 Duration、Pitch/F0 或 Vocoder `.dnni`。这些选项会替换完整的基础模型，不同于仅初始化权重的 Pitch 预训练选项。普通二进制 `voice.nofs` 不支持此功能；Acoustic 声学模型不能通过自定义选项替换。启用“保留原声库模型”后，Duration/Pitch 自定义替换不可用；需要在自定义模型区域选择替代 Vocoder，源声码器会被丢弃。
 
 DNNI v1/v2 会通过相应角色的 TrainSV 模型解析器检查结构；DNNI v3 只支持不透明原样透传，不能保证可训练或可运行。跨声库的音素表、嵌入维度和网络结构可能不兼容。训练输出会创建新的模型引用，不会改写被选作来源的 DNNI 文件。
 

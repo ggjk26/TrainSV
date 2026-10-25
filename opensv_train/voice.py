@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import torch
@@ -24,6 +24,7 @@ class VoiceFiles:
     info: InfoVoice | None = None
     preserve_non_acoustic_models: bool = False
     training_models: tuple[str, ...] = ()
+    output_model_overrides: dict[str, Path] = field(default_factory=dict)
 
     @property
     def vocal_modes(self) -> list[str]:
@@ -95,8 +96,12 @@ def load_voice(
 ) -> VoiceFiles:
     path = Path(path).expanduser()
     model_overrides = dict(model_overrides or {})
-    if model_overrides and preserve_non_acoustic_models:
-        raise ValueError("custom DNNI overrides cannot be combined with preservation mode")
+    output_model_overrides: dict[str, Path] = {}
+    if preserve_non_acoustic_models and (unknown := set(model_overrides) - {"vocoder"}):
+        raise ValueError(
+            "preservation mode accepts only a replacement Vocoder; Duration/Pitch overrides cannot be combined "
+            f"with it (unsupported roles: {', '.join(sorted(unknown))})"
+        )
     if unknown := set(model_overrides) - {"duration", "pitch", "vocoder"}:
         raise ValueError(f"custom DNNI overrides support duration, pitch, and vocoder only; unsupported roles: {', '.join(sorted(unknown))}")
     if is_info_voice(path):
@@ -115,7 +120,30 @@ def load_voice(
         else:
             roles = ROLES
         models = {role: _load_info_model(role, info.models[role]) for role in roles}
-        if model_overrides:
+        if model_overrides and preserve_non_acoustic_models:
+            # The source Vocoder is intentionally not loaded. Its replacement is
+            # validated as a role-specific DNNI (v1/v2) or copied opaquely (v3)
+            # and written as an output dependency only; Timing/Pitch training does
+            # not invoke it. The opaque source Acoustic remains untouched because
+            # an info.nofs voicebank still requires an Acoustic model reference.
+            for role, override_path in model_overrides.items():
+                external = Path(override_path).expanduser()
+                if external.suffix.lower() != ".dnni" or not external.is_file():
+                    raise FileNotFoundError(f"replacement {role} model must be an existing .dnni file: {external}")
+                data = external.read_bytes()
+                from .model_tools import _check_model_role
+                try:
+                    version, role_checked = _check_model_role(data, role)
+                except (ValueError, OSError, RuntimeError) as error:
+                    raise ValueError(f"replacement {role} DNNI '{external}' failed validation: {error}") from error
+                if not role_checked:
+                    print(
+                        f"Warning: replacement Vocoder DNNI v{version} is copied opaquely; "
+                        "TrainSV cannot validate runtime compatibility. Test the resulting voice in Synthesizer V.",
+                        flush=True,
+                    )
+                output_model_overrides[role] = external
+        elif model_overrides:
             for role, override_path in model_overrides.items():
                 external = Path(override_path).expanduser()
                 if external.suffix.lower() != ".dnni" or not external.is_file():
@@ -126,6 +154,7 @@ def load_voice(
             path, models, metadata, info=info,
             preserve_non_acoustic_models=preserve_non_acoustic_models,
             training_models=tuple(training_models or (("acoustic",) if preserve_non_acoustic_models else ROLES)),
+            output_model_overrides=output_model_overrides,
         )
     if preserve_non_acoustic_models:
         raise ValueError("preserving non-acoustic models is available only for info.nofs shared-model voicebanks")
@@ -164,14 +193,33 @@ def write_info_voice(
     models_root = database_directory.parent.parent / "models"
     document = info.to_json()
     if voice.preserve_non_acoustic_models:
-        # Keep source embedding bytes/IDs intact for models that were not loaded.
-        document["duration_style"] = info.info["duration_style"]
-        document["f0_style"] = info.info["f0_style"]
+        # Keep embedding data unchanged only for model roles that were not trained.
+        # Timing/Pitch training must export its updated per-voice vectors.
+        if "duration" not in voice.training_models:
+            document["duration_style"] = info.info["duration_style"]
+        if "pitch" not in voice.training_models:
+            document["f0_style"] = info.info["f0_style"]
     for role in ROLES:
         if voice.preserve_non_acoustic_models and role not in voice.training_models:
-            # Copy the original opaque model bytes when the output database is
-            # in a different Synthesizer V installation. Never parse, instantiate,
-            # validate or reserialize this network in preservation mode.
+            if role in voice.output_model_overrides:
+                # Replace the source dependency without constructing it as a model
+                # or allowing the original Vocoder bytes to leak into the output.
+                data = Path(voice.output_model_overrides[role]).read_bytes()
+                reference = model_hash(data)
+                target = models_root / INFO_KINDS[role] / f"{reference}.dnni"
+                if not target.exists():
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
+                elif target.read_bytes() != data:
+                    raise ValueError(
+                        f"replacement model destination differs from the selected model: {target}; "
+                        "refusing to overwrite or reference different bytes"
+                    )
+                document[INFO_KINDS[role]] = reference
+                continue
+            # Unselected model dependencies stay byte-identical and are never
+            # parsed, instantiated or reserialized. The source Vocoder path is
+            # handled above when a replacement was chosen for output.
             reference = info.info[INFO_KINDS[role]]
             target = models_root / INFO_KINDS[role] / f"{reference}.dnni"
             original_bytes = info.models[role].read_bytes()
