@@ -1562,10 +1562,10 @@ const B={
     return{cmd:"convert-dict",label:"Converting the dictionary",args:a,p}},
   audioMidi(){const p=[],source=val("am_input"),output=val("am_output");
     if(!source)p.push("Choose a source audio file.");
-    else if(!/\\.(wav|flac|aiff|aif)$/i.test(source))p.push("Choose a WAV, FLAC or AIFF audio file.");
+    else if(!/\.(wav|flac|aiff|aif)$/i.test(source))p.push("Choose a WAV, FLAC or AIFF audio file.");
     if(!output)p.push("Choose where to save the MIDI file.");
-    else if(!/\\.(mid|midi)$/i.test(output))p.push("The output filename must end in .mid or .midi.");
-    if(source&&output&&source.replace(/\\\\/g,"/").toLowerCase()===output.replace(/\\\\/g,"/").toLowerCase())p.push("MIDI output must not overwrite the source audio.");
+    else if(!/\.(mid|midi)$/i.test(output))p.push("The output filename must end in .mid or .midi.");
+    if(source&&output&&source.replace(/\\/g,"/").toLowerCase()===output.replace(/\\/g,"/").toLowerCase())p.push("MIDI output must not overwrite the source audio.");
     const a=["--input",source,"--output",output];
     [["--pitch-floor","am_floor"],["--pitch-ceiling","am_ceiling"],["--voicing-threshold","am_voicing"],["--min-note-ms","am_min_note"],["--median-window","am_median"],["--a4-hz","am_a4"],["--transpose-semitones","am_transpose"],["--tempo-bpm","am_tempo"]].forEach(([flag,id])=>addOpt(a,p,flag,id));
     const floor=Number(val("am_floor")),ceiling=Number(val("am_ceiling")),threshold=Number(val("am_voicing")),minimum=Number(val("am_min_note")),window=Number(val("am_median")),a4=Number(val("am_a4")),transpose=Number(val("am_transpose")),tempo=Number(val("am_tempo"));
