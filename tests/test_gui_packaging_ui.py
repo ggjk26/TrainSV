@@ -298,7 +298,7 @@ def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert "Replacement Vocoder model (.dnni)" in PAGE
     assert "Train Acoustic from an alternate base" in PAGE
     assert 'data-id="t_custom_acoustic_dnni"' in PAGE
-    assert "the target Acoustic is never loaded" in PAGE
+    assert "replaces the target Acoustic before loading" in PAGE
     assert 'a.push("--custom-acoustic-dnni",acousticBase)' in PAGE
     root = Path(__file__).resolve().parents[1]
     cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
