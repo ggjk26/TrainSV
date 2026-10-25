@@ -90,6 +90,50 @@ def test_embedded_webui_javascript_has_valid_syntax():
 
 
 
+
+def test_audio_to_midi_accepts_windows_audio_and_midi_extensions():
+    # A literal dot must be escaped once in JavaScript regex source. The old
+    # double-backslash pattern incorrectly required a backslash before an
+    # arbitrary character and rejected valid .wav/.mid paths.
+    assert r'else if(!/\.(wav|flac|aiff|aif)$/i.test(source))' in PAGE
+    assert r'else if(!/\.(mid|midi)$/i.test(output))' in PAGE
+    assert r'else if(!/\\.(wav|flac|aiff|aif)$/i.test(source))' not in PAGE
+    assert r'else if(!/\\.(mid|midi)$/i.test(output))' not in PAGE
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is not installed; CI provides it for this check.")
+    script_content = r"""
+const audioExt = /\.(wav|flac|aiff|aif)$/i;
+const midiExt = /\.(mid|midi)$/i;
+for (const path of [
+  "C:\\BBDown\\Sängen om Reaktionen.wav",
+  "C:\\录音\\测试.FLAC",
+  "C:\\音频\\sample.aiff"
+]) {
+  if (!audioExt.test(path)) throw new Error("Audio path rejected: " + path);
+}
+for (const path of [
+  "C:\\Users\\admin\\TrainSV-main\\a.mid",
+  "C:\\输出\\voice.MIDI"
+]) {
+  if (!midiExt.test(path)) throw new Error("MIDI path rejected: " + path);
+}
+if (audioExt.test("C:\\BBDown\\wrong.mp3")) throw new Error("Unsupported audio extension accepted");
+if (midiExt.test("C:\\output\\wrong.wav")) throw new Error("Unsupported MIDI extension accepted");
+"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        script = Path(temp_dir) / "audio-midi-extension-check.js"
+        script.write_text(script_content, encoding="utf-8")
+        result = subprocess.run(
+            [node, str(script)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr or result.stdout
+
+
 def test_svpk_output_suggestion_preserves_unicode_name_and_manual_paths():
     assert "function packageFileStem(name)" in PAGE
     assert "function suggestSvpkOutput()" in PAGE
