@@ -61,7 +61,8 @@ def test_preservation_mode_loads_only_selected_roles_and_keeps_unselected_dnnies
 
     assert "training_models: tuple[str, ...] | None = None" in voice
     assert "roles_to_load = set(selected)" in voice
-    assert 'if roles_to_load & {"acoustic", "vocoder"}' in voice
+    assert 'roles_to_load.update(("acoustic", "vocoder"))' in voice
+    assert 'preservation mode must train Acoustic from the selected alternate base model' in voice
     assert "role not in voice.training_models" in voice
     assert "original_bytes = info.models[role].read_bytes()" in voice
     assert '"--preserve-original-models"' in cli
