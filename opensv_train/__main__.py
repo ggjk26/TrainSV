@@ -26,6 +26,7 @@ from .packaging import build_svpk
 from .sfpk import build_sfpk
 from .timbre import summarize_timbre
 from .model_tools import replace_info_models
+from .audio_to_midi import convert_audio_to_midi
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -695,6 +696,34 @@ def replace_model_command(arguments) -> None:
             print(f"{role}: passed TrainSV structural validation; Synthesizer V runtime compatibility is not guaranteed.")
 
 
+
+def audio_to_midi_command(arguments) -> None:
+    try:
+        report = convert_audio_to_midi(
+            arguments.audio,
+            arguments.output,
+            pitch_floor=arguments.pitch_floor,
+            pitch_ceiling=arguments.pitch_ceiling,
+            voicing_threshold=arguments.voicing_threshold,
+            min_note_ms=arguments.min_note_ms,
+            bridge_gap_ms=arguments.bridge_gap_ms,
+            smoothing_frames=arguments.smoothing_frames,
+            transpose_semitones=arguments.transpose_semitones,
+            tempo_bpm=arguments.tempo,
+        )
+    except (OSError, ValueError, RuntimeError) as error:
+        raise SystemExit(f"audio-to-MIDI conversion failed: {error}") from error
+    print(f"Saved MIDI: {report['output']}")
+    print(
+        f"Extracted {report['notes']} notes from {report['duration_seconds']:.2f} s; "
+        f"MIDI pitch range {report['lowest_note']}–{report['highest_note']}."
+    )
+    print(
+        f"Pitch tracker range {report['pitch_floor']:g}–{report['pitch_ceiling']:g} Hz; "
+        f"tempo map {report['tempo_bpm']:g} BPM. Review the notes in Synthesizer V before judging calibration."
+    )
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trainsv")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -822,6 +851,19 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--out", help="write metrics.json and, per held-out phrase, the recording next to each voice's render (recorded timing and pitch)")
     command.add_argument("--max-phrases", type=int, default=4, help="held-out phrases rendered to --out")
     command.set_defaults(handler=evaluate)
+
+    command = commands.add_parser("audio-to-midi", help="extract a monophonic singing melody into a MIDI file for voicebank testing")
+    command.add_argument("--audio", required=True, help="input vocal recording, preferably an isolated WAV or FLAC")
+    command.add_argument("--output", required=True, help="output .mid or .midi file")
+    command.add_argument("--pitch-floor", type=float, default=65.0, help="minimum tracked singing pitch in Hz")
+    command.add_argument("--pitch-ceiling", type=float, default=1100.0, help="maximum tracked singing pitch in Hz")
+    command.add_argument("--voicing-threshold", type=float, default=0.45, help="Praat autocorrelation voicing threshold (0, 1]")
+    command.add_argument("--min-note-ms", type=float, default=65.0, help="merge very short tracking glitches below this note duration")
+    command.add_argument("--bridge-gap-ms", type=float, default=40.0, help="bridge a short unvoiced gap when the same note occurs on both sides")
+    command.add_argument("--smoothing-frames", type=int, default=5, help="median smoothing window in 10 ms pitch frames (1–31)")
+    command.add_argument("--transpose-semitones", type=float, default=0.0, help="transpose the extracted MIDI notes by -24 to +24 semitones")
+    command.add_argument("--tempo", type=float, default=120.0, help="MIDI tempo-map BPM; note timing remains aligned to the recording")
+    command.set_defaults(handler=audio_to_midi_command)
 
     command = commands.add_parser("synthesize-dataset", help="render a labelled DiffSinger-style dataset with a voice")
     command.add_argument("--voice", required=True)
