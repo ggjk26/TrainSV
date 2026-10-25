@@ -238,6 +238,7 @@ Pitch 面板单独管理底模 Pitch 初始化或兼容 .dnni 导入，以及旋
 
 - 普通底模输出为更新后的 `voice.nofs` 文件。
 - `info.<版本>.nofs` 共享模型底模输出为数据库目录和相关模型文件。
+- 默认仅将输出声学模型的 DNNI 容器格式转换为 v2（其他模型角色保留底模版本）；CLI 可用 `--acoustic-dnni-version 1` 回退旧格式。该转换只改变容器编码，不改变网络架构或训练权重，因此本身不会改善音质。往返解析测试不能替代在目标 Synthesizer V 版本中实际打开与渲染验证。
 - 保留原始底模、数据集和训练运行目录，避免覆盖唯一副本。
 
 #### Flat 声库包含 DNNI v3 依赖时
@@ -289,6 +290,8 @@ trainsv finetune \
 ```
 
 支持的语言名/代码：`japanese/ja`、`mandarin/zh`、`english/en`、`cantonese/yue`、`spanish/es`。
+
+如果起始声库是共享模型 `info.nofs`，可在 Training 选项卡勾选“保留原声库模型（声学模型除外）”，或在命令行使用 `--preserve-non-acoustic-models --models acoustic`。该模式只训练声学网络，Timing/Pitch 网络不会加载；为了计算波形损失，原声 Vocoder 仍须作为冻结解码器使用。输出 `info.nofs` 会保留原始 Timing、Pitch/F0、Vocoder 的模型 ID 与 DNNI 原始字节，以及原始 duration/F0 嵌入参数，并跳过依赖声码器的自动响度校准；输入范围拟合只作用于声学模型。普通单文件 `voice.nofs` 不支持此模式。训练 WAV 的 F0 提取仍会执行，因为声学模型需要 F0 作为条件输入。
 
 ### 评估训练结果
 
@@ -344,7 +347,7 @@ my-dataset/
 trainsv audit-data --data my-dataset --check-audio --json-out runs/dataset-audit.json
 ```
 
-默认会提示少于 3 份不同录音包含的音素，以及少于 2 份不同录音包含的相邻非静音音素组合。`--short-phone-ms` 可调整过短音素阈值（默认 20 毫秒）；`--min-phone-recordings` 和 `--min-transition-recordings` 可调整覆盖率阈值。使用 `--strict` 时，若发现缺失 WAV、无效标注行、重复名称或无法读取的 WAV 文件头，将以状态码 2 退出。该命令只读数据集，不会伪造样本或改写对齐。罕见过渡提示是需要进一步检查的线索，并不等于模型一定会发音错误。 WebUI 数据集页面也提供“检查缺失样本与音素过渡”按钮，可查看缺失 WAV、无效行、稀有音素/相邻音素组合及过短音素示例。训练高级选项新增“音素过渡强调”和“过渡范围”：`--transition-weight` 默认 `1.0`（关闭），`--transition-frames` 以 5 毫秒帧设置边界两侧范围。建议先完成数据审计，再谨慎尝试权重 `1.25`、范围 `2`。这只调整训练损失中非静音音素交界附近的权重，不会对生成音频做模糊平滑；验证评分仍保持不加权。
+默认会提示少于 3 份不同录音包含的音素，以及少于 2 份不同录音包含的相邻非静音音素组合。`--short-phone-ms` 可调整过短音素阈值（默认 20 毫秒）；`--min-phone-recordings` 和 `--min-transition-recordings` 可调整覆盖率阈值。使用 `--strict` 时，若发现缺失 WAV、无效标注行、重复名称或无法读取的 WAV 文件头，将以状态码 2 退出。该命令只读数据集，不会伪造样本或改写对齐。罕见过渡提示是需要进一步检查的线索，并不等于模型一定会发音错误。 WebUI 数据集页面也提供“检查缺失样本与音素过渡”按钮，可查看缺失 WAV、无效行、稀有音素/相邻音素组合及过短音素示例。训练高级选项新增“音素过渡强调”和“过渡范围”：`--transition-weight` 默认 `1.0`（关闭），`--transition-frames` 以 5 毫秒帧设置边界两侧范围。建议先完成数据审计，再谨慎尝试权重 `1.25`、范围 `2`。这只调整训练损失中非静音音素交界附近的权重，不会对生成音频做模糊平滑；验证评分仍保持不加权。训练采样还会以 `--transition-sampling-probability`（默认 `0.5`）的概率围绕有效的非静音音素边界取窗，其余仍均匀随机采样；被选中的过渡窗口会额外计算边界中心约 80 ms 片段的多分辨率频谱损失，权重由 `--transition-local-weight` 控制（默认 `0.25`）。对应参数设为 `0` 即可分别关闭。训练直接比较模型输出与真实参考 WAV，不会对输出做平滑滤镜；这些默认值仍需用相同留出短语进行 A/B 试听验证。
 
 ## 其他工具
 
@@ -457,3 +460,20 @@ Sensitive 预设使用 35–1800 Hz 和 0.30 阈值，并以 15 ms 轻度平滑�
 CLI 的 finetune 和 evaluate 支持 --pitch-smoothing-hz、--pitch-melody-weight 和 --pitch-motion-weight，默认分别为 3 Hz、1.0 和 1.0。Pitch 训练需要有效的 note_seq / note_dur 与词边界标注；如果希望改善整体音色，还需训练并验证 Sound / Acoustic。
 
 TrainSV 可导入外部预训练 Pitch 权重（.dnni），CLI 对应 --pitch-base-model <path-to-pitch.dnni>。程序会严格检查网络架构、音素表、归一化缓冲区、稀疏结构与参数形状；仅在兼容时复制非 speaker 参数，保留目标声库自己的 speaker 向量。仓库**尚未随包附带经过验证的通用神经 Pitch 权重**，不同架构或音素表也不会因此自动兼容。
+
+
+## 自定义非声学 DNNI 模型
+
+Training 的高级设置支持为 info.nofs 声库指定其他声库的 Duration、Pitch/F0 或 Vocoder `.dnni`。这些选项会替换完整的基础模型，不同于仅初始化权重的 Pitch 预训练选项。普通二进制 `voice.nofs` 不支持此功能；Acoustic 声学模型也不能通过自定义选项替换。启用“保留原声库模型（声学模型除外）”时不能同时使用自定义替换。
+
+DNNI v1/v2 会通过相应角色的 TrainSV 模型解析器检查结构；DNNI v3 只支持不透明原样透传，不能保证可训练或可运行。跨声库的音素表、嵌入维度和网络结构可能不兼容。训练输出会创建新的模型引用，不会改写被选作来源的 DNNI 文件。
+
+## 批量替换已有 info.nofs 的非声学模型
+
+GUI“更多工具”中的“批量替换非声学 DNNI 模型”可以在一次操作中替换 Duration、Pitch/F0、Vocoder 中的任意组合，Acoustic 声学模型始终不变。请选择源 JSON `info.nofs`、**Synthesizer V 安装目录下直接包含 duration、f0、acoustic、vocoder 子目录的 models 文件夹**、一项或多项替换用的 `.dnni` 文件，以及一个独立且可写的输出文件夹。
+
+TrainSV 会在输出文件夹内自动创建 `database/voices/<声库名>/info.<版本>.nofs` 和 `database/models/`。这样不会根据浅层的输出文件路径推算出 `C:\\Users\\models`，也不会把模型复制进 Synthesizer V 已安装的 models 文件夹。**请勿将已安装的 models 文件夹作为输出文件夹**。
+
+工具会先验证源模型引用和所选替换文件；未替换的模型保留原始字节，替换模型按内容生成新 ID，并在写入后重新检查所有引用。源 `info.nofs` 和源 DNNI 不会被覆盖。如果仍需使用命令行指定单独的 `info.nofs` 文件，路径必须位于 `.../voices/<声库名>/info.<版本>.nofs` 的目录结构中，否则程序会拒绝写入，而不是尝试创建系统级的 `models` 目录。
+
+DNNI v1/v2 会由对应角色的 TrainSV 解析器检查结构；DNNI v3 仅原样复制，不能确认其内部角色、音素表或运行兼容性。

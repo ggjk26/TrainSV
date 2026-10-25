@@ -36,6 +36,9 @@ def type_hash(name: str, seed: int) -> int:
 
 
 _HASHED_NAMES = {type_hash(name, seed): name for name in KNOWN_TYPES for seed in HASH_SEEDS}
+# Stable known seed for conversion from literal-tag V1 files to hashed V2 files.
+# Actual runtime loading still needs validation in the target Synthesizer V release.
+DNNI_V2_OUTPUT_SEED = HASH_SEEDS[0]
 
 
 @dataclass
@@ -85,6 +88,37 @@ class DnniFile:
         _serialize_node(self.root, self.version, parts)
         return b"".join(parts)
 
+    def as_version(self, version: int, *, seed: int = DNNI_V2_OUTPUT_SEED) -> DnniFile:
+        """Return a copy encoded with another supported DNNI container version.
+
+        V1 stores literal ASCII type tags; V2 stores type hashes and an encoded
+        child count. This converts both fields. It does not change model
+        architecture or weights; runtime compatibility must still be tested.
+        """
+        if version not in (1, 2):
+            raise ValueError(f"unsupported DNNI version {version}")
+        if version == self.version:
+            return self
+        if version == 2 and seed not in HASH_SEEDS:
+            raise ValueError("DNNI v2 output seed must be one of the recognized hash seeds")
+
+        def convert(node: Node) -> Node:
+            if node.type not in KNOWN_TYPES:
+                raise ValueError(f"cannot convert unknown DNNI node type {node.type!r} to version {version}")
+            if version == 2:
+                type_id = type_hash(node.type, seed)
+            else:
+                encoded = node.type.encode("ascii")
+                if len(encoded) > 8:
+                    raise ValueError(f"DNNI v1 type tag is longer than 8 bytes: {node.type!r}")
+                type_id = int.from_bytes(encoded.ljust(8, bytes(1)), "little")
+            return Node(
+                marker=node.marker, type_id=type_id, type=node.type,
+                payload=node.payload, children=[convert(child) for child in node.children],
+            )
+
+        return DnniFile(version, convert(self.root))
+
 
 @dataclass(frozen=True)
 class OpaqueDnniFile:
@@ -111,6 +145,15 @@ class OpaqueDnniFile:
     def serialize(self) -> bytes:
         """Return the exact original bytes; never rewrite an opaque payload."""
         return self.data
+
+
+def serialize_model_for_output(model: DnniFile | OpaqueDnniFile, role: str, acoustic_dnni_version: int = 2) -> bytes:
+    """Serialize supported models, preserving opaque dependencies byte-for-byte."""
+    if isinstance(model, OpaqueDnniFile):
+        return model.serialize()
+    if role == "acoustic":
+        return model.as_version(acoustic_dnni_version).serialize()
+    return model.serialize()
 
 
 def _resolve_type(type_bytes: bytes, type_id: int, version: int) -> str:

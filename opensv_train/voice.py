@@ -8,7 +8,7 @@ from pathlib import Path
 
 import torch
 
-from .dnni import DnniFile, OpaqueDnniFile
+from .dnni import DnniFile, OpaqueDnniFile, serialize_model_for_output
 from .nofs import InfoVoice, NofsFile, is_info_voice
 
 ROLES = ("duration", "pitch", "acoustic", "vocoder")
@@ -22,6 +22,7 @@ class VoiceFiles:
     metadata: dict[str, str]
     nofs: NofsFile | None = None
     info: InfoVoice | None = None
+    preserve_non_acoustic_models: bool = False
 
     @property
     def vocal_modes(self) -> list[str]:
@@ -85,26 +86,56 @@ class UnavailablePitchModel(UnavailableDNNIModel):
         )
 
 
-def load_voice(path) -> VoiceFiles:
+def load_voice(
+    path,
+    preserve_non_acoustic_models: bool = False,
+    model_overrides: dict[str, str | Path] | None = None,
+) -> VoiceFiles:
     path = Path(path).expanduser()
+    model_overrides = dict(model_overrides or {})
+    if model_overrides and preserve_non_acoustic_models:
+        raise ValueError("custom DNNI overrides cannot be combined with preservation mode")
+    if unknown := set(model_overrides) - {"duration", "pitch", "vocoder"}:
+        raise ValueError(f"custom DNNI overrides support duration, pitch, and vocoder only; unsupported roles: {', '.join(sorted(unknown))}")
     if is_info_voice(path):
         info = InfoVoice.load(path)
-        models = {role: _load_info_model(role, info.models[role]) for role in ROLES}
+        # Preserve-mode deliberately avoids loading/validating the untouched
+        # Duration and Pitch payloads, including opaque DNNI v3 dependencies.
+        roles = ("acoustic", "vocoder") if preserve_non_acoustic_models else ROLES
+        models = {role: _load_info_model(role, info.models[role]) for role in roles}
+        if model_overrides:
+            for role, override_path in model_overrides.items():
+                external = Path(override_path).expanduser()
+                if external.suffix.lower() != ".dnni" or not external.is_file():
+                    raise FileNotFoundError(f"custom {role} model must be an existing .dnni file: {external}")
+                models[role] = _load_model_bytes(external.read_bytes())
         metadata = {".name": info.info.get("name", ""), ".language": info.info.get("language", "")}
-        return VoiceFiles(path, models, metadata, info=info)
+        return VoiceFiles(
+            path, models, metadata, info=info,
+            preserve_non_acoustic_models=preserve_non_acoustic_models,
+        )
+    if preserve_non_acoustic_models:
+        raise ValueError("preserving non-acoustic models is available only for info.nofs shared-model voicebanks")
+    if model_overrides:
+        raise ValueError("custom DNNI model files are supported only for info.nofs shared-model voicebanks")
     nofs = NofsFile.load(path)
     keys = nofs.model_keys()
     models = {role: _load_model_bytes(nofs.read(keys[role])) for role in ROLES}
     return VoiceFiles(path, models, nofs.metadata(), nofs=nofs)
 
-
 def model_hash(data: bytes) -> str:
     return hashlib.md5(data).hexdigest()
 
 
-def write_nofs_voice(voice: VoiceFiles, output: Path, name: str | None = None) -> Path:
+def write_nofs_voice(
+    voice: VoiceFiles, output: Path, name: str | None = None,
+    acoustic_dnni_version: int = 2,
+) -> Path:
     keys = voice.nofs.model_keys()
-    replacements = {keys[role]: voice.models[role].serialize() for role in ROLES}
+    replacements = {
+        keys[role]: serialize_model_for_output(voice.models[role], role, acoustic_dnni_version)
+        for role in ROLES
+    }
     if name is not None:
         replacements[b".name"] = name.encode("utf-8")
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -112,12 +143,36 @@ def write_nofs_voice(voice: VoiceFiles, output: Path, name: str | None = None) -
     return output
 
 
-def write_info_voice(voice: VoiceFiles, database_directory: Path, version: str, name: str | None = None) -> Path:
+def write_info_voice(
+    voice: VoiceFiles, database_directory: Path, version: str, name: str | None = None,
+    acoustic_dnni_version: int = 2,
+) -> Path:
     info = voice.info
     models_root = database_directory.parent.parent / "models"
     document = info.to_json()
+    if voice.preserve_non_acoustic_models:
+        # Keep source embedding bytes/IDs intact for models that were not loaded.
+        document["duration_style"] = info.info["duration_style"]
+        document["f0_style"] = info.info["f0_style"]
     for role in ROLES:
-        data = voice.models[role].serialize()
+        if voice.preserve_non_acoustic_models and role != "acoustic":
+            # Copy the original opaque model bytes when the output database is
+            # in a different Synthesizer V installation. Never parse, instantiate,
+            # validate or reserialize this network in preservation mode.
+            reference = info.info[INFO_KINDS[role]]
+            target = models_root / INFO_KINDS[role] / f"{reference}.dnni"
+            original_bytes = info.models[role].read_bytes()
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(original_bytes)
+            elif target.read_bytes() != original_bytes:
+                raise ValueError(
+                    f"existing preserved model differs from the source model: {target}; "
+                    "refusing to overwrite or reference different bytes"
+                )
+            document[INFO_KINDS[role]] = reference
+            continue
+        data = serialize_model_for_output(voice.models[role], role, acoustic_dnni_version)
         original = info.models[role]
         reference = original.stem if data == original.read_bytes() else model_hash(data)
         target = models_root / INFO_KINDS[role] / f"{reference}.dnni"
@@ -145,6 +200,25 @@ class Voice(torch.nn.Module):
 
         self.files = files
         info = files.info
+        if files.preserve_non_acoustic_models:
+            if info is None:
+                raise ValueError("preserving non-acoustic models requires an info.nofs voicebank")
+            acoustic_file = files.models["acoustic"]
+            vocoder_file = files.models["vocoder"]
+            # This loss renders predicted audio; the acoustic model and frozen
+            # decoder still need executable network payloads. Other roles can
+            # Timing and Pitch are not instantiated in this mode; they remain opaque and untouched in the source info voice.
+            if isinstance(acoustic_file, OpaqueDnniFile):
+                raise ValueError("acoustic training is unavailable because the source Acoustic DNNI v3 payload is opaque")
+            if isinstance(vocoder_file, OpaqueDnniFile):
+                raise ValueError("acoustic waveform training requires a runnable Vocoder; the source Vocoder DNNI v3 payload is opaque")
+            self.acoustic = AcousticModel(
+                acoustic_file, list(info.vocal_modes), info.acoustic_speaker,
+                info.default_style, list(info.vocal_modes.values()),
+            )
+            self.vocoder = Vocoder(vocoder_file)
+            return
+
         if info is None:
             duration_file = files.models["duration"]
             pitch_file = files.models["pitch"]
@@ -165,27 +239,38 @@ class Voice(torch.nn.Module):
             self.vocoder = UnavailableDNNIModel("vocoder", vocoder_file.version) if isinstance(vocoder_file, OpaqueDnniFile) else Vocoder(vocoder_file)
 
     @classmethod
-    def load(cls, path) -> "Voice":
-        return cls(load_voice(path))
+    def load(
+        cls, path, preserve_non_acoustic_models: bool = False,
+        model_overrides: dict[str, str | Path] | None = None,
+    ) -> "Voice":
+        return cls(load_voice(
+            path,
+            preserve_non_acoustic_models=preserve_non_acoustic_models,
+            model_overrides=model_overrides,
+        ))
 
     @property
     def models(self) -> dict[str, torch.nn.Module]:
-        return {"duration": self.duration, "pitch": self.pitch, "acoustic": self.acoustic, "vocoder": self.vocoder}
+        return {role: getattr(self, role) for role in ROLES if hasattr(self, role)}
 
     def export(self) -> VoiceFiles:
         from .layers import export_parameters
 
         for role, model in self.models.items():
+            if self.files.preserve_non_acoustic_models and role != "acoustic":
+                continue
             if not getattr(model, "supported", True):
                 continue
             export_parameters(model)
         info = self.files.info
         if info is not None:
-            if getattr(self.duration, "supported", True):
+            # Preserve mode leaves duration and Pitch embeddings in the source
+            # descriptor; only acoustic embeddings are copied from the trainer.
+            if hasattr(self, "duration") and getattr(self.duration, "supported", True):
                 info.duration_voice = self.duration.voice.detach().cpu().numpy()
-            if getattr(self.pitch, "supported", True):
+            if hasattr(self, "pitch") and getattr(self.pitch, "supported", True):
                 info.pitch_speaker = self.pitch.speaker.detach().cpu().numpy()
-            if getattr(self.acoustic, "supported", True):
+            if hasattr(self, "acoustic") and getattr(self.acoustic, "supported", True):
                 info.acoustic_speaker = self.acoustic.speaker.detach().cpu().numpy()
                 info.default_style = self.acoustic.default_style.detach().cpu().numpy()
                 info.vocal_modes = {name: style.detach().cpu().numpy() for name, style in zip(self.acoustic.vocal_modes, self.acoustic.mode_styles)}
@@ -193,8 +278,6 @@ class Voice(torch.nn.Module):
 
     def set_vocal_modes(self, names: list[str]) -> None:
         acoustic = self.acoustic
-        if not getattr(acoustic, "supported", True):
-            raise ValueError(getattr(acoustic, "reason", "the Acoustic model is unsupported"))
         if names == acoustic.vocal_modes:
             return
         if self.files.info is None:
@@ -205,12 +288,18 @@ class Voice(torch.nn.Module):
         )
         acoustic.vocal_modes = list(names)
 
-    def save(self, output, name: str | None = None, version: str | None = None) -> Path:
+    def save(
+        self, output, name: str | None = None, version: str | None = None,
+        acoustic_dnni_version: int = 2,
+    ) -> Path:
         files = self.export()
         output = Path(output).expanduser()
         if files.info is None:
-            return write_nofs_voice(files, output, name)
-        return write_info_voice(files, output, version or files.info.info.get("version", "100"), name)
+            return write_nofs_voice(files, output, name, acoustic_dnni_version)
+        return write_info_voice(
+            files, output, version or files.info.info.get("version", "100"), name,
+            acoustic_dnni_version,
+        )
 
 
 
@@ -229,8 +318,6 @@ def initialize_pitch_from_file(voice: Voice, source_path) -> int:
 
     from .pitch import PitchModel
 
-    if not getattr(voice.pitch, "supported", True):
-        raise ValueError(getattr(voice.pitch, "reason", "the target Pitch model is unsupported"))
     target_file = voice.files.models["pitch"]
     target = voice.pitch
     try:
