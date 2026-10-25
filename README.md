@@ -245,7 +245,7 @@ The top toolbar now includes a language selector for **English**, **简体中文
 
 The WebUI's **More tools → Convert audio to MIDI for pitch calibration** extracts a monophonic F0 melody from a vocal recording and exports a standard single-track MIDI file for direct import into Synthesizer V Studio. Use it to render the same melody with a voicebank and compare its notes against the original audio. It is a pitch-guided melody extractor, not polyphonic transcription; dense chords and instrumental mixes may produce unreliable notes.
 
-The tool accepts WAV, FLAC and AIFF files. It uses Praat autocorrelation, semitone quantization, optional median smoothing, a minimum note duration, and a configurable A4 reference / semitone transpose. The MIDI tempo metadata is configurable, while note timings remain aligned to the source audio duration.
+The tool accepts WAV, FLAC and AIFF files. It tracks F0 with Praat autocorrelation, keeps the contour in continuous semitone space during voiced-run median filtering, applies conservative repair to short isolated octave jumps, and only then converts frames to MIDI notes. A small pitch hysteresis and short-fragment merging reduce vibrato-driven note chatter; brief unvoiced gaps are bridged only when the same note exists on both sides. Note boundaries are estimated between frames where possible instead of being rounded blindly to the 10 ms grid. The minimum note duration, A4 reference, semitone transpose and MIDI tempo metadata are configurable. These steps improve note extraction, but do not reconstruct timbre or the full continuous pitch/vibrato curve.
 
 CLI example:
 
