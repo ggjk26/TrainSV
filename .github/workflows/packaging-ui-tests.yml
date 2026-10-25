@@ -9,6 +9,7 @@ on:
       - "opensv_train/audit.py"
       - "opensv_train/data.py"
       - "opensv_train/audio_io.py"
+      - "opensv_train/audio_to_midi.py"
       - "opensv_train/f0.py"
       - "opensv_train/f0_tracking.py"
       - "opensv_train/filename_labels.py"
@@ -32,6 +33,7 @@ on:
       - "tests/test_timbre_profiles.py"
       - "tests/test_gui_performance.py"
       - "tests/test_audio_io.py"
+      - "tests/test_audio_to_midi.py"
       - "tests/test_pitch.py"
       - "tests/test_flat_dnni_v3_passthrough.py"
       - "tests/test_packaging.py"
@@ -59,7 +61,7 @@ jobs:
         with:
           node-version: "22"
       - name: Install test dependency
-        run: python -m pip install pytest cryptography numpy soundfile scipy
+        run: python -m pip install pytest cryptography numpy soundfile scipy praat-parselmouth
       - name: Check Python syntax
         run: python -m compileall -q opensv_train tests
       - name: Run packaging, Pitch/F0 and WebUI regression tests
@@ -67,7 +69,7 @@ jobs:
           python -m pytest -q tests/test_packaging.py tests/test_sfpk_packaging.py tests/test_gui_packaging_ui.py tests/test_f0_profile.py tests/test_model_tools.py
           python -m pytest -q tests/test_filename_labels.py -k "not f0_at"
           python -m pytest -q tests/test_phoneme_maps_sv1112.py
-          python -m pytest -q tests/test_audio_io.py tests/test_f0_tracking.py
+          python -m pytest -q tests/test_audio_io.py tests/test_f0_tracking.py tests/test_audio_to_midi.py
           python -m pytest -q tests/test_gui_performance.py
           python -m pytest -q tests/test_transition_audit.py
           python -m pytest -q tests/test_transition_sampling.py tests/test_dnni_version.py
