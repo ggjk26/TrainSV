@@ -176,7 +176,6 @@ def load_voice(
     models = {role: _load_model_bytes(nofs.read(keys[role])) for role in ROLES}
     return VoiceFiles(path, models, nofs.metadata(), nofs=nofs)
 def model_hash(data: bytes) -> str:
-def model_hash(data: bytes) -> str:
     return hashlib.md5(data).hexdigest()
 
 

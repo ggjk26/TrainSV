@@ -100,7 +100,7 @@ class AcousticModel(nn.Module):
                         f"vocal-mode embedding {index} has {style.numel()} values, but the selected Acoustic base "
                         f"expects {expected_style}; choose a structurally compatible Acoustic .dnni"
                     )
-        else
+        else:
             vocal_modes = vocal_modes or []
             if vocal_modes and len(style_nodes) - 1 != len(vocal_modes):
                 raise ValueError("timbre-style metadata does not match the acoustic style vectors")
