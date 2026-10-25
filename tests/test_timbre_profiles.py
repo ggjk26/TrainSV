@@ -61,7 +61,10 @@ def test_brightness_and_preset_controls_are_wired_into_training_and_webui():
     assert 'data-id="t_timbre_preset"' in gui
     assert 'data-id="t_brightness_weight"' in gui
     assert 'natural|Natural transitions (conservative)' in gui
+    assert 'soft-consonants|Softer consonants (experimental)' in gui
     assert 'clarity-lite|Light source-faithful clarity (experimental)' in gui
+    assert '"soft-consonants":{t_params:"all",t_steps:"2000"' in gui
+    assert 't_cons:"0.85"' in gui
     assert 'natural:{t_params:"all",t_steps:"2500"' in gui
     assert 't_transition_weight:"1.15"' in gui
     assert '"clarity-lite":{t_params:"all",t_steps:"2500"' in gui
