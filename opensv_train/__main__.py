@@ -28,6 +28,7 @@ from .packaging import build_svpk
 from .sfpk import build_sfpk
 from .timbre import summarize_timbre
 from .model_tools import replace_info_models
+from .audio_to_midi import convert_audio_to_midi
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -813,6 +814,25 @@ def replace_model_command(arguments) -> None:
             print(f"{role}: passed TrainSV structural validation; Synthesizer V runtime compatibility is not guaranteed.")
 
 
+def audio_to_midi_command(arguments) -> None:
+    try:
+        result = convert_audio_to_midi(
+            arguments.input,
+            arguments.output,
+            pitch_floor=arguments.pitch_floor,
+            pitch_ceiling=arguments.pitch_ceiling,
+            voicing_threshold=arguments.voicing_threshold,
+            min_note_ms=arguments.min_note_ms,
+            median_window=arguments.median_window,
+            a4_hz=arguments.a4_hz,
+            transpose_semitones=arguments.transpose_semitones,
+            tempo_bpm=arguments.tempo_bpm,
+            octave_correction=arguments.octave_correction,
+        )
+    except (OSError, ValueError, RuntimeError) as error:
+        raise SystemExit(f"audio-to-MIDI conversion failed: {error}") from error
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trainsv")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -999,6 +1019,20 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--model", help="legacy single-model replacement .dnni")
     command.add_argument("--output", required=True, help="output package folder (recommended; creates database/voices/<name>/info.<version>.nofs and database/models/), or a correctly nested .../voices/<name>/info.<version>.nofs path")
     command.set_defaults(handler=replace_model_command)
+
+    command = commands.add_parser("audio-to-midi", help="extract a monophonic melody from audio and export a standard MIDI file")
+    command.add_argument("--input", required=True, help="source WAV/AIFF/FLAC or another audio format supported by SoundFile/Praat")
+    command.add_argument("--output", required=True, help="output .mid or .midi file, directly importable into Synthesizer V")
+    command.add_argument("--pitch-floor", type=float, default=65.0, help="minimum tracked fundamental frequency in Hz (default 65)")
+    command.add_argument("--pitch-ceiling", type=float, default=1100.0, help="maximum tracked fundamental frequency in Hz (default 1100)")
+    command.add_argument("--voicing-threshold", type=float, default=0.45, help="Praat voicing threshold from 0.05 to 1.0 (default 0.45)")
+    command.add_argument("--min-note-ms", type=float, default=70.0, help="discard extracted notes shorter than this duration in ms (default 70)")
+    command.add_argument("--median-window", type=int, choices=(1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21), default=5, help="odd median filter width in 10 ms frames; 1 disables pitch smoothing")
+    command.add_argument("--no-octave-correction", action="store_false", dest="octave_correction", default=True, help="disable conservative repair of short, isolated octave tracking errors")
+    command.add_argument("--a4-hz", type=float, default=440.0, help="reference frequency for MIDI note 69 (default 440 Hz)")
+    command.add_argument("--transpose-semitones", type=int, default=0, help="transpose detected notes by -24 to +24 semitones")
+    command.add_argument("--tempo-bpm", type=float, default=120.0, help="MIDI tempo metadata in BPM (default 120; note timing remains aligned to the audio)")
+    command.set_defaults(handler=audio_to_midi_command)
 
     for command in commands.choices.values():
         command.add_argument("--config", action="append", default=[], metavar="FILE", help="JSON file of option values; repeat for several, later files win and command-line options override them")
