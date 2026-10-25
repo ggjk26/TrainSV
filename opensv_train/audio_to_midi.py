@@ -239,6 +239,108 @@ def _merge_short_note_runs(
     return result
 
 
+def _stabilize_note_labels(
+    continuous_pitch: np.ndarray,
+    voiced: np.ndarray,
+    frame_step: float,
+    *,
+    note_change_ms: float = 120.0,
+    switch_margin: float = 0.72,
+) -> tuple[np.ndarray, int]:
+    """Convert an F0 contour to stable MIDI pitches, suppressing short expressive excursions.
+
+    A candidate pitch must move at least switch_margin semitones away from the
+    current note's center and remain there for note_change_ms before becoming a
+    new MIDI note. Once confirmed, the new note is assigned from the first frame of
+    the sustained excursion so confirmation latency does not shift the note onset.
+    During a slow glide, the pending target follows the contour, avoiding a cascade
+    of short intermediate semitone notes.
+    """
+    if not math.isfinite(note_change_ms) or not 20.0 <= note_change_ms <= 500.0:
+        raise ValueError("pitch-change confirmation must be between 20 and 500 ms")
+    if not math.isfinite(frame_step) or frame_step <= 0:
+        raise ValueError("pitch tracker returned invalid frame times")
+
+    values = np.asarray(continuous_pitch, dtype=np.float64)
+    voiced = np.asarray(voiced, dtype=bool)
+    if len(values) != len(voiced):
+        raise ValueError("pitch contour and voiced mask must have the same length")
+
+    labels = np.full(len(values), -1, dtype=np.int16)
+    confirm_frames = max(1, int(math.ceil((note_change_ms / 1000.0) / frame_step - 1e-9)))
+    suppressed_excursions = 0
+
+    for start, end in _true_runs(voiced):
+        valid_start = start
+        while valid_start < end and not math.isfinite(float(values[valid_start])):
+            valid_start += 1
+        if valid_start >= end:
+            continue
+
+        current = int(np.clip(np.rint(values[valid_start]), 0, 127))
+        labels[start:valid_start] = current
+        labels[valid_start] = current
+        pending_start = -1
+        pending_direction = 0
+        pending_target = current
+
+        for index in range(valid_start + 1, end):
+            # Fill the current note as we go; future frames must not inherit the
+            # initial note after a later transition is confirmed.
+            labels[index] = current
+            value = float(values[index])
+            if not math.isfinite(value):
+                if pending_start >= 0:
+                    suppressed_excursions += 1
+                pending_start = -1
+                pending_direction = 0
+                continue
+
+            candidate = int(np.clip(np.rint(value), 0, 127))
+            direction = 0
+            if candidate > current and value >= current + switch_margin:
+                direction = 1
+            elif candidate < current and value <= current - switch_margin:
+                direction = -1
+
+            if direction == 0:
+                if pending_start >= 0:
+                    suppressed_excursions += 1
+                pending_start = -1
+                pending_direction = 0
+                pending_target = current
+                continue
+
+            if pending_start < 0 or direction != pending_direction:
+                if pending_start >= 0:
+                    suppressed_excursions += 1
+                pending_start = index
+                pending_direction = direction
+                pending_target = candidate
+            elif direction > 0:
+                pending_target = max(pending_target, candidate)
+            else:
+                pending_target = min(pending_target, candidate)
+
+            if index - pending_start + 1 >= confirm_frames:
+                confirmed = int(np.clip(pending_target, 0, 127))
+                if confirmed != current:
+                    # Preserve the onset of the confirmed change, not the later
+                    # frame on which its duration becomes long enough.
+                    labels[pending_start:index + 1] = confirmed
+                    current = confirmed
+                else:
+                    suppressed_excursions += 1
+                pending_start = -1
+                pending_direction = 0
+                pending_target = current
+
+        if pending_start >= 0:
+            suppressed_excursions += 1
+
+    return labels, suppressed_excursions
+
+
 def _extract_note_events(
     times: np.ndarray,
     frequencies: np.ndarray,
@@ -246,6 +348,7 @@ def _extract_note_events(
     a4_hz: float = 440.0,
     min_note_ms: float = 70.0,
     median_window: int = 5,
+    note_change_ms: float = 120.0,
     transpose_semitones: int = 0,
     strengths: np.ndarray | None = None,
     octave_correction: bool = True,
@@ -257,6 +360,8 @@ def _extract_note_events(
         raise ValueError("minimum note duration must be between 20 and 1000 ms")
     if median_window < 1 or median_window > 21 or median_window % 2 == 0:
         raise ValueError("median window must be an odd number from 1 to 21")
+    if not math.isfinite(note_change_ms) or not 20.0 <= note_change_ms <= 500.0:
+        raise ValueError("pitch-change confirmation must be between 20 and 500 ms")
     if not -24 <= transpose_semitones <= 24:
         raise ValueError("transpose must be between -24 and +24 semitones")
     if len(times) != len(frequencies) or len(times) < 2:
@@ -288,21 +393,15 @@ def _extract_note_events(
     continuous = _median_filter_voiced(continuous, voiced, median_window)
     continuous_transposed = continuous + float(transpose_semitones)
 
-    # -1 means unvoiced; MIDI note 0 remains a valid label.
-    labels = np.full(len(frequencies), -1, dtype=np.int16)
-    for start, end in _true_runs(voiced):
-        current = int(np.clip(np.rint(continuous_transposed[start]), 0, 127))
-        labels[start] = current
-        # A 0.10-semitone hysteresis prevents vibrato hovering around a half-semitone
-        # boundary from repeatedly splitting one musical note into tiny MIDI notes.
-        for index in range(start + 1, end):
-            value = float(continuous_transposed[index])
-            candidate = int(np.clip(np.rint(value), 0, 127))
-            if candidate > current and value >= current + 0.60:
-                current = candidate
-            elif candidate < current and value <= current - 0.60:
-                current = candidate
-            labels[index] = current
+    # Stabilize note identity before building MIDI events. This avoids making
+    # every vibrato crossing a semitone threshold into a separate MIDI note.
+    labels, suppressed_excursions = _stabilize_note_labels(
+        continuous_transposed,
+        voiced,
+        frame_step,
+        note_change_ms=note_change_ms,
+        switch_margin=0.72,
+    )
 
     # Fill only tiny gaps when the same note is present on both sides (for example,
     # a brief consonant closure). Do not bridge actual rests or different notes.
@@ -324,6 +423,7 @@ def _extract_note_events(
     )
     if diagnostics is not None:
         diagnostics["octave_spikes_corrected"] = octave_spikes
+        diagnostics["short_pitch_excursions_suppressed"] = suppressed_excursions
         diagnostics["voiced_frames_percent"] = round(float(np.mean(voiced) * 100.0), 1)
 
     def boundary(index: int) -> float:
@@ -340,7 +440,7 @@ def _extract_note_events(
         right_value = float(continuous_transposed[index])
         if not (math.isfinite(left_value) and math.isfinite(right_value)) or right_value == left_value:
             return default
-        threshold = previous_pitch + (0.60 if next_pitch > previous_pitch else -0.60)
+        threshold = previous_pitch + (0.72 if next_pitch > previous_pitch else -0.72)
         if (left_value - threshold) * (right_value - threshold) > 0:
             return default
         fraction = (threshold - left_value) / (right_value - left_value)
@@ -381,6 +481,7 @@ def convert_audio_to_midi(
     voicing_threshold: float = 0.45,
     min_note_ms: float = 70.0,
     median_window: int = 5,
+    note_change_ms: float = 120.0,
     a4_hz: float = 440.0,
     transpose_semitones: int = 0,
     tempo_bpm: float = 120.0,
@@ -429,6 +530,7 @@ def convert_audio_to_midi(
         a4_hz=a4_hz,
         min_note_ms=min_note_ms,
         median_window=median_window,
+        note_change_ms=note_change_ms,
         transpose_semitones=transpose_semitones,
         strengths=strengths,
         octave_correction=octave_correction,

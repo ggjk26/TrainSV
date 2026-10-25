@@ -56,6 +56,79 @@ def test_short_pitch_flicker_is_merged_into_the_surrounding_note():
     assert [note[2] for note in notes] == [69]
 
 
+
+def test_vibrato_crossing_semitone_rounding_boundary_stays_one_note():
+    times = _times(240)
+    # Expressive vibrato reaches beyond the old rounding boundary, but each
+    # excursion is brief and returns to the same sung pitch center.
+    semitones = 0.80 * np.sin(2 * np.pi * 5.5 * times)
+    frequencies = 440.0 * np.power(2.0, semitones / 12.0)
+    diagnostics = {}
+    notes = _extract_note_events(
+        times,
+        frequencies,
+        min_note_ms=50,
+        median_window=1,
+        note_change_ms=120,
+        diagnostics=diagnostics,
+    )
+    assert [note[2] for note in notes] == [69]
+    assert diagnostics["short_pitch_excursions_suppressed"] >= 1
+
+
+def test_short_expressive_pitch_excursion_is_not_a_separate_note():
+    times = _times(90)
+    frequencies = np.array([440.0] * 30 + [466.1638] * 8 + [440.0] * 52)
+    notes = _extract_note_events(
+        times,
+        frequencies,
+        min_note_ms=50,
+        median_window=1,
+        note_change_ms=120,
+    )
+    assert [note[2] for note in notes] == [69]
+
+
+def test_sustained_pitch_change_is_kept_and_onset_is_not_delayed():
+    times = _times(100)
+    frequencies = np.array([440.0] * 35 + [523.251] * 65)
+    notes = _extract_note_events(
+        times,
+        frequencies,
+        min_note_ms=50,
+        median_window=1,
+        note_change_ms=120,
+    )
+    assert [note[2] for note in notes] == [69, 72]
+    # The new note starts at the detected transition, not 120 ms later.
+    assert notes[1][0] == pytest.approx(0.35, abs=0.02)
+
+
+def test_fast_continuous_glide_does_not_create_intermediate_semitone_fragments():
+    times = _times(100)
+    glide = np.linspace(0.0, 3.0, 8, endpoint=True)
+    semitones = np.concatenate([np.zeros(30), glide, np.full(62, 3.0)])
+    frequencies = 440.0 * np.power(2.0, semitones / 12.0)
+    notes = _extract_note_events(
+        times,
+        frequencies,
+        min_note_ms=50,
+        median_window=1,
+        note_change_ms=120,
+    )
+    assert [note[2] for note in notes] == [69, 72]
+
+
+def test_rejects_invalid_pitch_change_confirmation_duration():
+    with pytest.raises(ValueError, match="pitch-change confirmation must be between"):
+        _extract_note_events(
+            _times(40),
+            np.full(40, 440.0),
+            median_window=1,
+            note_change_ms=10,
+        )
+
+
 def test_tiny_unvoiced_gap_is_filled_only_when_pitch_matches_on_both_sides():
     times = _times(40)
     frequencies = np.array([440.0] * 20 + [0.0] * 2 + [440.0] * 18)
@@ -89,6 +162,7 @@ def test_octave_correction_can_be_disabled_for_intentional_short_octave_notes():
         frequencies,
         min_note_ms=20,
         median_window=1,
+        note_change_ms=20,
         octave_correction=False,
     )
     assert [note[2] for note in notes] == [69, 81, 69]
