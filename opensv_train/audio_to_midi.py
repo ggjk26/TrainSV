@@ -12,7 +12,6 @@ from pathlib import Path
 
 import numpy as np
 import parselmouth
-from scipy.ndimage import median_filter
 
 
 def _vlq(value: int) -> bytes:
@@ -98,7 +97,9 @@ def _extract_note_events(
 
     # Smooth short tracking flicker without letting unvoiced frames become notes.
     if median_window > 1:
-        filtered = median_filter(midi.astype(np.float64), size=median_window, mode="nearest")
+        pad = median_window // 2
+        padded = np.pad(midi.astype(np.float64), (pad, pad), mode="edge")
+        filtered = np.median(np.lib.stride_tricks.sliding_window_view(padded, median_window), axis=-1)
         midi[voiced] = np.rint(filtered[voiced]).astype(np.int16)
 
     # Fill tiny gaps only when the same note is present on both sides.
