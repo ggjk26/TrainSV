@@ -73,25 +73,29 @@ def finetune(arguments) -> None:
         raise SystemExit("--preserve-non-acoustic-models requires an info.nofs shared-model voicebank; regular voice.nofs files cannot use it")
     model_overrides = {
         role: path for role, path in (
+            ("acoustic", arguments.custom_acoustic_dnni),
             ("duration", arguments.custom_duration_dnni),
             ("pitch", arguments.custom_pitch_dnni),
             ("vocoder", arguments.custom_vocoder_dnni),
         ) if path
     }
     if arguments.preserve_non_acoustic_models:
-        if unsupported_overrides := set(model_overrides) - {"vocoder"}:
+        if unsupported_overrides := set(model_overrides) - {"acoustic", "vocoder"}:
             raise SystemExit(
-                "--preserve-original-models accepts only --custom-vocoder-dnni; "
+                "--preserve-original-models accepts --custom-acoustic-dnni and --custom-vocoder-dnni only; "
                 f"Duration/Pitch replacement is not available in this mode: {', '.join(sorted(unsupported_overrides))}"
+            )
+        if not arguments.custom_acoustic_dnni:
+            raise SystemExit(
+                "--preserve-original-models requires --custom-acoustic-dnni. The target Acoustic is not loaded; "
+                "the selected supported Acoustic model is trained on the target dataset."
             )
         if not arguments.custom_vocoder_dnni:
             raise SystemExit(
-                "--preserve-original-models requires --custom-vocoder-dnni. The source Vocoder is discarded "
-                "and replaced in the output voicebank; Acoustic is kept byte-for-byte but is not loaded for training."
+                "--preserve-original-models requires --custom-vocoder-dnni. The target Vocoder is not loaded; "
+                "a runnable replacement is required for Acoustic waveform-loss training."
             )
-    if arguments.resume and model_overrides and not (
-        arguments.preserve_non_acoustic_models and set(model_overrides) == {"vocoder"}
-    ):
+    if arguments.resume and model_overrides:
         raise SystemExit("custom DNNI overrides cannot be combined with --resume; use a separate run directory")
     if model_overrides and not is_info_voice(arguments.voice):
         raise SystemExit("custom DNNI model files are available only for info.nofs shared-model voicebanks")
@@ -100,12 +104,15 @@ def finetune(arguments) -> None:
     models = tuple(arguments.models.split(","))
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
-    if arguments.preserve_non_acoustic_models and set(models) & {"acoustic", "vocoder"}:
-        raise SystemExit("--preserve-original-models trains Timing and/or Pitch only; Acoustic is retained but not loaded, and source Vocoder is replaced")
-    if arguments.preserve_non_acoustic_models and not (set(models) & {"duration", "pitch"}):
-        raise SystemExit("--preserve-original-models requires --models duration and/or pitch; choose a replacement Vocoder with --custom-vocoder-dnni")
-    if arguments.preserve_non_acoustic_models and arguments.vocal_modes is not None:
-        raise SystemExit("--preserve-original-models cannot change Acoustic vocal modes because Acoustic is preserved")
+    if arguments.custom_acoustic_dnni and "acoustic" not in models:
+        raise SystemExit("--custom-acoustic-dnni requires --models to include acoustic")
+    if arguments.preserve_non_acoustic_models:
+        if "acoustic" not in models:
+            raise SystemExit("--preserve-original-models requires --models acoustic (Duration/Pitch may be included too)")
+        if "vocoder" in models:
+            raise SystemExit("--preserve-original-models uses the replacement Vocoder as a frozen dependency; do not include vocoder in --models")
+        if arguments.params != "all":
+            raise SystemExit("--preserve-original-models must train Acoustic network weights; --params embeddings only updates per-voice vectors")
     required = set(models)
     if set(models) & {"acoustic", "vocoder"}:
         required.update(("acoustic", "vocoder"))
@@ -804,7 +811,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--output", required=True, help="voice.nofs path, or databases/<name>/ directory for info voices")
     command.add_argument("--language", required=True, type=language_name, help="default phoneme language, e.g. japanese or ja")
     command.add_argument("--models", default="acoustic", help=f"comma-separated subset of {','.join(MODELS)}")
-    command.add_argument("--preserve-non-acoustic-models", "--preserve-original-models", dest="preserve_non_acoustic_models", action="store_true", help="info.nofs only: train Timing and/or Pitch; preserve every unselected model, including opaque Acoustic/Vocoder DNNIs, byte-for-byte")
+    command.add_argument("--preserve-non-acoustic-models", "--preserve-original-models", dest="preserve_non_acoustic_models", action="store_true", help="info.nofs only: train Acoustic from --custom-acoustic-dnni, use --custom-vocoder-dnni for waveform loss/output, and preserve unselected Duration/Pitch models")
     command.add_argument("--params", choices=("all", "embeddings"), default="all", help="train every weight, or only the per-voice speaker/style/vocal-mode vectors")
     command.add_argument("--vocal-modes", help="comma-separated vocal modes of the finetuned voice (info voices): existing ones are kept, new ones start from the default style, others are dropped")
     command.add_argument("--steps", type=int, default=2000)
@@ -824,9 +831,10 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--pitch-smoothing-hz", type=float, default=None, help="override the default low-pass cutoff for the Pitch model's smooth melody contour, 0 < cutoff < 100 Hz")
     command.add_argument("--pitch-melody-weight", type=float, default=None, help="override the default Pitch model smooth-melody loss weight")
     command.add_argument("--pitch-motion-weight", type=float, default=None, help="override the default Pitch model fast-motion/vibrato loss weight")
+    command.add_argument("--custom-acoustic-dnni", help="initialize Acoustic training from a parseable DNNI v1/v2 Acoustic .dnni; in preserve mode this replaces the target's Acoustic dependency and is trained on the target dataset")
     command.add_argument("--custom-duration-dnni", help="replace the base Duration model with a supported .dnni from another info voicebank; output remains a new voicebank")
     command.add_argument("--custom-pitch-dnni", help="replace the base Pitch/F0 model with a supported .dnni; use instead of --pitch-model when changing the complete base model")
-    command.add_argument("--custom-vocoder-dnni", help="replace the base Vocoder with a supported .dnni from another info voicebank")
+    command.add_argument("--custom-vocoder-dnni", help="replace the base Vocoder with a supported, runnable .dnni; Acoustic training requires it for waveform loss")
     command.add_argument("--pitch-model", "--pitch-base-model", dest="pitch_model", help="initialize Pitch from a compatible pretrained .dnni; target speaker embedding is preserved")
     command.add_argument("--lr", type=float, help="learning rate (default 2e-5 for all, 3e-3 for embeddings)")
     command.add_argument("--warmup", type=int, default=0, help="steps of linear learning-rate warmup")

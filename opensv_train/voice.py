@@ -97,58 +97,69 @@ def load_voice(
     path = Path(path).expanduser()
     model_overrides = dict(model_overrides or {})
     output_model_overrides: dict[str, Path] = {}
-    if preserve_non_acoustic_models and (unknown := set(model_overrides) - {"vocoder"}):
+    if preserve_non_acoustic_models and (unknown := set(model_overrides) - {"acoustic", "vocoder"}):
         raise ValueError(
-            "preservation mode accepts only a replacement Vocoder; Duration/Pitch overrides cannot be combined "
-            f"with it (unsupported roles: {', '.join(sorted(unknown))})"
+            "preservation mode accepts only an alternate Acoustic base model and a replacement Vocoder; "
+            f"Duration/Pitch overrides are not available in this mode (unsupported roles: {', '.join(sorted(unknown))})"
         )
-    if unknown := set(model_overrides) - {"duration", "pitch", "vocoder"}:
-        raise ValueError(f"custom DNNI overrides support duration, pitch, and vocoder only; unsupported roles: {', '.join(sorted(unknown))}")
+    if unknown := set(model_overrides) - {"acoustic", "duration", "pitch", "vocoder"}:
+        raise ValueError(f"custom DNNI overrides support acoustic, duration, pitch, and vocoder only; unsupported roles: {', '.join(sorted(unknown))}")
     if is_info_voice(path):
         info = InfoVoice.load(path)
-        # Preservation mode loads only the selected trainable roles plus dependencies
-        # needed by Acoustic/Vocoder waveform training. Unselected DNNIs remain paths
-        # in InfoVoice and are copied byte-for-byte when the new descriptor is written.
         if preserve_non_acoustic_models:
             selected = tuple(training_models or ("acoustic",))
             if unknown := set(selected) - set(ROLES):
                 raise ValueError(f"unknown training models: {', '.join(sorted(unknown))}")
+            if "acoustic" not in selected:
+                raise ValueError("preservation mode must train Acoustic from the selected alternate base model; include 'acoustic' in training_models")
+            missing = {"acoustic", "vocoder"} - set(model_overrides)
+            if missing:
+                raise ValueError(
+                    "preservation mode requires --custom-acoustic-dnni and --custom-vocoder-dnni; "
+                    "the target Acoustic/Vocoder files are not loaded"
+                )
             roles_to_load = set(selected)
-            if roles_to_load & {"acoustic", "vocoder"}:
-                roles_to_load.update(("acoustic", "vocoder"))
+            # Acoustic training needs a runnable Vocoder for the waveform loss.
+            roles_to_load.update(("acoustic", "vocoder"))
             roles = tuple(role for role in ROLES if role in roles_to_load)
         else:
             roles = ROLES
-        models = {role: _load_info_model(role, info.models[role]) for role in roles}
-        if model_overrides and preserve_non_acoustic_models:
-            # The source Vocoder is intentionally not loaded. Its replacement is
-            # validated as a role-specific DNNI (v1/v2) or copied opaquely (v3)
-            # and written as an output dependency only; Timing/Pitch training does
-            # not invoke it. The opaque source Acoustic remains untouched because
-            # an info.nofs voicebank still requires an Acoustic model reference.
-            for role, override_path in model_overrides.items():
-                external = Path(override_path).expanduser()
-                if external.suffix.lower() != ".dnni" or not external.is_file():
-                    raise FileNotFoundError(f"replacement {role} model must be an existing .dnni file: {external}")
-                data = external.read_bytes()
-                from .model_tools import _check_model_role
-                try:
-                    version, role_checked = _check_model_role(data, role)
-                except (ValueError, OSError, RuntimeError) as error:
-                    raise ValueError(f"replacement {role} DNNI '{external}' failed validation: {error}") from error
-                if not role_checked:
-                    print(
-                        f"Warning: replacement Vocoder DNNI v{version} is copied opaquely; "
-                        "TrainSV cannot validate runtime compatibility. Test the resulting voice in Synthesizer V.",
-                        flush=True,
-                    )
-                output_model_overrides[role] = external
-        elif model_overrides:
-            for role, override_path in model_overrides.items():
+
+        if unused := set(model_overrides) - set(roles):
+            raise ValueError(
+                "custom DNNI overrides can only be used for roles loaded by this operation: "
+                f"{', '.join(sorted(unused))}"
+            )
+
+        models: dict[str, DnniFile | OpaqueDnniFile] = {}
+        for role in roles:
+            override_path = model_overrides.get(role)
+            if override_path:
                 external = Path(override_path).expanduser()
                 if external.suffix.lower() != ".dnni" or not external.is_file():
                     raise FileNotFoundError(f"custom {role} model must be an existing .dnni file: {external}")
-                models[role] = _load_model_bytes(external.read_bytes())
+                model_file = _load_model_bytes(external.read_bytes())
+                if isinstance(model_file, OpaqueDnniFile):
+                    if role == "acoustic":
+                        raise ValueError(
+                            f"replacement Acoustic DNNI v{model_file.version} is opaque and cannot be trained; "
+                            "choose a parseable DNNI v1/v2 Acoustic model"
+                        )
+                    if role == "vocoder" and preserve_non_acoustic_models:
+                        raise ValueError(
+                            f"replacement Vocoder DNNI v{model_file.version} is opaque and cannot run the Acoustic waveform loss; "
+                            "choose a supported, runnable DNNI v1/v2 Vocoder"
+                        )
+                models[role] = model_file
+                if preserve_non_acoustic_models and role == "vocoder":
+                    # The selected Vocoder is frozen during Acoustic training, but its
+                    # exact bytes and hash become the output dependency.
+                    output_model_overrides[role] = external
+            else:
+                # In preserve mode, only unselected Duration/Pitch roles reach this
+                # branch. Target Acoustic/Vocoder are deliberately never read.
+                models[role] = _load_info_model(role, info.models[role])
+
         metadata = {".name": info.info.get("name", ""), ".language": info.info.get("language", "")}
         return VoiceFiles(
             path, models, metadata, info=info,
@@ -157,14 +168,14 @@ def load_voice(
             output_model_overrides=output_model_overrides,
         )
     if preserve_non_acoustic_models:
-        raise ValueError("preserving non-acoustic models is available only for info.nofs shared-model voicebanks")
+        raise ValueError("preserving unselected models is available only for info.nofs shared-model voicebanks")
     if model_overrides:
         raise ValueError("custom DNNI model files are supported only for info.nofs shared-model voicebanks")
     nofs = NofsFile.load(path)
     keys = nofs.model_keys()
     models = {role: _load_model_bytes(nofs.read(keys[role])) for role in ROLES}
     return VoiceFiles(path, models, nofs.metadata(), nofs=nofs)
-
+def model_hash(data: bytes) -> str:
 def model_hash(data: bytes) -> str:
     return hashlib.md5(data).hexdigest()
 

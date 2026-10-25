@@ -80,7 +80,27 @@ class AcousticModel(nn.Module):
             self.speaker = nn.Parameter(torch.from_numpy(np.asarray(speaker, np.float32)))
             self.default_style = nn.Parameter(torch.from_numpy(np.asarray(default_style, np.float32)))
             self.mode_styles = nn.ParameterList(nn.Parameter(torch.from_numpy(np.asarray(style, np.float32))) for style in mode_styles or [])
-        else:
+            # Alternate Acoustic bases can use different per-voice embedding widths.
+            # Detect incompatible info.nofs vectors before the first training step.
+            expected_speaker = VectorParameter(speaker_node).value.numel()
+            expected_style = VectorParameter(style_nodes[0]).value.numel()
+            if self.speaker.numel() != expected_speaker:
+                raise ValueError(
+                    f"selected Acoustic base expects a {expected_speaker}-value speaker embedding, "
+                    f"but info.nofs provides {self.speaker.numel()}; choose a structurally compatible Acoustic .dnni"
+                )
+            if self.default_style.numel() != expected_style:
+                raise ValueError(
+                    f"selected Acoustic base expects a {expected_style}-value style embedding, "
+                    f"but info.nofs provides {self.default_style.numel()}; choose a structurally compatible Acoustic .dnni"
+                )
+            for index, style in enumerate(self.mode_styles):
+                if style.numel() != expected_style:
+                    raise ValueError(
+                        f"vocal-mode embedding {index} has {style.numel()} values, but the selected Acoustic base "
+                        f"expects {expected_style}; choose a structurally compatible Acoustic .dnni"
+                    )
+        else
             vocal_modes = vocal_modes or []
             if vocal_modes and len(style_nodes) - 1 != len(vocal_modes):
                 raise ValueError("timbre-style metadata does not match the acoustic style vectors")
