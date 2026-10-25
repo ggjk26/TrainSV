@@ -645,7 +645,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <label class="choice"><input type="checkbox" id="m_duration" data-s><span><b>Timing</b> (duration)<small>How long each sound lasts. Needs notes in the dataset.</small></span></label>
     <label class="choice"><input type="checkbox" id="m_pitch" data-s><span><b>Pitch</b> (melody and vibrato)<small>How the singer moves between notes. Needs notes in the dataset.</small></span></label>
     <label class="choice"><input type="checkbox" id="m_vocoder" data-s><span><b>Vocoder</b> (final audio stage)<small>Optional and slower. Most people leave this off.</small></span></label>
-    <label class="choice"><input type="checkbox" id="t_preserve_non_acoustic_models" data-s disabled><span><b>Preserve original voicebank models (except acoustic)</b><small>Available only for info.nofs. Train Sound only; keep the original Timing, Pitch/F0 and Vocoder model references and skip loading/checking those networks. A regular voice.nofs cannot use this option.</small></span></label>
+    <label class="choice"><input type="checkbox" id="t_preserve_non_acoustic_models" data-s disabled><span><b>Preserve original voicebank models</b><small>Available only for info.nofs. Train Timing and/or Pitch; keep every unselected model—including Acoustic and Vocoder—byte-for-byte, without loading or validating those networks. Acoustic/Vocoder training is disabled in this mode.</small></span></label>
   </fieldset>
   <fieldset id="f0CalibrationPanel">
     <legend>F0 Analysis &amp; Calibration</legend>
@@ -1178,7 +1178,7 @@ const STATIC_HELP = {
   "m_duration": "Timing（时长模型）学习每个音素在音符中的时长分配。数据集需要包含音符信息和词边界；缺少这些信息时不建议选择。",
   "m_pitch": "Pitch（音高模型）学习音高曲线及相关表达。需要包含音符与词边界的标注；不带音符的数据集无法有效训练该模型。",
   "m_vocoder": "Vocoder 是最终音频生成阶段的模型。它属于可选项目，训练通常更慢；初次使用建议先保持关闭。",
-  "t_preserve_non_acoustic_models": "仅用于 info.nofs 共享模型声库。启用后只训练声学模型；原始 Timing、Pitch/F0 和 Vocoder 的模型 ID 与 DNNI 字节保持不变。Timing/Pitch 不会加载或校验；Vocoder 必须作为冻结解码器参与声学音频损失，但不会训练或进行输入范围校准。依赖声码器的自动响度校准会跳过，训练 WAV 的 F0 提取仍会保留。普通 voice.nofs 不支持。",
+  "t_preserve_non_acoustic_models": "仅用于 info.nofs 共享模型声库。启用后训练 Timing 和/或 Pitch；未选中的模型（包括 Acoustic 与 Vocoder）会按原始 DNNI 字节保留，不加载或校验。此模式不能训练 Acoustic/Vocoder，普通 voice.nofs 不支持。",
   "p_quick": "快速测试：运行少量步数，用来确认声库、数据集和运行环境可以正常工作。它不是完整训练。",
   "p_std": "标准训练：使用适中的初始步数，适合作为第一轮正式尝试。之后可根据验证结果调整。",
   "p_long": "较长训练：步数更多、耗时更长，并会缓慢降低学习率。只有在短训练正常且验证结果仍有改善空间时再尝试。",
@@ -1199,7 +1199,7 @@ const controlLabels = {
   "m_duration": "Timing (duration)",
   "m_pitch": "Pitch (melody and vibrato)",
   "m_vocoder": "Vocoder (final audio stage)",
-  "t_preserve_non_acoustic_models": "Preserve original voicebank models (except acoustic)",
+  "t_preserve_non_acoustic_models": "Preserve original voicebank models; train Timing and/or Pitch only",
   "p_quick": "Quick test",
   "p_std": "Standard",
   "p_long": "Thorough",
@@ -1382,15 +1382,16 @@ const B={
     if(!val("voice"))p.push("Choose a voice (step 1).");dsNeed(p,"Choose a dataset (step 2).");
     if(!val("v_name"))p.push("Name your new voice.");if(!val("t_output"))p.push("Choose where to save the new voice.");
     if(preserve&&(!isInfo(val("voice"))||!VOICE_OK))p.push("Preserving non-acoustic models requires an existing info.nofs shared-model voicebank.");
-    if(preserve&&pitchOnly)p.push("Pitch-only training is unavailable while preserving non-acoustic models; this mode trains Sound only.");
     const customIds=["t_custom_duration_dnni","t_custom_pitch_dnni","t_custom_vocoder_dnni"];
     const hasCustom=customIds.some(id=>!!val(id));
     if(preserve&&hasCustom)p.push("Custom DNNI overrides cannot be combined with preservation mode.");
     if(chk("t_resume")&&hasCustom)p.push("Custom DNNI overrides cannot be combined with resume; use a separate run directory.");
     if(val("t_custom_pitch_dnni")&&val("t_pitch_source")==="pretrained")p.push("Choose either a custom Pitch/F0 DNNI or pretrained Pitch initialization, not both.");
-    const models=pitchOnly?["pitch"]:(preserve?["acoustic"]:MODELS.filter(x=>chk("m_"+x)));if(!models.length)p.push("Tick at least one thing to learn.");
+    const models=pitchOnly?["pitch"]:MODELS.filter(x=>chk("m_"+x));if(!models.length)p.push("Tick at least one thing to learn.");
+    if(preserve&&models.some(x=>x==="acoustic"||x==="vocoder"))p.push("Preservation mode keeps Acoustic and Vocoder unchanged; train Timing and/or Pitch instead.");
+    if(preserve&&!models.some(x=>x==="duration"||x==="pitch"))p.push("Select Timing and/or Pitch when preserving the original Acoustic/Vocoder models.");
     a.push("--voice",val("voice"),"--data",val("dataset"),"--output",val("t_output"),"--language",lang(),"--models",models.join(","),"--name",val("v_name"));
-    if(preserve)a.push("--preserve-non-acoustic-models");
+    if(preserve)a.push("--preserve-original-models");
     if(!preserve)[["--custom-duration-dnni","t_custom_duration_dnni"],["--custom-pitch-dnni","t_custom_pitch_dnni"],["--custom-vocoder-dnni","t_custom_vocoder_dnni"]].forEach(([flag,id])=>{
       const path=val(id);if(!path)return;
       if(!/\.dnni$/i.test(path))p.push("Replacement model must be a .dnni file.");else a.push(flag,path);
@@ -1570,14 +1571,14 @@ function syncPreserveModelsUI(){
   option.disabled=!(infoPath&&VOICE_OK);
   if(!infoPath)option.checked=false;
   const active=infoPath&&VOICE_OK&&option.checked;
-  ["m_duration","m_pitch","m_vocoder"].forEach(id=>{
+  ["m_acoustic","m_vocoder"].forEach(id=>{
     const control=$("#"+id);if(!control)return;
     if(active)control.checked=false;
     control.disabled=active;
   });
-  if(active){const sound=$("#m_acoustic");if(sound)sound.checked=true;}
-  const pitchPanel=$("#pitchTrainingPanel");if(pitchPanel)pitchPanel.disabled=active;
-  ["t_levelref","t_gain","t_custom_duration_dnni","t_custom_pitch_dnni","t_custom_vocoder_dnni"].forEach(id=>{const control=$("#"+id);if(control)control.disabled=active;});
+  ["m_duration","m_pitch"].forEach(id=>{const control=$("#"+id);if(control)control.disabled=false;});
+  const pitchPanel=$("#pitchTrainingPanel");if(pitchPanel)pitchPanel.disabled=false;
+  ["t_levelref","t_gain","t_custom_duration_dnni","t_custom_pitch_dnni","t_custom_vocoder_dnni","t_pitch_source","t_pitch_model"].forEach(id=>{const control=$("#"+id);if(control)control.disabled=active;});
 }
 
 /* ---------- checks: voice, dataset, recordings ---------- */

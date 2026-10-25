@@ -290,17 +290,22 @@ def test_filename_import_exposes_explicit_phone_conventions():
 def test_preserve_non_acoustic_models_ui_and_cli_are_wired():
     assert 'id="t_preserve_non_acoustic_models"' in PAGE
     assert "function syncPreserveModelsUI()" in PAGE
+    assert '["m_acoustic","m_vocoder"]' in PAGE
     assert "Preserving non-acoustic models requires an existing info.nofs" in PAGE
-    assert 'a.push("--preserve-non-acoustic-models")' in PAGE
+    assert 'a.push("--preserve-original-models")' in PAGE
+    assert "Train Timing and/or Pitch" in PAGE
     root = Path(__file__).resolve().parents[1]
     cli = (root / "opensv_train" / "__main__.py").read_text("utf-8")
     voice = (root / "opensv_train" / "voice.py").read_text("utf-8")
     calibration = (root / "opensv_train" / "calibration.py").read_text("utf-8")
     assert '"--preserve-non-acoustic-models"' in cli
     assert "preserve_non_acoustic_models=arguments.preserve_non_acoustic_models" in cli
-    assert "models != (\"acoustic\",)" in cli
+    assert 'set(models) & {"acoustic", "vocoder"}' in cli
+    assert 'training_models=models' in cli
     assert 'if not arguments.preserve_non_acoustic_models and hasattr(voice, "pitch")' in cli
-    assert "Timing and Pitch are not" in voice
+    assert "training_models: tuple[str, ...]" in voice
+    assert "role not in voice.training_models" in voice
+    assert "Timing and Pitch are not" not in voice
     model_tools = (root / "opensv_train" / "model_tools.py").read_text("utf-8")
     assert "_resolve_output_info_path" in model_tools
     assert "refusing to create a models directory under the Windows system/user root" in model_tools

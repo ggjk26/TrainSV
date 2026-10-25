@@ -95,9 +95,9 @@ class Trainer:
         self.config = config
         if "pitch" in config.models and not getattr(voice.pitch, "supported", True):
             raise ValueError(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
-        required_roles = set(config.models) | {"acoustic"}
+        required_roles = set(config.models)
         if set(config.models) & {"acoustic", "vocoder"}:
-            required_roles.add("vocoder")
+            required_roles.update(("acoustic", "vocoder"))
         for role in sorted(required_roles):
             model = voice.models[role]
             if not getattr(model, "supported", True):

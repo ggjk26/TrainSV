@@ -23,6 +23,7 @@ class VoiceFiles:
     nofs: NofsFile | None = None
     info: InfoVoice | None = None
     preserve_non_acoustic_models: bool = False
+    training_models: tuple[str, ...] = ()
 
     @property
     def vocal_modes(self) -> list[str]:
@@ -90,6 +91,7 @@ def load_voice(
     path,
     preserve_non_acoustic_models: bool = False,
     model_overrides: dict[str, str | Path] | None = None,
+    training_models: tuple[str, ...] | None = None,
 ) -> VoiceFiles:
     path = Path(path).expanduser()
     model_overrides = dict(model_overrides or {})
@@ -99,9 +101,19 @@ def load_voice(
         raise ValueError(f"custom DNNI overrides support duration, pitch, and vocoder only; unsupported roles: {', '.join(sorted(unknown))}")
     if is_info_voice(path):
         info = InfoVoice.load(path)
-        # Preserve-mode deliberately avoids loading/validating the untouched
-        # Duration and Pitch payloads, including opaque DNNI v3 dependencies.
-        roles = ("acoustic", "vocoder") if preserve_non_acoustic_models else ROLES
+        # Preservation mode loads only the selected trainable roles plus dependencies
+        # needed by Acoustic/Vocoder waveform training. Unselected DNNIs remain paths
+        # in InfoVoice and are copied byte-for-byte when the new descriptor is written.
+        if preserve_non_acoustic_models:
+            selected = tuple(training_models or ("acoustic",))
+            if unknown := set(selected) - set(ROLES):
+                raise ValueError(f"unknown training models: {', '.join(sorted(unknown))}")
+            roles_to_load = set(selected)
+            if roles_to_load & {"acoustic", "vocoder"}:
+                roles_to_load.update(("acoustic", "vocoder"))
+            roles = tuple(role for role in ROLES if role in roles_to_load)
+        else:
+            roles = ROLES
         models = {role: _load_info_model(role, info.models[role]) for role in roles}
         if model_overrides:
             for role, override_path in model_overrides.items():
@@ -113,6 +125,7 @@ def load_voice(
         return VoiceFiles(
             path, models, metadata, info=info,
             preserve_non_acoustic_models=preserve_non_acoustic_models,
+            training_models=tuple(training_models or (("acoustic",) if preserve_non_acoustic_models else ROLES)),
         )
     if preserve_non_acoustic_models:
         raise ValueError("preserving non-acoustic models is available only for info.nofs shared-model voicebanks")
@@ -155,7 +168,7 @@ def write_info_voice(
         document["duration_style"] = info.info["duration_style"]
         document["f0_style"] = info.info["f0_style"]
     for role in ROLES:
-        if voice.preserve_non_acoustic_models and role != "acoustic":
+        if voice.preserve_non_acoustic_models and role not in voice.training_models:
             # Copy the original opaque model bytes when the output database is
             # in a different Synthesizer V installation. Never parse, instantiate,
             # validate or reserialize this network in preservation mode.
@@ -202,21 +215,23 @@ class Voice(torch.nn.Module):
         info = files.info
         if files.preserve_non_acoustic_models:
             if info is None:
-                raise ValueError("preserving non-acoustic models requires an info.nofs voicebank")
-            acoustic_file = files.models["acoustic"]
-            vocoder_file = files.models["vocoder"]
-            # This loss renders predicted audio; the acoustic model and frozen
-            # decoder still need executable network payloads. Other roles can
-            # Timing and Pitch are not instantiated in this mode; they remain opaque and untouched in the source info voice.
-            if isinstance(acoustic_file, OpaqueDnniFile):
-                raise ValueError("acoustic training is unavailable because the source Acoustic DNNI v3 payload is opaque")
-            if isinstance(vocoder_file, OpaqueDnniFile):
-                raise ValueError("acoustic waveform training requires a runnable Vocoder; the source Vocoder DNNI v3 payload is opaque")
-            self.acoustic = AcousticModel(
-                acoustic_file, list(info.vocal_modes), info.acoustic_speaker,
-                info.default_style, list(info.vocal_modes.values()),
-            )
-            self.vocoder = Vocoder(vocoder_file)
+                raise ValueError("preserving original models requires an info.nofs voicebank")
+            if set(files.models) & {"acoustic", "vocoder"} and not {"acoustic", "vocoder"}.issubset(files.models):
+                raise ValueError("Acoustic and Vocoder must be loaded together for waveform-based training")
+            for role, model_file in files.models.items():
+                if isinstance(model_file, OpaqueDnniFile):
+                    raise ValueError(f"the selected {role.title()} DNNI v{model_file.version} payload is opaque and cannot be trained")
+                if role == "duration":
+                    self.duration = DurationModel(model_file, info.duration_voice)
+                elif role == "pitch":
+                    self.pitch = PitchModel(model_file, info.pitch_speaker)
+                elif role == "acoustic":
+                    self.acoustic = AcousticModel(
+                        model_file, list(info.vocal_modes), info.acoustic_speaker,
+                        info.default_style, list(info.vocal_modes.values()),
+                    )
+                elif role == "vocoder":
+                    self.vocoder = Vocoder(model_file)
             return
 
         if info is None:
@@ -257,7 +272,7 @@ class Voice(torch.nn.Module):
         from .layers import export_parameters
 
         for role, model in self.models.items():
-            if self.files.preserve_non_acoustic_models and role != "acoustic":
+            if self.files.preserve_non_acoustic_models and role not in self.files.training_models:
                 continue
             if not getattr(model, "supported", True):
                 continue

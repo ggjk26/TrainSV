@@ -89,16 +89,21 @@ def finetune(arguments) -> None:
     models = tuple(arguments.models.split(","))
     if unknown := set(models) - set(MODELS):
         raise SystemExit(f"unknown models: {', '.join(sorted(unknown))}")
-    if arguments.preserve_non_acoustic_models and models != ("acoustic",):
-        raise SystemExit("--preserve-non-acoustic-models trains only the acoustic model; use --models acoustic")
-    required = set(models) | {"acoustic"}
+    if arguments.preserve_non_acoustic_models and set(models) & {"acoustic", "vocoder"}:
+        raise SystemExit("--preserve-original-models keeps the source Acoustic and Vocoder unchanged; select Timing and/or Pitch only")
+    if arguments.preserve_non_acoustic_models and not (set(models) & {"duration", "pitch"}):
+        raise SystemExit("--preserve-original-models requires --models duration and/or pitch; Acoustic/Vocoder are copied unchanged")
+    if arguments.preserve_non_acoustic_models and arguments.vocal_modes is not None:
+        raise SystemExit("--preserve-original-models cannot change Acoustic vocal modes because Acoustic is preserved")
+    required = set(models)
     if set(models) & {"acoustic", "vocoder"}:
-        required.add("vocoder")
+        required.update(("acoustic", "vocoder"))
     try:
         files = load_voice(
             arguments.voice,
             preserve_non_acoustic_models=arguments.preserve_non_acoustic_models,
             model_overrides=model_overrides,
+            training_models=models,
         )
         for role in sorted(required):
             model_file = files.models[role]
@@ -133,9 +138,9 @@ def finetune(arguments) -> None:
         raise SystemExit(f"cannot load the selected voice/model files: {error}") from error
     if "pitch" in models and not getattr(voice.pitch, "supported", True):
         raise SystemExit(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
-    required = set(models) | {"acoustic"}
+    required = set(models)
     if set(models) & {"acoustic", "vocoder"}:
-        required.add("vocoder")
+        required.update(("acoustic", "vocoder"))
     _require_supported_models(voice, required, "fine-tuning")
     # Preserve mode intentionally does not construct Voice.pitch; skip all Pitch checks here.
     if not arguments.preserve_non_acoustic_models and hasattr(voice, "pitch") and not getattr(voice.pitch, "supported", True):
@@ -214,7 +219,7 @@ def finetune(arguments) -> None:
     if arguments.vocal_modes is not None:
         voice.set_vocal_modes([name for name in arguments.vocal_modes.split(",") if name])
     styles = {utterance.style for utterance in utterances} - {None}
-    if unknown := styles - set(voice.acoustic.vocal_modes):
+    if hasattr(voice, "acoustic") and (unknown := styles - set(voice.acoustic.vocal_modes)):
         raise SystemExit(f"dataset styles that are not vocal modes of the voice (add them with --vocal-modes): {', '.join(sorted(unknown))}")
     train, validation = split(phrases, arguments.validation, arguments.seed)
     device = torch.device(arguments.device)
@@ -315,6 +320,9 @@ def _referenced_models(models_root: Path) -> set[Path]:
 
 
 def _check_phonemes(voice: Voice, phrases) -> None:
+    if not hasattr(voice, "acoustic"):
+        print("Phoneme inventory check skipped: the source Acoustic model is preserved and was not loaded.", flush=True)
+        return
     missing = set()
     for phrase in phrases:
         for phone in phrase.phones:
@@ -785,7 +793,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--output", required=True, help="voice.nofs path, or databases/<name>/ directory for info voices")
     command.add_argument("--language", required=True, type=language_name, help="default phoneme language, e.g. japanese or ja")
     command.add_argument("--models", default="acoustic", help=f"comma-separated subset of {','.join(MODELS)}")
-    command.add_argument("--preserve-non-acoustic-models", action="store_true", help="info.nofs only: train acoustic; omit Timing/Pitch, preserve original non-acoustic IDs/bytes and embeddings, use Vocoder as frozen decoder, and skip Vocoder range fitting")
+    command.add_argument("--preserve-non-acoustic-models", "--preserve-original-models", dest="preserve_non_acoustic_models", action="store_true", help="info.nofs only: train Timing and/or Pitch; preserve every unselected model, including opaque Acoustic/Vocoder DNNIs, byte-for-byte")
     command.add_argument("--params", choices=("all", "embeddings"), default="all", help="train every weight, or only the per-voice speaker/style/vocal-mode vectors")
     command.add_argument("--vocal-modes", help="comma-separated vocal modes of the finetuned voice (info voices): existing ones are kept, new ones start from the default style, others are dropped")
     command.add_argument("--steps", type=int, default=2000)
