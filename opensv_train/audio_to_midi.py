@@ -279,6 +279,7 @@ def _stabilize_note_labels(
 
         current = int(np.clip(np.rint(values[valid_start]), 0, 127))
         labels[start:valid_start] = current
+        labels[valid_start] = current
         pending_start = -1
         pending_direction = 0
         pending_target = current
