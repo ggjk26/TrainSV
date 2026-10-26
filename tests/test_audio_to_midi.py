@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from opensv_train.audio_to_midi import _extract_note_events, _midi_bytes
+from opensv_train.audio_to_midi import _extract_note_events, _midi_bytes, convert_audio_to_midi
 
 
 def _times(count):
@@ -144,6 +144,25 @@ def test_tiny_unvoiced_gap_is_filled_only_when_pitch_matches_on_both_sides():
     assert diagnostics["voiced_frames_percent"] == 95.0
 
 
+def test_same_pitch_gap_up_to_80ms_is_filled():
+    times = _times(60)
+    frequencies = np.array([440.0] * 20 + [0.0] * 6 + [440.0] * 34)
+    notes = _extract_note_events(
+        times, frequencies, min_note_ms=50, median_window=1
+    )
+    assert [note[2] for note in notes] == [69]
+
+
+def test_same_pitch_gap_over_80ms_is_preserved():
+    times = _times(70)
+    frequencies = np.array([440.0] * 20 + [0.0] * 10 + [440.0] * 40)
+    notes = _extract_note_events(
+        times, frequencies, min_note_ms=50, median_window=1
+    )
+    assert [note[2] for note in notes] == [69, 69]
+    assert notes[1][0] - notes[0][1] >= 0.09
+
+
 def test_does_not_bridge_a_real_rest_between_different_notes():
     times = _times(70)
     frequencies = np.array([440.0] * 25 + [0.0] * 15 + [523.251] * 30)
@@ -202,3 +221,11 @@ def test_writes_standard_single_track_midi_with_note_events():
 def test_rejects_invalid_midi_tempo(tempo):
     with pytest.raises(ValueError, match="tempo must be between"):
         _midi_bytes([(0.0, 0.5, 69)], tempo_bpm=tempo)
+
+
+def test_rejects_out_of_range_silence_threshold_before_opening_audio(tmp_path):
+    source = tmp_path / "input.wav"
+    source.write_bytes(b"not needed because options are validated first")
+    output = tmp_path / "output.mid"
+    with pytest.raises(ValueError, match="silence threshold must be between 0.001 and 0.1"):
+        convert_audio_to_midi(source, output, silence_threshold=0.2)
