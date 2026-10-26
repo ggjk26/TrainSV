@@ -99,6 +99,13 @@ def test_audio_to_midi_webui_exposes_note_change_stability_control():
     assert "Pitch-change confirmation must be between 20 and 500 ms." in PAGE
     assert "A pitch change must persist for this long before a separate MIDI note is created." in PAGE
 
+def test_audio_to_midi_webui_exposes_silence_sensitivity_control():
+    assert 'data-id="am_silence"' in PAGE
+    assert 'data-value="0.01"' in PAGE
+    assert '["--silence-threshold","am_silence"]' in PAGE
+    assert "Silence threshold must be between 0.001 and 0.1." in PAGE
+    assert "Lower values can recover quieter vocal tails and weak phrases." in PAGE
+
 
 def test_audio_to_midi_accepts_windows_audio_and_midi_extensions():
     # A literal dot must be escaped once in JavaScript regex source. The old
