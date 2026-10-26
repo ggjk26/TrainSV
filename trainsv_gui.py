@@ -786,6 +786,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div class="field" data-id="am_floor" data-label="Pitch floor (Hz)" data-value="65" data-hint="Lowest fundamental frequency to track. Raise this to avoid low-frequency rumble being detected as notes."></div>
     <div class="field" data-id="am_ceiling" data-label="Pitch ceiling (Hz)" data-value="1100" data-hint="Highest fundamental frequency to track. Lower this if octave jumps appear in the extracted melody."></div>
     <div class="field" data-id="am_voicing" data-label="Voicing threshold (0.05–1.0)" data-value="0.45" data-hint="Higher values reject uncertain/unvoiced frames more aggressively; lower values may recover weak notes but can add false notes."></div>
+    <div class="field" data-id="am_silence" data-label="Silence threshold (0.001–0.1)" data-value="0.01" data-hint="Lower values can recover quieter vocal tails and weak phrases. Too low may let residual accompaniment be mistaken for voice."></div>
     <div class="field" data-id="am_min_note" data-label="Minimum note duration (ms)" data-value="70" data-hint="Short pitch fragments are merged into a neighbouring note when possible. Reduce this for fast passages; increase it to suppress brief tracking glitches."></div>
     <div class="field" data-id="am_median" data-label="Pitch smoothing window (1–21, odd)" data-value="5" data-hint="Median smoothing is applied within voiced spans before semitone quantization. Use 1 to disable smoothing; larger windows suppress pitch flicker but can blur fast runs."></div>
     <div class="field" data-id="am_change_ms" data-label="Pitch-change confirmation (ms)" data-value="120" data-hint="A pitch change must persist for this long before a separate MIDI note is created. Increase it to suppress vibrato and expressive glides; decrease it for fast ornaments."></div>
@@ -880,6 +881,7 @@ const I18N_ROWS = [["Teach a Synthesizer V voice your recordings","用你的录�
   ,["Pitch floor (Hz)","音高下限（Hz）","音高の下限（Hz）"]
   ,["Pitch ceiling (Hz)","音高上限（Hz）","音高の上限（Hz）"]
   ,["Voicing threshold (0.05–1.0)","有声音阈值（0.05–1.0）","有声音のしきい値（0.05–1.0）"]
+  ,["Silence threshold (0.001–0.1)","静音阈值（0.001–0.1）","無音しきい値（0.001～0.1）"]
   ,["Minimum note duration (ms)","最短音符时长（毫秒）","最小音符長（ms）"]
   ,["Pitch smoothing window (1–21, odd)","音高平滑窗口（1–21，奇数）","音高平滑ウィンドウ（1–21、奇数）"]
   ,["Pitch-change confirmation (ms)","音高变化确认时长（毫秒）","音高変化の確定時間（ms）"]
@@ -894,6 +896,7 @@ const I18N_ROWS = [["Teach a Synthesizer V voice your recordings","用你的录�
   ,["Lowest fundamental frequency to track. Raise this to avoid low-frequency rumble being detected as notes.","要跟踪的最低基频。提高此值可以避免将低频轰鸣误识别为音符。","追跡する基本周波数の下限です。値を上げると低周波ノイズを音符と誤認しにくくなります。"]
   ,["Highest fundamental frequency to track. Lower this if octave jumps appear in the extracted melody.","要跟踪的最高基频。如果提取旋律出现八度跳变，可以降低此值。","追跡する基本周波数の上限です。抽出した旋律にオクターブ誤りがある場合は下げてください。"]
   ,["Higher values reject uncertain/unvoiced frames more aggressively; lower values may recover weak notes but can add false notes.","较高的值会更积极地排除不确定或无声帧；较低的值可能恢复较弱的音符，但也可能增加误检。","値を上げると不確かなフレームや無声音をより強く除外します。下げると弱い音を拾いやすくなりますが、誤検出も増える場合があります。"]
+  ,["Lower values can recover quieter vocal tails and weak phrases. Too low may let residual accompaniment be mistaken for voice.","较低的值有助于恢复较轻的歌声尾音和较弱的乐句。过低时，残留伴奏也可能被误认为人声。","値を下げると小さな歌声の語尾や弱いフレーズを拾いやすくなります。低すぎると残留伴奏を歌声と誤認する場合があります。"]
   ,["Short pitch fragments are merged into a neighbouring note when possible. Reduce this for fast passages; increase it to suppress brief tracking glitches.","较短的音高片段会尽可能并入相邻音符。快速乐句可降低此值；若想抑制短暂的跟踪错误，可提高此值。","短い音高区間は可能であれば隣接ノートに統合されます。速いフレーズでは下げ、短い追跡ノイズを抑えるには上げてください。"]
   ,["Median smoothing is applied within voiced spans before semitone quantization. Use 1 to disable smoothing; larger windows suppress pitch flicker but can blur fast runs.","在半音量化之前，仅对有声音段进行中值平滑。设为 1 可关闭；较大的窗口可抑制音高抖动，但可能模糊快速音阶。","半音量子化の前に、有声音区間内だけ中央値平滑化を行います。1 で無効になり、大きな値はピッチの揺れを抑えますが、速い音符の動きがぼやける場合があります。"]
   ,["Reference pitch for MIDI note 69. Keep 440 Hz for standard concert tuning, or adjust for a non-standard reference.","MIDI 音符 69 的参考音高。标准音高使用 440 Hz；非标准调音时可调整。","MIDI ノート 69 の基準音高です。標準チューニングでは 440 Hz を使い、異なる基準では調整してください。"]
@@ -906,6 +909,7 @@ const I18N_ROWS = [["Teach a Synthesizer V voice your recordings","用你的录�
   ,["MIDI output must not overwrite the source audio.","MIDI 输出不能覆盖源音频。","MIDI 出力で元音声を上書きすることはできません。"]
   ,["Pitch range must satisfy 20 ≤ floor < ceiling ≤ 5000 Hz.","音高范围必须满足 20 ≤ 下限 < 上限 ≤ 5000 Hz。","音高範囲は 20 ≤ 下限 < 上限 ≤ 5000 Hz を満たす必要があります。"]
   ,["Voicing threshold must be between 0.05 and 1.0.","有声音阈值必须介于 0.05 和 1.0 之间。","有声音のしきい値は 0.05～1.0 の範囲にしてください。"]
+  ,["Silence threshold must be between 0.001 and 0.1.","静音阈值必须介于 0.001 和 0.1 之间。","無音しきい値は 0.001～0.1 の範囲にしてください。"]
   ,["Minimum note duration must be between 20 and 1000 ms.","最短音符时长必须介于 20 到 1000 毫秒之间。","最小音符長は 20～1000 ms の範囲にしてください。"]
   ,["Smoothing window must be an odd integer from 1 to 21.","平滑窗口必须是 1 到 21 之间的奇数整数。","平滑ウィンドウは 1～21 の奇数にしてください。"]
   ,["Pitch-change confirmation must be between 20 and 500 ms.","音高变化确认时长必须介于 20 到 500 毫秒之间。","ピッチ変化の確定時間は 20～500 ms の範囲にしてください。"]
@@ -1571,10 +1575,11 @@ const B={
     else if(!/\.(mid|midi)$/i.test(output))p.push("The output filename must end in .mid or .midi.");
     if(source&&output&&source.replace(/\\/g,"/").toLowerCase()===output.replace(/\\/g,"/").toLowerCase())p.push("MIDI output must not overwrite the source audio.");
     const a=["--input",source,"--output",output];
-    [["--pitch-floor","am_floor"],["--pitch-ceiling","am_ceiling"],["--voicing-threshold","am_voicing"],["--min-note-ms","am_min_note"],["--median-window","am_median"],["--note-change-ms","am_change_ms"],["--a4-hz","am_a4"],["--transpose-semitones","am_transpose"],["--tempo-bpm","am_tempo"]].forEach(([flag,id])=>addOpt(a,p,flag,id));
-    const floor=Number(val("am_floor")),ceiling=Number(val("am_ceiling")),threshold=Number(val("am_voicing")),minimum=Number(val("am_min_note")),window=Number(val("am_median")),changeMs=Number(val("am_change_ms")),a4=Number(val("am_a4")),transpose=Number(val("am_transpose")),tempo=Number(val("am_tempo"));
+    [["--pitch-floor","am_floor"],["--pitch-ceiling","am_ceiling"],["--voicing-threshold","am_voicing"],["--silence-threshold","am_silence"],["--min-note-ms","am_min_note"],["--median-window","am_median"],["--note-change-ms","am_change_ms"],["--a4-hz","am_a4"],["--transpose-semitones","am_transpose"],["--tempo-bpm","am_tempo"]].forEach(([flag,id])=>addOpt(a,p,flag,id));
+    const floor=Number(val("am_floor")),ceiling=Number(val("am_ceiling")),threshold=Number(val("am_voicing")),silenceThreshold=Number(val("am_silence")),minimum=Number(val("am_min_note")),window=Number(val("am_median")),changeMs=Number(val("am_change_ms")),a4=Number(val("am_a4")),transpose=Number(val("am_transpose")),tempo=Number(val("am_tempo"));
     if(!(floor>=20&&floor<ceiling&&ceiling<=5000))p.push("Pitch range must satisfy 20 ≤ floor < ceiling ≤ 5000 Hz.");
     if(!(threshold>=0.05&&threshold<=1))p.push("Voicing threshold must be between 0.05 and 1.0.");
+    if(!(silenceThreshold>=0.001&&silenceThreshold<=0.1))p.push("Silence threshold must be between 0.001 and 0.1.");
     if(!(minimum>=20&&minimum<=1000))p.push("Minimum note duration must be between 20 and 1000 ms.");
     if(!(Number.isInteger(window)&&window>=1&&window<=21&&window%2===1))p.push("Smoothing window must be an odd integer from 1 to 21.");
     if(!(changeMs>=20&&changeMs<=500))p.push("Pitch-change confirmation must be between 20 and 500 ms.");
