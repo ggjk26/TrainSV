@@ -822,6 +822,7 @@ def audio_to_midi_command(arguments) -> None:
             pitch_floor=arguments.pitch_floor,
             pitch_ceiling=arguments.pitch_ceiling,
             voicing_threshold=arguments.voicing_threshold,
+            silence_threshold=arguments.silence_threshold,
             min_note_ms=arguments.min_note_ms,
             median_window=arguments.median_window,
             note_change_ms=arguments.note_change_ms,
@@ -1027,6 +1028,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--pitch-floor", type=float, default=65.0, help="minimum tracked fundamental frequency in Hz (default 65)")
     command.add_argument("--pitch-ceiling", type=float, default=1100.0, help="maximum tracked fundamental frequency in Hz (default 1100)")
     command.add_argument("--voicing-threshold", type=float, default=0.45, help="Praat voicing threshold from 0.05 to 1.0 (default 0.45)")
+    command.add_argument("--silence-threshold", type=float, default=0.01, help="Praat silence threshold from 0.001 to 0.1 (default 0.01); lower values can recover weak vocal tails but may admit background music")
     command.add_argument("--min-note-ms", type=float, default=70.0, help="discard extracted notes shorter than this duration in ms (default 70)")
     command.add_argument("--median-window", type=int, choices=(1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21), default=5, help="odd median filter width in 10 ms frames; 1 disables pitch smoothing")
     command.add_argument("--note-change-ms", type=float, default=120.0, help="require a pitch change to persist this long before creating a new MIDI note (20-500 ms; default 120)")
