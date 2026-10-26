@@ -405,7 +405,7 @@ def _extract_note_events(
 
     # Fill only tiny gaps when the same note is present on both sides (for example,
     # a brief consonant closure). Do not bridge actual rests or different notes.
-    max_gap = max(1, round(0.03 / frame_step))
+    max_gap = max(1, round(0.08 / frame_step))
     i = 0
     while i < len(labels):
         if labels[i] >= 0:
@@ -479,6 +479,7 @@ def convert_audio_to_midi(
     pitch_floor: float = 65.0,
     pitch_ceiling: float = 1100.0,
     voicing_threshold: float = 0.45,
+    silence_threshold: float = 0.01,
     min_note_ms: float = 70.0,
     median_window: int = 5,
     note_change_ms: float = 120.0,
@@ -500,6 +501,8 @@ def convert_audio_to_midi(
         raise ValueError("pitch range must satisfy 20 <= floor < ceiling <= 5000 Hz")
     if not math.isfinite(voicing_threshold) or not 0.05 <= voicing_threshold <= 1.0:
         raise ValueError("voicing threshold must be between 0.05 and 1.0")
+    if not math.isfinite(silence_threshold) or not 0.001 <= silence_threshold <= 0.1:
+        raise ValueError("silence threshold must be between 0.001 and 0.1")
     if not math.isfinite(tempo_bpm) or not 20.0 <= tempo_bpm <= 300.0:
         raise ValueError("tempo must be between 20 and 300 BPM")
 
@@ -510,7 +513,7 @@ def convert_audio_to_midi(
         time_step=0.01,
         pitch_floor=float(pitch_floor),
         pitch_ceiling=float(pitch_ceiling),
-        silence_threshold=0.03,
+        silence_threshold=float(silence_threshold),
         voicing_threshold=float(voicing_threshold),
         octave_cost=0.01,
         octave_jump_cost=0.35,
@@ -548,5 +551,6 @@ def convert_audio_to_midi(
         "lowest_midi_note": min(pitches),
         "highest_midi_note": max(pitches),
         "tempo_bpm": float(tempo_bpm),
+        "silence_threshold": float(silence_threshold),
         **diagnostics,
     }
