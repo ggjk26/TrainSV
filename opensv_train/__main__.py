@@ -29,6 +29,7 @@ from .sfpk import build_sfpk
 from .timbre import summarize_timbre
 from .model_tools import replace_info_models
 from .audio_to_midi import convert_audio_to_midi
+from .cross_language import audit_cross_language_coverage
 
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -834,6 +835,20 @@ def audio_to_midi_command(arguments) -> None:
         raise SystemExit(f"audio-to-MIDI conversion failed: {error}") from error
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
+def cross_language_audit_command(arguments) -> None:
+    voice = load_voice(arguments.voice)
+    if not getattr(voice.acoustic, "supported", True):
+        raise SystemExit(getattr(voice.acoustic, "reason", "selected Acoustic model is unsupported"))
+    report = audit_cross_language_coverage(
+        arguments.data,
+        voice.acoustic.phone_sets,
+        voice.acoustic.unified.symbols,
+        arguments.source_language,
+        arguments.target_language,
+    )
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
 def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trainsv")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -1020,6 +1035,13 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--model", help="legacy single-model replacement .dnni")
     command.add_argument("--output", required=True, help="output package folder (recommended; creates database/voices/<name>/info.<version>.nofs and database/models/), or a correctly nested .../voices/<name>/info.<version>.nofs path")
     command.set_defaults(handler=replace_model_command)
+
+    command = commands.add_parser("cross-language-audit", help="report target-language phoneme coverage in a training corpus")
+    command.add_argument("--voice", required=True, help="voice.nofs or info.<version>.nofs containing the target phoneme inventories")
+    command.add_argument("--data", required=True, help="directory containing transcriptions.csv")
+    command.add_argument("--source-language", required=True, type=language_name, help="language used by unprefixed dataset phones")
+    command.add_argument("--target-language", required=True, type=language_name, help="target synthesis language to audit, e.g. japanese")
+    command.set_defaults(handler=cross_language_audit_command)
 
     command = commands.add_parser("audio-to-midi", help="extract a monophonic melody from audio and export a standard MIDI file")
     command.add_argument("--input", required=True, help="source WAV/AIFF/FLAC or another audio format supported by SoundFile/Praat")
