@@ -572,29 +572,42 @@ def _referenced_models(models_root: Path) -> set[Path]:
 
 
 def _check_phonemes(voice: Voice, phrases, models=()) -> None:
-    roles = [role for role in ("acoustic", "duration", "pitch") if role in set(models) and hasattr(voice, role)]
+    selected = set(models)
+    required_roles = set(selected) & {"duration", "pitch"}
+    if selected & {"acoustic", "vocoder"}:
+        # Vocoder training still conditions waveform generation on Acoustic
+        # phoneme features, even when Acoustic weights remain frozen.
+        required_roles.add("acoustic")
+    roles = [role for role in ("acoustic", "duration", "pitch") if role in required_roles and hasattr(voice, role)]
     if not roles:
         print("Phoneme inventory check skipped: no trainable language-conditioned model is loaded.", flush=True)
         return
     missing: dict[str, set[str]] = {role: set() for role in roles}
     for role in roles:
-        phone_sets = getattr(getattr(voice, role), "phone_sets", [])
+        model = getattr(voice, role)
+        phone_sets = getattr(model, "phone_sets", [])
+        unified_symbols = set(getattr(getattr(model, "unified", None), "symbols", []))
         for phrase in phrases:
             for phone in phrase.phones:
+                label = f"{phone.language}/{phone.symbol}"
                 try:
                     index = find_language(phone_sets, phone.language)
-                    if phone.symbol not in phone_sets[index].symbols:
-                        raise ValueError("unknown phone")
+                    phone_set = phone_sets[index]
+                    source_index = phone_set.symbols.index(phone.symbol)
+                    unified_phone = phone_set.unified[source_index]
+                    if unified_phone not in unified_symbols:
+                        raise ValueError("unified phone is absent from the model inventory")
                 except (ValueError, IndexError):
-                    missing[role].add(f"{phone.language}/{phone.symbol}")
+                    missing[role].add(label)
     failures = [
         f"{role}: {', '.join(sorted(values))}"
         for role, values in missing.items() if values
     ]
     if failures:
         raise SystemExit(
-            "phonemes missing from the selected model phone sets (keep each dataset's language labels intact and "
-            "use a language-appropriate --phoneme-map where needed): " + " | ".join(failures)
+            "phonemes missing from the selected model phone sets or unified inventory "
+            "(keep each dataset's language labels intact and use a language-appropriate "
+            "--phoneme-map where needed): " + " | ".join(failures)
         )
 
 
