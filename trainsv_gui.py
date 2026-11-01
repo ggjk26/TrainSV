@@ -705,6 +705,16 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
       <div class="field" data-id="t_transition_sampling" data-label="Transition sampling probability" data-value="0.5" data-hint="以此概率将训练窗口放在有效的非静音音素边界附近；其余保持均匀随机采样。设为 0 可关闭。"></div>
       <div class="field" data-id="t_transition_local_weight" data-label="Transition-local spectral loss weight" data-value="0.25" data-hint="对边界中心约 80 ms 的生成音频与参考 WAV 额外计算多分辨率频谱损失；设为 0 可关闭，不会对最终输出做平滑滤镜。"></div>
       <div class="field" data-id="t_brightness_weight" data-label="Brightness-balance loss weight" data-value="0" data-hint="0 表示关闭；0.05 是轻度实验，0.10 更强。比较输出与目标 WAV 的高频/中频能量平衡，不会对生成的 WAV 做后期 EQ，也不保证消除鼻音。"></div>
+      <label class="choice"><input type="checkbox" id="t_joint_multilingual" data-s><span><b>Joint Mandarin + Japanese training</b><small>Train both languages in one run while keeping their recordings, phoneme labels and preprocessing separate. Sampling is language-balanced by default.</small></span></label>
+      <div id="t_joint_multilingual_panel" hidden>
+        <div class="grid2">
+          <div class="field" data-id="t_joint_mandarin" data-kind="path" data-mode="dir" data-label="Mandarin dataset folder" data-hint="A separate folder with its own wavs/ and transcriptions.csv. Labels must use the Mandarin phone set."></div>
+          <div class="field" data-id="t_joint_japanese" data-kind="path" data-mode="dir" data-label="Japanese dataset folder" data-hint="A separate folder with its own wavs/ and transcriptions.csv. Labels must use the Japanese phone set."></div>
+          <div class="field" data-id="t_joint_mandarin_weight" data-label="Mandarin sampling weight" data-value="1" data-hint="Relative language sampling weight. Equal weights mean each language receives about half of the training samples, independent of dataset size."></div>
+          <div class="field" data-id="t_joint_japanese_weight" data-label="Japanese sampling weight" data-value="1" data-hint="Relative language sampling weight. For example, 1 and 2 gives Japanese twice the sampling probability of Mandarin."></div>
+        </div>
+        <p class="hint">Every dataset is split into its own training and validation partitions. Training reports separate validation metrics for Mandarin and Japanese. Duration and Pitch training require usable note and word-boundary labels in both datasets.</p>
+      </div>
       <div class="field" data-id="t_cross_language_preservation" data-label="Other-language preservation weight" data-value="0" data-hint="0 表示关闭；从 1.0 开始尝试。只适用于单语言 Acoustic 训练：额外约束共享声学网络接近底模，并冻结非训练语言嵌入及跨语言共享的歌手/音色向量。它只能尽量保留底模已有的其他语言能力，不能凭普通话录音学出日语特有发音。"></div>
       <div class="field" data-id="t_val" data-label="Recordings held back for testing" data-ph="0.1" data-hint="A fraction (0.1 = 10%) or a count (5)."></div>
       <div class="field" data-id="t_seed" data-label="Random seed" data-ph="0" data-hint="Use the same value when comparing results."></div>
@@ -1454,8 +1464,19 @@ const B={
     if(chk("i_words")){if(!val("voice"))p.push("Choose a voice (step 1), or untick “Mark word boundaries”.");a.push("--voice",val("voice"),"--language",lang())}
     const pairs=val("i_map").split(/[\s,]+/).filter(x=>x.includes("="));if(pairs.length)a.push("--map",...pairs);
     return{cmd:"import-lab",label:"Converting recordings to a dataset",args:a,p}},
-  finetune(pitchOnly=false){const p=[],a=[],preserve=chk("t_preserve_non_acoustic_models");
-    if(!val("voice"))p.push("Choose a voice (step 1).");dsNeed(p,"Choose a dataset (step 2).");
+  finetune(pitchOnly=false){const p=[],a=[],preserve=chk("t_preserve_non_acoustic_models"),joint=chk("t_joint_multilingual");
+    if(!val("voice"))p.push("Choose a voice (step 1).");
+    if(joint){
+      const mandarin=val("t_joint_mandarin"),japanese=val("t_joint_japanese");
+      if(!mandarin)p.push("Choose a separate Mandarin dataset folder.");
+      if(!japanese)p.push("Choose a separate Japanese dataset folder.");
+      const norm=path=>path.replace(/\\/g,"/").replace(/\/+$/,"").toLowerCase();
+      if(mandarin&&japanese&&norm(mandarin)===norm(japanese))p.push("Mandarin and Japanese must use separate dataset folders.");
+      [["t_joint_mandarin_weight","Mandarin"],["t_joint_japanese_weight","Japanese"]].forEach(([id,name])=>{
+        const value=Number(val(id));if(!(isFinite(value)&&value>0))p.push(name+" sampling weight must be a number greater than zero.");
+      });
+      if(Number(val("t_cross_language_preservation"))>0)p.push("Other-language preservation is for monolingual training; turn it off for joint multilingual training.");
+    }else dsNeed(p,"Choose a dataset (step 2).");
     if(!val("v_name"))p.push("Name your new voice.");if(!val("t_output"))p.push("Choose where to save the new voice.");
     if(preserve&&(!isInfo(val("voice"))||!VOICE_OK))p.push("Preserving non-acoustic models requires an existing info.nofs shared-model voicebank.");
     const customIds=["t_custom_acoustic_dnni","t_custom_duration_dnni","t_custom_pitch_dnni","t_custom_vocoder_dnni"];
@@ -1467,7 +1488,12 @@ const B={
     const models=pitchOnly?["pitch"]:MODELS.filter(x=>chk("m_"+x));if(!models.length)p.push("Tick at least one thing to learn.");
     if(val("t_custom_acoustic_dnni")&&!models.includes("acoustic"))p.push("An Acoustic base model can only be selected when Acoustic is included in the training models.");
     if(preserve&&(!models.includes("acoustic")||models.includes("vocoder")))p.push("Alternate-base mode always trains Acoustic; keep Acoustic selected and do not select Vocoder for training.");
-    a.push("--voice",val("voice"),"--data",val("dataset"),"--output",val("t_output"),"--language",lang(),"--models",models.join(","),"--name",val("v_name"));
+    a.push("--voice",val("voice"));
+    if(joint){
+      a.push("--dataset","mandarin="+val("t_joint_mandarin"),"--dataset","japanese="+val("t_joint_japanese"));
+      a.push("--language-weight","mandarin="+val("t_joint_mandarin_weight"),"--language-weight","japanese="+val("t_joint_japanese_weight"));
+    }else a.push("--data",val("dataset"),"--language",lang());
+    a.push("--output",val("t_output"),"--models",models.join(","),"--name",val("v_name"));
     if(preserve){
       const acousticBase=val("t_custom_acoustic_dnni");
       if(!acousticBase)p.push("Choose an Acoustic base model (.dnni); the target Acoustic will not be loaded.");
@@ -1499,7 +1525,8 @@ const B={
     }
     addOpt(a,p,"--steps","t_steps",true);
     if(val("t_params")&&val("t_params")!=="all")a.push("--params",val("t_params"));
-    [["--lr","t_lr"],["--warmup","t_warmup"],["--lr-end","t_lrend"],["--anchor","t_anchor"],["--batch","t_batch"],["--consonant-weight","t_cons"],["--transition-weight","t_transition_weight"],["--transition-frames","t_transition_frames"],["--transition-sampling-probability","t_transition_sampling"],["--transition-local-weight","t_transition_local_weight"],["--brightness-weight","t_brightness_weight"],["--cross-language-preservation-weight","t_cross_language_preservation"],["--validation","t_val"],["--evaluate-every","t_evalevery"],["--log-every","t_logevery"],["--seed","t_seed"]].forEach(([f,i])=>addOpt(a,p,f,i));
+    [["--lr","t_lr"],["--warmup","t_warmup"],["--lr-end","t_lrend"],["--anchor","t_anchor"],["--batch","t_batch"],["--consonant-weight","t_cons"],["--transition-weight","t_transition_weight"],["--transition-frames","t_transition_frames"],["--transition-sampling-probability","t_transition_sampling"],["--transition-local-weight","t_transition_local_weight"],["--brightness-weight","t_brightness_weight"],["--validation","t_val"],["--evaluate-every","t_evalevery"],["--log-every","t_logevery"],["--seed","t_seed"]].forEach(([f,i])=>addOpt(a,p,f,i));
+    if(!joint&&!preserve)addOpt(a,p,"--cross-language-preservation-weight","t_cross_language_preservation");
     if(!preserve)addOpt(a,p,"--gain","t_gain");
     [["--device","t_device"],["--phoneme-map","t_pmap"],["--vocal-modes","t_modes"],["--version","t_version"],["--final-version","t_final"],["--acoustic-dnni-version","t_acoustic_dnni_version"],["--history","t_history"],["--run","t_run"]].forEach(([f,i])=>{if(val(i))a.push(f,val(i))});
     if(!preserve&&val("t_levelref"))a.push("--level-reference",val("t_levelref"));
@@ -1612,6 +1639,7 @@ function addOpt(a,p,flag,id,required){
 
 /* ---------- refresh run buttons, previews, page hints ---------- */
 function refresh(){
+  syncJointMultilingualUI();
   syncPreserveModelsUI();
   const running=JOB&&JOB.status==="running";
   $$("[data-run]").forEach(b=>{
@@ -1622,7 +1650,8 @@ function refresh(){
   });
   const warn=$("#trainWarn"),m=MODELS.filter(x=>chk("m_"+x));
   const wantsNotes=m.includes("duration")||m.includes("pitch");
-  if(wantsNotes&&DS&&DS.rows&&DS.notes<DS.rows){
+  const jointMode=chk("t_joint_multilingual");
+  if(!jointMode&&wantsNotes&&DS&&DS.rows&&DS.notes<DS.rows){
     warn.hidden=false;
     if(DS.notes){
       const noteWarning={
@@ -1640,8 +1669,8 @@ function refresh(){
       warn.textContent=noNotesWarning[UI_LANG]||noNotesWarning.en;
     }
   }
-  else if(wantsNotes&&!DS){warn.hidden=false;warn.textContent="Timing and Pitch need a dataset with notes. Check your dataset in step 2."}
-  else if(!wantsNotes&&DS&&DS.rows&&DS.notes===0){
+  else if(!jointMode&&wantsNotes&&!DS){warn.hidden=false;warn.textContent="Timing and Pitch need a dataset with notes. Check your dataset in step 2."}
+  else if(!jointMode&&!wantsNotes&&DS&&DS.rows&&DS.notes===0){
     warn.hidden=false;
     const acousticOnlyWarning={
       en:"This dataset has no note labels, so this run can adapt Acoustic/Sound only. It can improve phoneme realization and timbre, but it cannot correct the base voice's note-to-F0 Pitch prediction. F0 presets only analyze the reference WAV; inspect phone_mapping_report.csv for Mandarin source-to-target phoneme mappings before training.",
@@ -1667,6 +1696,13 @@ function go(name){
   location.hash=name;$(".pages").scrollTop=0;
 }
 function setMode(){const lab=chk("d_mode_lab");$("#pane-have").hidden=lab;$("#pane-lab").hidden=!lab;$$("[data-src]").forEach(d=>d.hidden=d.dataset.src!==val("i_src"))}
+
+function syncJointMultilingualUI(){
+  const active=chk("t_joint_multilingual");
+  const panel=$("#t_joint_multilingual_panel");if(panel)panel.hidden=!active;
+  const preservation=document.querySelector('.field[data-id="t_cross_language_preservation"] input');
+  if(preservation)preservation.disabled=active;
+}
 
 function syncPreserveModelsUI(){
   const option=$("#t_preserve_non_acoustic_models");
