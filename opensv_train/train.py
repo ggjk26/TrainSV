@@ -536,6 +536,24 @@ class Trainer:
                 ) / weight_sum
         return aggregate, per_language
 
+    def _sample_language_phrase(
+        self,
+        model: str,
+        groups: dict[str, list[Phrase]],
+        cumulative_by_language: dict[str, list[int]],
+    ) -> Phrase:
+        available = [language for language in self.language_weights if groups.get(language)]
+        if not available:
+            raise ValueError(f"no eligible training phrases are available for model {model}")
+        language = self.random.choices(
+            available,
+            weights=[self.language_weights[name] for name in available],
+        )[0]
+        phrases = groups[language]
+        if model in ("acoustic", "vocoder"):
+            return self.random.choices(phrases, cum_weights=cumulative_by_language[language])[0]
+        return self.random.choice(phrases)
+
     def _log_language_validation(self, per_language: dict[str, dict[str, float]]) -> None:
         for language, metrics in sorted(per_language.items()):
             if metrics:
@@ -600,20 +618,11 @@ class Trainer:
                     continue
                 for _ in range(config.batch):
                     if self.language_weights:
-                        groups = grouped_by_model[model]
-                        available = [language for language in self.language_weights if groups.get(language)]
-                        language = self.random.choices(
-                            available,
-                            weights=[self.language_weights[name] for name in available],
-                        )[0]
-                        language_phrases = groups[language]
-                        if model in ("acoustic", "vocoder"):
-                            phrase = self.random.choices(
-                                language_phrases,
-                                cum_weights=cumulative_by_language[model][language],
-                            )[0]
-                        else:
-                            phrase = self.random.choice(language_phrases)
+                        phrase = self._sample_language_phrase(
+                            model,
+                            grouped_by_model[model],
+                            cumulative_by_language.get(model, {}),
+                        )
                     elif model in cumulative_weights:
                         phrase = self.random.choices(phrases, cum_weights=cumulative_weights[model])[0]
                     else:
