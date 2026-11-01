@@ -618,7 +618,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <div data-src="filenames" hidden>
       <div class="field" data-id="i_wavs_names" data-kind="path" data-mode="dir" data-label="Folder of WAV files" data-hint="Use spaces between phones, e.g. <code>@_n 7_0.wav</code>. Only the final _0/_1 retake suffix is removed. Choose the correct source phone convention below so symbols are mapped explicitly."></div>
       <div class="field" data-id="i_source_system" data-kind="select" data-options="auto|Auto (language default);vocaloid-mandarin|VOCALOID Mandarin (legacy);xsampa|Standard X-SAMPA;synthv-xsampa|SynthV legacy X-SAMPA;sv1112-chinese|SynthV 1.11.2 Chinese (Old labels);sv1112-cantonese|SynthV 1.11.2 Cantonese (Old labels);none|No conversion" data-value="auto" data-label="Source phone convention" data-hint="Choose the exact notation used in filenames. Standard X-SAMPA and legacy SynthV Mandarin spellings use separate explicit maps; Auto retains the VOCALOID Mandarin mapping. After import, inspect phone_mapping_report.csv because an existing target symbol does not prove that a source token has the right Mandarin phonetic meaning. In explicit modes, unknown tokens are reported rather than heuristically split."></div>
-      <div class="field" data-id="i_phone_table" data-kind="path" data-mode="file" data-ext="json" data-label="phone_table.json (optional)" data-hint="Usually not needed when a voice is selected above. If omitted, keep “Mark word boundaries using my voice” enabled so TrainSV can read the selected voice phone set."></div>
+      <div class="field" data-id="i_phone_table" data-kind="path" data-mode="file" data-ext="json" data-label="phone_table.json (optional)" data-hint="Usually not needed when a voice is selected above. If blank, TrainSV reads the selected voice's phone set even when word-boundary marking is turned off."></div>
       <p class="note">Approximation: the first and last <code>sil</code> each take 10% of the audio; all middle phones share the remaining 80% equally. This creates labels from filename order, not acoustic forced alignment.</p>
       <p class="note">After import, review phone_mapping_report.csv in the dataset folder. It lists each source token, the target voice phone(s), and the mapping rule. A technically valid mapping can still be phonetically wrong for your source convention.</p>
     </div>
@@ -1460,11 +1460,11 @@ const B={
   import(){const p=[],a=[],src=val("i_src");
     if(src==="folder"){if(!val("i_corpus"))p.push("Choose the recordings folder.");a.push("--corpus",val("i_corpus"))}
     else if(src==="manifest"){if(!val("i_manifest"))p.push("Choose the manifest.json file.");a.push("--corpus",val("i_manifest"))}
-    else if(src==="filenames"){if(!val("i_wavs_names"))p.push("Choose the folder of WAV files.");a.push("--from-filenames","--wavs",val("i_wavs_names"),"--source-phoneme-system",val("i_source_system")||"auto");if(val("i_phone_table"))a.push("--phone-table",val("i_phone_table"))}
+    else if(src==="filenames"){if(!val("i_wavs_names"))p.push("Choose the folder of WAV files.");a.push("--from-filenames","--wavs",val("i_wavs_names"),"--source-phoneme-system",val("i_source_system")||"auto","--language",lang());if(val("i_phone_table"))a.push("--phone-table",val("i_phone_table"));else if(!chk("i_words")&&val("voice"))a.push("--phone-table-voice",val("voice"))}
     else{if(!val("i_wavs"))p.push("Choose the folder of .wav files.");if(!val("i_labs"))p.push("Choose the folder of .lab files.");a.push("--labs",val("i_labs"),"--wavs",val("i_wavs"))}
     if(!val("i_output"))p.push("Choose where to save the dataset.");a.push("--output",val("i_output"));
     if(val("i_songs"))a.push("--songs",val("i_songs"));
-    if(chk("i_words")){if(!val("voice"))p.push("Choose a voice (step 1), or untick “Mark word boundaries”.");a.push("--voice",val("voice"),"--language",lang())}
+    if(chk("i_words")){if(!val("voice"))p.push("Choose a voice (step 1), or untick “Mark word boundaries”.");else a.push("--voice",val("voice"));if(src!=="filenames")a.push("--language",lang())}
     const pairs=val("i_map").split(/[\s,]+/).filter(x=>x.includes("="));if(pairs.length)a.push("--map",...pairs);
     return{cmd:"import-lab",label:"Converting recordings to a dataset",args:a,p}},
   finetune(pitchOnly=false){const p=[],a=[],preserve=chk("t_preserve_non_acoustic_models"),joint=chk("t_joint_multilingual");
