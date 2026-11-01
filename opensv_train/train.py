@@ -359,6 +359,17 @@ class Trainer:
         self._cross_language_embedding_anchor = embedding.detach().clone()
         self._cross_language_source_index = source_index
 
+        # Speaker/style vectors are shared by all language paths in this model.
+        # Updating them from Mandarin-only supervision would also shift Japanese,
+        # so preserve them while adapting the shared network.
+        identity_vectors = [
+            self.voice.acoustic.speaker,
+            self.voice.acoustic.default_style,
+            *self.voice.acoustic.mode_styles,
+        ]
+        for vector in identity_vectors:
+            _tensor(vector).requires_grad_(False)
+
         trainable_ids = {id(parameter) for parameter in self.parameters}
         shared_parameters = []
         for name, parameter in self.voice.acoustic.named_parameters():
@@ -392,7 +403,7 @@ class Trainer:
         self.log(
             f"cross-language preservation enabled for monolingual {source_language} training: "
             f"anchoring {len(shared_parameters)} shared Acoustic tensors; "
-            "other language-embedding columns are frozen"
+            "other language-embedding columns and shared speaker/style vectors are frozen"
         )
 
     def restore_non_source_language_embeddings(self) -> None:
