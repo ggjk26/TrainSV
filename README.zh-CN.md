@@ -527,6 +527,7 @@ trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --
 ```
 
 此模式**不会合并音素拼写，也不会把一种语言转换成另一种语言**。每个短语必须只属于一种语言，每种语言都必须在所选模型中有对应的音素表。若训练 Duration 或 Pitch，则每种语言的数据集都必须有可用的音符和词边界标注。联合训练时不要启用 `--cross-language-preservation-weight`：因为两种语言都有各自的真实录音，都会直接参与共享模型训练。
+
 如果两种语言需要不同的音素符号修正规则，可以分别提供映射文件，不需要合并音素表：
 
 ```powershell
