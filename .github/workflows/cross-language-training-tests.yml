@@ -1,4 +1,4 @@
-name: Cross-language preservation training tests
+name: Joint multilingual and cross-language training tests
 
 on:
   pull_request:
@@ -8,6 +8,7 @@ on:
       - "opensv_train/data.py"
       - "opensv_train/__main__.py"
       - "tests/test_cross_language_training.py"
+      - "tests/test_multilingual_training.py"
       - ".github/workflows/cross-language-training-tests.yml"
 
 jobs:
@@ -22,5 +23,5 @@ jobs:
         run: |
           python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
           python -m pip install pytest numpy scipy soundfile praat-parselmouth cryptography
-      - name: Run monolingual preservation tests
-        run: python -m pytest -q tests/test_cross_language_training.py
+      - name: Run cross-language preservation and joint multilingual tests
+        run: python -m pytest -q tests/test_cross_language_training.py tests/test_multilingual_training.py
