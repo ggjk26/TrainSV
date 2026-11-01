@@ -337,6 +337,8 @@ def test_filename_import_exposes_explicit_phone_conventions():
     assert 'data-id="i_source_system"' in PAGE
     assert "Standard X-SAMPA" in PAGE
     assert "SynthV legacy X-SAMPA" in PAGE
+    assert "SynthV Japanese X-SAMPA" in PAGE
+    assert "A custom phone_table.json overrides the selected voice's phone inventory" in PAGE
     assert '"--source-phoneme-system",val("i_source_system")||"auto"' in PAGE
 
 
