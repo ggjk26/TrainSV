@@ -331,7 +331,7 @@ def parse_filename_phones(
     valid = set(phone_table)
     valid.add("sil")
     stem = Path(filename).stem
-    if stem.endswith(("_0", "_1")):
+    if stem.endswith(("_0", "_1", "_2")):
         stem = stem[:-2]
     # Some VOCALOID exports percent-encode literal backslashes in phone names.
     # Normalize every occurrence before mapping, independent of hex-letter case.
@@ -642,7 +642,7 @@ def labels_from_phone_groups(
 def is_quality_analysis_cache_wav(path: str | Path) -> bool:
     """Return true for the standalone VOCALOID vqm quality-analysis cache take."""
     stem = Path(path).stem
-    if stem.endswith(("_0", "_1")):
+    if stem.endswith(("_0", "_1", "_2")):
         stem = stem[:-2]
     return stem.casefold() == "vqm"
 
@@ -688,7 +688,7 @@ def filename_recordings(
             # original source token (@ plus grave accent), not its escaped
             # Python repr (which doubles the backslash in CSV summaries).
             source_stem = wav.stem
-            if source_stem.endswith(("_0", "_1")):
+            if source_stem.endswith(("_0", "_1", "_2")):
                 source_stem = source_stem[:-2]
             if (
                 source_token == "r" + chr(92) * 2
