@@ -415,7 +415,7 @@ class Trainer:
         protected = [index for index in range(embedding.shape[1]) if index != source_index]
         if protected:
             with torch.no_grad():
-                embedding[:, protected].copy_(anchor[:, protected])
+                embedding[:, protected] = anchor[:, protected]
 
     def cross_language_preservation_penalty(self) -> torch.Tensor:
         if not self._cross_language_anchors:
