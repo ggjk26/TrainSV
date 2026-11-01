@@ -282,3 +282,57 @@ def test_phone_check_requires_the_mapped_unified_unit_in_each_model():
     with pytest.raises(SystemExit, match="unified inventory"):
         _check_phonemes(voice, [phrase], ("acoustic",))
 
+
+
+def test_import_can_use_voice_phone_inventory_without_word_boundary_labels(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from opensv_train import __main__ as cli
+    from opensv_train import data, filename_labels
+
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    wav = wav_dir / "a_0.wav"
+    wav.write_bytes(b"test")
+    captured = {}
+    fake_voice = SimpleNamespace(
+        acoustic=SimpleNamespace(
+            phone_sets=[SimpleNamespace(name="japanese", symbols=["a", "i"])]
+        )
+    )
+
+    monkeypatch.setattr(cli.Voice, "load", lambda _path: fake_voice)
+    monkeypatch.setattr(cli, "_require_supported_models", lambda *_args, **_kwargs: None)
+
+    def fake_filename_recordings(_directory, phone_symbols, **_kwargs):
+        captured["phone_symbols"] = set(phone_symbols)
+        return [("a_0", wav, [(0, 10, "a")])]
+
+    monkeypatch.setattr(filename_labels, "filename_recordings", fake_filename_recordings)
+    monkeypatch.setattr(filename_labels, "is_quality_analysis_cache_wav", lambda _path: False)
+    monkeypatch.setattr(filename_labels, "write_lab_files", lambda *_args, **_kwargs: [])
+
+    def fake_import_labels(_recordings, _output, _mapping, vowels=None):
+        captured["vowels"] = vowels
+        return []
+
+    monkeypatch.setattr(data, "import_labels", fake_import_labels)
+
+    arguments = SimpleNamespace(
+        from_filenames=True,
+        wavs=str(wav_dir),
+        phone_table=None,
+        phone_table_voice="selected-japanese-voice.nofs",
+        voice=None,
+        language="japanese",
+        source_phoneme_system="auto",
+        output=str(tmp_path / "dataset"),
+        songs=None,
+        map=[],
+        corpus=None,
+        labs=None,
+    )
+    cli.import_lab(arguments)
+
+    assert captured["phone_symbols"] == {"a", "i", "sil"}
+    assert captured["vowels"] is None
