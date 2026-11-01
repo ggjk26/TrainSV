@@ -45,13 +45,14 @@ def _phrase(language):
 
 
 def _trainer(train, validation=None, **overrides):
-    config = TrainConfig(
-        models=("acoustic",),
-        params="all",
-        device="cpu",
-        cross_language_preservation_weight=1.0,
-        **overrides,
-    )
+    config_values = {
+        "models": ("acoustic",),
+        "params": "all",
+        "device": "cpu",
+        "cross_language_preservation_weight": 1.0,
+    }
+    config_values.update(overrides)
+    config = TrainConfig(**config_values)
     voice = _FakeVoice()
     messages = []
     trainer = Trainer(
