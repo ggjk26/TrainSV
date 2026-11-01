@@ -72,6 +72,8 @@ def test_cross_language_preservation_freezes_non_source_language_embedding():
 
     assert torch.equal(embedding.grad[:, 0], torch.ones(4))
     assert torch.equal(embedding.grad[:, 1], torch.zeros(4))
+    assert not voice.acoustic.speaker.requires_grad
+    assert not voice.acoustic.default_style.requires_grad
     assert trainer._cross_language_anchors
     assert any("monolingual mandarin" in message for message in messages)
 
