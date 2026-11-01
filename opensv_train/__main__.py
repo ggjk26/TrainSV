@@ -92,7 +92,7 @@ def _resolve_training_datasets(arguments) -> list[tuple[str, str]]:
         if len(set(languages)) != len(languages):
             raise SystemExit("provide only one --dataset per language; combine that language's recordings in its own dataset folder")
         normalized_paths = [
-            os.path.normcase(os.path.abspath(os.path.expanduser(path)))
+            os.path.normcase(str(Path(path).expanduser().resolve()))
             for _, path in datasets
         ]
         if len(set(normalized_paths)) != len(normalized_paths):
