@@ -305,3 +305,13 @@ TrainSV creates `database/voices/<voice name>/info.<version>.nofs` and `database
 The tool validates source references and the selected replacement files, copies unchanged models byte-for-byte, creates content-derived IDs for replaced models, and checks all output references. It never overwrites the source descriptor or source DNNIs. If using the CLI with a standalone output `info.nofs` file instead, the path must follow `.../voices/<voice name>/info.<version>.nofs`; shallow paths are rejected rather than creating a system-level `models` directory.
 
 DNNI v1/v2 files are checked with the selected role's TrainSV parser. DNNI v3 is only copied opaquely; its internal role, phoneme table, and runtime compatibility cannot be verified.
+
+### Cross-language pronunciation coverage
+
+For AI voice databases that expose multiple language phone sets, compare the source corpus with a target language before fine-tuning:
+
+```powershell
+trainsv cross-language-audit --voice "path/to/voice.nofs" --data "path/to/dataset" --source-language mandarin --target-language japanese
+```
+
+The JSON report lists each target-language phone, its model-defined unified phonetic unit, source-corpus recording/occurrence coverage, and unseen target phones. It also reports unmapped source tokens and observed source-language phone transitions. Shared unified units are only evidence of possible articulatory transfer; they do not guarantee Japanese-specific timing, phonotactics, or pronunciation. The audit never replaces Japanese phones with Mandarin approximations. A model without a Japanese phone set cannot be made cross-lingual by remapping labels alone.
