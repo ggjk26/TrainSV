@@ -507,8 +507,26 @@ DNNI v1/v2 会由对应角色的 TrainSV 解析器检查结构；DNNI v3 仅原�
 trainsv cross-language-audit --voice "path/to/voice.nofs" --data "path/to/dataset" --source-language mandarin --target-language japanese
 ```
 
-此诊断按**单一源语言训练集**设计：普通话和日语录音/音素标注应分别放在不同数据集中，并分开训练，不要把两套音素标签混在同一训练集里。显式标记为其他语言的音素会被单独报告，并从源语言统计中排除，不会并入普通话统计。JSON 会逐项显示日语音素对应的统一音素单元是否也出现在普通话训练集中。统一音素单元相同只代表模型输入编码存在共通性，**不等于日语声学监督**。因此报告区分 `shared_unit_only`（只有共通编码）、`no_shared_unit`（没有共通编码）和 `target_supervised`（目标语言本身确实有训练样本），不会把共通编码误报为“日语已覆盖”。仅用普通话录音训练时，日语条件下的发音实现、拍节时序和音系组合并没有获得直接的日语训练监督。
+此诊断按**单一源语言训练集**设计。使用此诊断或单语言跨语言保留微调时，普通话和日语录音/音素标注应分别放在不同训练流程中。显式标记为其他语言的音素会被单独报告，并从源语言统计中排除，不会并入普通话统计。JSON 会逐项显示日语音素对应的统一音素单元是否也出现在普通话训练集中。统一音素单元相同只代表模型输入编码存在共通性，**不等于日语声学监督**。因此报告区分 `shared_unit_only`（只有共通编码）、`no_shared_unit`（没有共通编码）和 `target_supervised`（目标语言本身确实有训练样本），不会把共通编码误报为“日语已覆盖”。仅用普通话录音训练时，日语条件下的发音实现、拍节时序和音系组合并没有获得直接的日语训练监督。
 
+
+### 普通话与日语联合训练
+
+TrainSV 也支持在**同一次优化训练中联合训练多种语言**，但不会合并数据集目录或音素表。每种语言分别传入一个 `--dataset LANGUAGE=PATH` 参数。每个目录都保留自己的 `wavs/`、`transcriptions.csv`、音素标注、F0 缓存和语言声明。TrainSV 会检查数据集实际音素语言是否与声明一致，并分别检查模型的音素表；每种语言也会独立划分训练集与留出验证集。
+
+默认情况下，各语言拥有相同的抽样概率，不会因为某个数据集录音更多、音频帧更长就占据绝大多数训练过程。Acoustic/Vocoder 在所选语言内部仍按帧数加权抽样；Duration/Pitch 则在该语言内部按原有规则抽样。可以用正数权重调整各语言比例。验证会分别报告每种语言的结果，模型选择使用按语言权重计算的宏平均指标，避免数据量较大的语言悄悄主导验证分数。响度校准和校准样本也会按语言均衡处理。
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=path/to/mandarin-dataset" --dataset "japanese=path/to/japanese-dataset" --models acoustic --validation 0.1
+```
+
+如需调整语言训练比例，可重复传入权重参数（例如下面让日语获得普通话三倍的抽样概率）：
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=path/to/mandarin-dataset" --dataset "japanese=path/to/japanese-dataset" --language-weight mandarin=1 --language-weight japanese=3 --models acoustic
+```
+
+此模式**不会合并音素拼写，也不会把一种语言转换成另一种语言**。每个短语必须只属于一种语言，每种语言都必须在所选模型中有对应的音素表。若训练 Duration 或 Pitch，则每种语言的数据集都必须有可用的音符和词边界标注。联合训练时不要启用 `--cross-language-preservation-weight`：因为两种语言都有各自的真实录音，都会直接参与共享模型训练。
 
 ### 单语言微调时保留其他语言
 
