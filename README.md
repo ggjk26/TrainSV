@@ -314,8 +314,26 @@ For AI voice databases that expose multiple language phone sets, compare the sou
 trainsv cross-language-audit --voice "path/to/voice.nofs" --data "path/to/dataset" --source-language mandarin --target-language japanese
 ```
 
-The audit is designed for a **single-language source corpus**: keep Mandarin and Japanese recordings/phoneme labels in separate training datasets and separate training runs. Explicitly tagged tokens from another language are reported and excluded from the source counts; they are never mixed into the Mandarin statistics. For each Japanese phone, the JSON report shows whether its model-defined unified unit also occurs in the Mandarin corpus. A shared unit is only a common model input representation, **not Japanese acoustic supervision**: the report therefore distinguishes `shared_unit_only`, `no_shared_unit`, and `target_supervised`, instead of claiming that every shared unit is “covered”. With Mandarin-only recordings, Japanese-conditioned pronunciation, mora timing, and phonotactics receive no direct Japanese training signal.
+The audit is designed for a **single-language source corpus**. For this audit and for monolingual preservation fine-tuning, keep Mandarin and Japanese recordings/phoneme labels in separate runs. Explicitly tagged tokens from another language are reported and excluded from the source counts; they are never mixed into the Mandarin statistics. For each Japanese phone, the JSON report shows whether its model-defined unified unit also occurs in the Mandarin corpus. A shared unit is only a common model input representation, **not Japanese acoustic supervision**: the report therefore distinguishes `shared_unit_only`, `no_shared_unit`, and `target_supervised`, instead of claiming that every shared unit is “covered”. With Mandarin-only recordings, Japanese-conditioned pronunciation, mora timing, and phonotactics receive no direct Japanese training signal.
 
+
+### Joint Mandarin and Japanese fine-tuning
+
+TrainSV can also train multiple languages **together in one optimization run** without merging their dataset folders or phoneme inventories. Pass one `--dataset LANGUAGE=PATH` argument per language. Each folder keeps its own `wavs/`, `transcriptions.csv`, labels, F0 cache, and language declaration. TrainSV rejects a dataset whose actual phone labels do not match its declared language, checks each language against the selected model's phone inventory, and makes a separate held-out split for every language.
+
+By default, each language receives equal sampling probability, even when one dataset contains many more recordings or audio frames. Acoustic/Vocoder samples remain frame-weighted **within** the selected language; Duration/Pitch phrases are sampled within their language as before. Optional positive weights control the language mix. Validation runs separately per language and the aggregate checkpoint-selection metric is a weighted macro average, so a larger corpus cannot silently dominate the validation score. Loudness calibration and calibration samples are also balanced per language.
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=path/to/mandarin-dataset" --dataset "japanese=path/to/japanese-dataset" --models acoustic --validation 0.1
+```
+
+Change the relative training mix with repeated weights (the example gives Japanese three times the sampling probability):
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=path/to/mandarin-dataset" --dataset "japanese=path/to/japanese-dataset" --language-weight mandarin=1 --language-weight japanese=3 --models acoustic
+```
+
+This mode does **not** combine phoneme spellings or translate one language into another. Each phrase must contain exactly one language and each language needs its own valid model phone set. Duration and Pitch training additionally require usable note and word-boundary labels in every language dataset. Do not enable `--cross-language-preservation-weight` in joint mode: both languages have their own real recordings and contribute directly to the shared model.
 
 ### Preserve other languages during monolingual fine-tuning
 
