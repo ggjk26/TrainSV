@@ -74,7 +74,7 @@ def _parse_language_assignment(value: str, label: str) -> tuple[str, str]:
     if "=" not in value:
         raise SystemExit(f"{label} must use LANGUAGE=VALUE syntax: {value!r}")
     language, assigned = value.split("=", 1)
-    language = language_name(language.strip())
+    language = language_name(language.strip().casefold())
     assigned = assigned.strip()
     if not language or not assigned:
         raise SystemExit(f"{label} must include both a language and a value: {value!r}")
