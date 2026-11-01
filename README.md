@@ -334,6 +334,13 @@ trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --
 ```
 
 This mode does **not** combine phoneme spellings or translate one language into another. Each phrase must contain exactly one language and each language needs its own valid model phone set. Duration and Pitch training additionally require usable note and word-boundary labels in every language dataset. Do not enable `--cross-language-preservation-weight` in joint mode: both languages have their own real recordings and contribute directly to the shared model.
+For datasets that need different symbol corrections, pass independent maps without combining their inventories:
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=mandarin-dataset" --dataset "japanese=japanese-dataset" --dataset-phoneme-map "mandarin=mandarin-map.json" --dataset-phoneme-map "japanese=japanese-map.json" --models acoustic
+```
+
+A common `--phoneme-map` can still be supplied for shared corrections; a language-specific map overrides duplicate keys only for that dataset.
 
 ### Preserve other languages during monolingual fine-tuning
 
@@ -348,7 +355,7 @@ trainsv finetune --voice "voice.nofs" --data "mandarin-dataset" --output "traine
 
 ### Validate other-language retention on a separate corpus
 
-Do not add Japanese recordings to the Mandarin training dataset. Instead, keep a small, held-out Japanese dataset in its own folder and compare the original multilingual base voice with the Mandarin-finetuned output after training. The existing `evaluate` command supports repeated `--voice` arguments and renders both voices against the same Japanese validation phrases:
+For the **monolingual preservation workflow**, keep Japanese recordings in a separate held-out dataset rather than adding them to the Mandarin training dataset. (The joint multilingual mode above is different: it explicitly trains from both separate datasets at once.) Compare the original multilingual base voice with the Mandarin-finetuned output after monolingual training. The existing `evaluate` command supports repeated `--voice` arguments and renders both voices against the same Japanese validation phrases:
 
 ```powershell
 trainsv evaluate --voice "path/to/original-base.nofs" --voice "path/to/mandarin-finetuned.nofs" --data "path/to/japanese-heldout-dataset" --language japanese --models acoustic --validation 0.25 --seed 42 --out "cross-language-check" --max-phrases 8
