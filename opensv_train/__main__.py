@@ -642,7 +642,12 @@ def import_lab(arguments) -> None:
         phones = read_phone_table(arguments.phone_table, voice_symbols)
         source_system = arguments.source_phoneme_system
         if source_system == "auto":
-            source_system = "vocaloid-mandarin" if arguments.language == "mandarin" else None
+            if arguments.language == "mandarin":
+                source_system = "vocaloid-mandarin"
+            elif arguments.language == "japanese":
+                source_system = "synthv-japanese-xsampa"
+            else:
+                source_system = None
         elif source_system == "none":
             source_system = None
         unmatched: list[dict[str, str]] = []
@@ -1189,7 +1194,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--language", default="japanese", type=language_name, help="language phone set for --voice or --phone-table-voice")
     command.add_argument("--from-filenames", action="store_true", help="generate approximate LAB labels from space-separated phones in WAV filenames")
     command.add_argument("--phone-table", help="JSON phone table used to validate and split custom phoneme names")
-    command.add_argument("--source-phoneme-system", choices=("auto", "vocaloid-mandarin", "xsampa", "synthv-xsampa", "sv1112-chinese", "sv1112-cantonese", "none"), default="auto", help="source filename phone convention: auto uses VOCALOID Mandarin for Mandarin; xsampa uses standard X-SAMPA; synthv-xsampa uses legacy SynthV Mandarin X-SAMPA labels; sv1112-chinese/cantonese map documented Chinese or Cantonese X-SAMPA/source aliases to SynthV 1.11.2 Old labels")
+    command.add_argument("--source-phoneme-system", choices=("auto", "vocaloid-mandarin", "synthv-japanese-xsampa", "xsampa", "synthv-xsampa", "sv1112-chinese", "sv1112-cantonese", "none"), default="auto", help="source filename phone convention: auto selects VOCALOID Mandarin for Mandarin and SynthV Japanese X-SAMPA for Japanese; synthv-japanese-xsampa maps documented Japanese X-SAMPA symbols to romaji labels; xsampa uses the existing standard X-SAMPA mapping; synthv-xsampa uses legacy SynthV Mandarin labels; sv1112-chinese/cantonese map documented Chinese or Cantonese sources")
     command.set_defaults(handler=import_lab)
 
     command = commands.add_parser("convert-dict", help="re-spell a DiffSinger dataset with SV's dictionary for its language")
