@@ -270,7 +270,11 @@ def read_phone_table(path: str | Path | None, fallback: Iterable[str] = ()) -> s
     if path is None or not str(path).strip():
         symbols = {str(symbol) for symbol in fallback if str(symbol)}
         if not symbols:
-            raise ValueError("no phone table was supplied and the selected voice has no phone symbols")
+            raise ValueError(
+                "no phone table was supplied and no selected voice phone symbols were found; "
+                "provide --phone-table, or select a voice and use --phone-table-voice "
+                "(or --voice when adding word-boundary labels)"
+            )
         symbols.add("sil")
         return symbols
 
