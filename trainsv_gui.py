@@ -1686,7 +1686,9 @@ function refresh(){
     warn.textContent=acousticOnlyWarning[UI_LANG]||acousticOnlyWarning.en;
   }
   else warn.hidden=true;
-  $("#e_models").textContent="It will check: "+trainedModels().map(x=>MODEL_NAME[x]).join(", ")+" (the same as in Train), using the same held-out recordings as training.";
+  $("#e_models").textContent=jointMode
+    ?"Joint training already reports held-out metrics separately for Mandarin and Japanese. For rendered A/B comparisons, choose one language's dataset in step 2 and select its language before running Compare voices."
+    :"It will check: "+trainedModels().map(x=>MODEL_NAME[x]).join(", ")+" (the same as in Train), using the same held-out recordings as training.";
   $$("#steps li").forEach(li=>{
     const s=li.dataset.step;
     const joint=chk("t_joint_multilingual");
