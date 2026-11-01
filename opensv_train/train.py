@@ -130,6 +130,9 @@ class Trainer:
         self.anchor_weights = [1.0 / float(anchor.pow(2).mean().clamp(min=1e-8)) / anchor.numel() / len(self.anchors) for anchor in self.anchors]
         self._cross_language_anchors: list[tuple[torch.nn.Parameter, torch.Tensor, float]] = []
         self._cross_language_hook = None
+        self._cross_language_embedding: torch.nn.Parameter | None = None
+        self._cross_language_embedding_anchor: torch.Tensor | None = None
+        self._cross_language_source_index: int | None = None
         if config.cross_language_preservation_weight > 0:
             self._configure_cross_language_preservation(train, validation)
         default_rate = 3e-3 if config.params == "embeddings" else 2e-5
@@ -349,6 +352,12 @@ class Trainer:
         self._cross_language_hook = embedding.register_hook(
             lambda gradient, mask=gradient_mask: gradient * mask
         )
+        # Gradient masking alone is insufficient when resuming an Adam
+        # optimizer that already has momentum for these columns. Restore the
+        # protected columns after every optimizer step as a hard invariant.
+        self._cross_language_embedding = embedding
+        self._cross_language_embedding_anchor = embedding.detach().clone()
+        self._cross_language_source_index = source_index
 
         trainable_ids = {id(parameter) for parameter in self.parameters}
         shared_parameters = []
@@ -385,6 +394,17 @@ class Trainer:
             f"anchoring {len(shared_parameters)} shared Acoustic tensors; "
             "other language-embedding columns are frozen"
         )
+
+    def restore_non_source_language_embeddings(self) -> None:
+        embedding = self._cross_language_embedding
+        anchor = self._cross_language_embedding_anchor
+        source_index = self._cross_language_source_index
+        if embedding is None or anchor is None or source_index is None:
+            return
+        protected = [index for index in range(embedding.shape[1]) if index != source_index]
+        if protected:
+            with torch.no_grad():
+                embedding[:, protected].copy_(anchor[:, protected])
 
     def cross_language_preservation_penalty(self) -> torch.Tensor:
         if not self._cross_language_anchors:
@@ -502,6 +522,7 @@ class Trainer:
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.parameters, config.gradient_clip)
             self.optimizer.step()
+            self.restore_non_source_language_embeddings()
             running.setdefault("anchor", []).append(penalty.detach())
             if config.cross_language_preservation_weight > 0:
                 running.setdefault(
