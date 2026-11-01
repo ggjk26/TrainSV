@@ -6,7 +6,7 @@ import pytest
 import torch
 from torch import nn
 
-from opensv_train.__main__ import _resolve_dataset_phoneme_maps, _resolve_language_weights, _resolve_training_datasets, parser
+from opensv_train.__main__ import _check_phonemes, _resolve_dataset_phoneme_maps, _resolve_language_weights, _resolve_training_datasets, parser
 from opensv_train.train import TrainConfig, Trainer
 
 
@@ -251,4 +251,34 @@ def test_language_specific_phoneme_map_cannot_be_repeated():
     datasets = _resolve_training_datasets(args)
     with pytest.raises(SystemExit, match="duplicate --dataset-phoneme-map"):
         _resolve_dataset_phoneme_maps(args, datasets)
+
+def test_vocoder_only_training_still_checks_acoustic_phone_inventory():
+    phone_set = SimpleNamespace(
+        name="japanese",
+        symbols=["a"],
+        unified=["a"],
+    )
+    acoustic = SimpleNamespace(
+        phone_sets=[phone_set],
+        unified=SimpleNamespace(symbols=["a"]),
+    )
+    voice = SimpleNamespace(acoustic=acoustic, vocoder=object())
+    phrase = SimpleNamespace(phones=[SimpleNamespace(language="japanese", symbol="a")])
+    _check_phonemes(voice, [phrase], ("vocoder",))
+
+
+def test_phone_check_requires_the_mapped_unified_unit_in_each_model():
+    phone_set = SimpleNamespace(
+        name="japanese",
+        symbols=["a"],
+        unified=["not-in-this-model"],
+    )
+    acoustic = SimpleNamespace(
+        phone_sets=[phone_set],
+        unified=SimpleNamespace(symbols=["a"]),
+    )
+    voice = SimpleNamespace(acoustic=acoustic)
+    phrase = SimpleNamespace(phones=[SimpleNamespace(language="japanese", symbol="a")])
+    with pytest.raises(SystemExit, match="unified inventory"):
+        _check_phonemes(voice, [phrase], ("acoustic",))
 
