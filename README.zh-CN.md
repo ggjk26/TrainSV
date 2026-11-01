@@ -519,3 +519,14 @@ trainsv cross-language-audit --voice "path/to/voice.nofs" --data "path/to/datase
 ```powershell
 trainsv finetune --voice "voice.nofs" --data "mandarin-dataset" --output "trained-voice.nofs" --language mandarin --models acoustic --cross-language-preservation-weight 1.0
 ```
+
+
+### 使用独立日语数据验证其他语言的保留效果
+
+不要把日语录音加入普通话训练集。应将一小份**独立留出的日语数据集**放在另一个文件夹中，在普通话训练完成后，再比较原始多语言底模和普通话微调后的声库。现有 `evaluate` 命令支持重复传入 `--voice`，让两个声库在完全相同的日语验证短语上进行比较：
+
+```powershell
+trainsv evaluate --voice "path/to/original-base.nofs" --voice "path/to/mandarin-finetuned.nofs" --data "path/to/japanese-heldout-dataset" --language japanese --models acoustic --validation 0.25 --seed 42 --out "cross-language-check" --max-phrases 8
+```
+
+该命令会为两个声库使用相同且可复现的留出划分，将各声库的声学指标写入 `metrics.json`，将音色差异指标写入 `timbre_diagnostics.json`，并在输出目录中保存参考 WAV 和对应渲染 WAV。日语数据中的标签必须继续使用日语音素表，不要转写成普通话近似音素。后续对照时应保持 F0 分析设置一致。如果微调后日语指标变差，或渲染出的辅音/拍节过渡明显恶化，就说明普通话适配仍然影响了底模的日语表现；保护权重只是调节这一取舍的参数，不保证完全没有回归。
