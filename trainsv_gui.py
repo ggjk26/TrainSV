@@ -1790,7 +1790,7 @@ function checkJointDatasets(){
   tJoint=setTimeout(async()=>{
     try{
       const results=await Promise.all(paths.map(([,path])=>api("check-dataset?path="+enc(path))));
-      if(key!==paths.map(([name])=>name?val(name==="Mandarin"?"t_joint_mandarin":"t_joint_japanese"):"").join("\\0"))return;
+      if(!chk("t_joint_multilingual")||key!==[val("t_joint_mandarin"),val("t_joint_japanese")].join("\\0"))return;
       const lines=results.map((result,index)=>{
         const label=paths[index][0];
         if(!result.exists)return label+": folder not found.";
@@ -1800,7 +1800,7 @@ function checkJointDatasets(){
       });
       JOINT_DATA_OK=results.every(result=>result.exists&&result.has_csv&&result.has_wavs&&!result.error&&result.rows>0);
       if(status)status.textContent=lines.join("  ");
-    }catch(error){if(status)status.textContent="Could not check the joint datasets: "+error.message;JOINT_DATA_OK=false}
+    }catch(error){if(key!==jointCheckKey||!chk("t_joint_multilingual"))return;if(status)status.textContent="Could not check the joint datasets: "+error.message;JOINT_DATA_OK=false}
     refresh();
   },250);
 }
