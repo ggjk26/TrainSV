@@ -148,6 +148,9 @@ JAPANESE_XSAMPA_TO_ROMAJI: dict[str, str] = {
     "kw": "kw",
     "gw": "gw",
     "v": "v",
+    "S": "sh",
+    "tS": "ch",
+    "dZ": "j",
 }
 
 # X-SAMPA permits an apostrophe as an alternate palatalization marker. The
