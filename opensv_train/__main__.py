@@ -627,10 +627,14 @@ def import_lab(arguments) -> None:
         if not arguments.wavs:
             raise SystemExit("--from-filenames requires --wavs")
         voice_symbols = []
-        if arguments.voice and not arguments.phone_table:
+        # Reading the target inventory is independent of adding word-boundary
+        # annotations. The GUI can pass --phone-table-voice when that optional
+        # annotation is disabled, avoiding a hand-maintained JSON inventory.
+        phone_table_voice = getattr(arguments, "phone_table_voice", None) or arguments.voice
+        if phone_table_voice and not arguments.phone_table:
             from .common import find_language
 
-            voice = Voice.load(arguments.voice)
+            voice = Voice.load(phone_table_voice)
             _require_supported_models(voice, {"acoustic"}, "reading phoneme tables")
             phone_sets = voice.acoustic.phone_sets
             phone_set = phone_sets[find_language(phone_sets, arguments.language)]
@@ -1180,8 +1184,9 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--songs", help="comma-separated recording names to import; default every matching recording")
     command.add_argument("--output", required=True)
     command.add_argument("--map", nargs="*", default=[], help="phoneme replacements such as vf=cl")
-    command.add_argument("--voice", help="voice phone set for word spans, or as a fallback phone table")
-    command.add_argument("--language", default="japanese", type=language_name, help="language phone set for --voice")
+    command.add_argument("--voice", help="voice used to add word-boundary labels; also a legacy fallback phone table")
+    command.add_argument("--phone-table-voice", help="voice whose phone inventory is used only for --from-filenames; does not add word-boundary labels")
+    command.add_argument("--language", default="japanese", type=language_name, help="language phone set for --voice or --phone-table-voice")
     command.add_argument("--from-filenames", action="store_true", help="generate approximate LAB labels from space-separated phones in WAV filenames")
     command.add_argument("--phone-table", help="JSON phone table used to validate and split custom phoneme names")
     command.add_argument("--source-phoneme-system", choices=("auto", "vocaloid-mandarin", "xsampa", "synthv-xsampa", "sv1112-chinese", "sv1112-cantonese", "none"), default="auto", help="source filename phone convention: auto uses VOCALOID Mandarin for Mandarin; xsampa uses standard X-SAMPA; synthv-xsampa uses legacy SynthV Mandarin X-SAMPA labels; sv1112-chinese/cantonese map documented Chinese or Cantonese X-SAMPA/source aliases to SynthV 1.11.2 Old labels")
