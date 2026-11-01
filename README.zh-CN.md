@@ -508,3 +508,14 @@ trainsv cross-language-audit --voice "path/to/voice.nofs" --data "path/to/datase
 ```
 
 此诊断按**单一源语言训练集**设计：普通话和日语录音/音素标注应分别放在不同数据集中，并分开训练，不要把两套音素标签混在同一训练集里。显式标记为其他语言的音素会被单独报告，并从源语言统计中排除，不会并入普通话统计。JSON 会逐项显示日语音素对应的统一音素单元是否也出现在普通话训练集中。统一音素单元相同只代表模型输入编码存在共通性，**不等于日语声学监督**。因此报告区分 `shared_unit_only`（只有共通编码）、`no_shared_unit`（没有共通编码）和 `target_supervised`（目标语言本身确实有训练样本），不会把共通编码误报为“日语已覆盖”。仅用普通话录音训练时，日语条件下的发音实现、拍节时序和音系组合并没有获得直接的日语训练监督。
+
+
+### 单语言微调时保留其他语言
+
+使用**单一语言**数据集微调多语言 Acoustic 底模时，可以启用可选参数 `--cross-language-preservation-weight`：它会对共享声学网络增加第二项底模约束，并冻结所有非训练语言的 language embedding 列。它的目的是减少普通话微调对底模原有日语等语言表现的破坏，**不是**从普通话录音中创造日语监督，也不能教会模型新的日语特有音素、拍节时序或音系组合。此功能要求训练 Acoustic、使用 `--params all`、底模至少包含两套 Acoustic 音素表，并且训练集与验证集都只包含同一种语言。启用后若训练或验证短语出现多种语言，TrainSV 会直接报错，而不是混合训练。建议先从较小的 `1.0` 开始，并使用相同的日语歌词和音符，对比原始声库与微调后声库的结果。Training 页面高级设置中也提供了此选项，默认值为 `0`（关闭）。
+
+命令行示例：
+
+```powershell
+trainsv finetune --voice "voice.nofs" --data "mandarin-dataset" --output "trained-voice.nofs" --language mandarin --models acoustic --cross-language-preservation-weight 1.0
+```
