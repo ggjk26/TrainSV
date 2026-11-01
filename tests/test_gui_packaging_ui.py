@@ -479,7 +479,8 @@ def test_i18n_rows_keep_simplified_chinese_and_japanese_columns_separate():
 
 
 def test_filename_import_reads_voice_inventory_without_word_boundary_marking():
-    assert "phone set even when word-boundary marking is turned off" in PAGE
+    assert "Leave blank when using a selected voice." in PAGE
+    assert "replaces the selected voice's phone inventory" in PAGE
     assert 'else if(!chk("i_words")&&val("voice"))a.push("--phone-table-voice",val("voice"))' in PAGE
     assert '"--language",lang())' in PAGE
     assert 'if(src!=="filenames")a.push("--language",lang())' in PAGE
