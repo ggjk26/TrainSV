@@ -62,6 +62,7 @@ class TrainConfig:
     transition_local_weight: float = 0.25
     transition_local_context_frames: int = 8
     brightness_weight: float = 0.0
+    cross_language_preservation_weight: float = 0.0
 
 
 def parameter_groups(voice: Voice, models, params: str) -> dict[str, list[torch.nn.Parameter]]:
@@ -114,6 +115,8 @@ class Trainer:
             raise ValueError("transition-local context must be at least 5 frames for the 2048-point STFT")
         if not math.isfinite(config.brightness_weight) or config.brightness_weight < 0:
             raise ValueError("brightness weight must be finite and non-negative")
+        if not math.isfinite(config.cross_language_preservation_weight) or config.cross_language_preservation_weight < 0:
+            raise ValueError("cross-language preservation weight must be finite and non-negative")
         self.log = log
         self.device = torch.device(config.device)
         voice.to(self.device)
@@ -125,6 +128,10 @@ class Trainer:
             parameter.requires_grad_(True)
         self.anchors = [parameter.detach().clone() for parameter in self.parameters]
         self.anchor_weights = [1.0 / float(anchor.pow(2).mean().clamp(min=1e-8)) / anchor.numel() / len(self.anchors) for anchor in self.anchors]
+        self._cross_language_anchors: list[tuple[torch.nn.Parameter, torch.Tensor, float]] = []
+        self._cross_language_hook = None
+        if config.cross_language_preservation_weight > 0:
+            self._configure_cross_language_preservation(train, validation)
         default_rate = 3e-3 if config.params == "embeddings" else 2e-5
         self.rate = config.learning_rate or default_rate
         self.optimizer = torch.optim.Adam(self.parameters, lr=self.rate)
@@ -281,6 +288,99 @@ class Trainer:
         weighted = self.config.pitch_melody_weight * melody + self.config.pitch_motion_weight * motion
         return {"pitch": weighted, "pitch_semitones": frame_error, "pitch_melody": melody, "pitch_motion": ratio}
 
+    def _configure_cross_language_preservation(self, train: list[Phrase], validation: list[Phrase]) -> None:
+        if "acoustic" not in self.config.models:
+            raise ValueError("cross-language preservation requires Acoustic training")
+        if self.config.params != "all":
+            raise ValueError("cross-language preservation requires --params all; identity-only training does not update the shared Acoustic network")
+
+        def languages(phrases: list[Phrase]) -> set[str]:
+            return {
+                phone.language
+                for phrase in phrases
+                for phone in phrase.phones
+                if phone.language
+            }
+
+        train_languages = languages(train)
+        validation_languages = languages(validation)
+        if len(train_languages) != 1:
+            found = ", ".join(sorted(train_languages)) or "none"
+            raise ValueError(
+                "cross-language preservation requires a monolingual training set; "
+                f"found {found}. Keep each language in a separate dataset and training run."
+            )
+        source_language = next(iter(train_languages))
+        if validation_languages - {source_language}:
+            found = ", ".join(sorted(validation_languages))
+            raise ValueError(
+                "cross-language preservation requires validation data in the same language "
+                f"as the training set ({source_language}); found {found}."
+            )
+
+        phone_sets = self.voice.acoustic.phone_sets
+        if len(phone_sets) < 2:
+            raise ValueError(
+                "cross-language preservation requires an Acoustic model with at least two language phone sets."
+            )
+        source_index = find_language(phone_sets, source_language)
+        embedding = self.voice.acoustic.language_embedding.weight
+        if embedding.ndim != 2 or embedding.shape[1] != len(phone_sets):
+            raise ValueError(
+                "Acoustic language embedding width does not match the model's language phone sets; "
+                "cross-language preservation cannot safely mask language-specific columns."
+            )
+
+        # Only the selected source-language embedding column may receive gradients.
+        # The target-language columns remain untouched; no foreign-language phones
+        # are added to the training or validation phrases.
+        gradient_mask = torch.zeros_like(embedding)
+        gradient_mask[:, source_index] = 1.0
+        self._cross_language_hook = embedding.register_hook(
+            lambda gradient, mask=gradient_mask: gradient * mask
+        )
+
+        trainable_ids = {id(parameter) for parameter in self.parameters}
+        shared_parameters = []
+        for name, parameter in self.voice.acoustic.named_parameters():
+            if id(parameter) not in trainable_ids:
+                continue
+            if (
+                name == "language_embedding.weight"
+                or name in ("speaker", "default_style")
+                or name.startswith("mode_styles.")
+            ):
+                continue
+            shared_parameters.append(parameter)
+
+        if not shared_parameters:
+            raise ValueError(
+                "no shared Acoustic network weights are selected; use --params all and include Acoustic."
+            )
+        for parameter in shared_parameters:
+            anchor = parameter.detach().clone()
+            weight = (
+                1.0
+                / float(anchor.pow(2).mean().clamp(min=1e-8))
+                / anchor.numel()
+                / len(shared_parameters)
+            )
+            self._cross_language_anchors.append((parameter, anchor, weight))
+
+        self.log(
+            f"cross-language preservation enabled for monolingual {source_language} training: "
+            f"anchoring {len(shared_parameters)} shared Acoustic tensors; "
+            "other language-embedding columns are frozen"
+        )
+
+    def cross_language_preservation_penalty(self) -> torch.Tensor:
+        if not self._cross_language_anchors:
+            return self.parameters[0].new_zeros(())
+        return sum(
+            torch.sum((parameter - anchor) ** 2) * weight
+            for parameter, anchor, weight in self._cross_language_anchors
+        )
+
     def anchor_penalty(self) -> torch.Tensor:
         return sum(torch.sum((parameter - anchor) ** 2) * weight for parameter, anchor, weight in zip(self.parameters, self.anchors, self.anchor_weights))
 
@@ -378,13 +478,22 @@ class Trainer:
                         # when the log interval is emitted.
                         running.setdefault(key, []).append(value.detach())
             penalty = self.anchor_penalty()
-            loss = loss + config.anchor * penalty
+            preservation_penalty = self.cross_language_preservation_penalty()
+            loss = (
+                loss
+                + config.anchor * penalty
+                + config.cross_language_preservation_weight * preservation_penalty
+            )
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"non-finite loss at step {step}")
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.parameters, config.gradient_clip)
             self.optimizer.step()
             running.setdefault("anchor", []).append(penalty.detach())
+            if config.cross_language_preservation_weight > 0:
+                running.setdefault(
+                    "cross_language_preservation", []
+                ).append(preservation_penalty.detach())
             if step % config.log_every == 0:
                 seconds = (time.time() - started) / (step - start)
                 # One device-to-host transfer for the whole metrics batch,
