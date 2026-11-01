@@ -326,3 +326,14 @@ CLI example:
 ```powershell
 trainsv finetune --voice "voice.nofs" --data "mandarin-dataset" --output "trained-voice.nofs" --language mandarin --models acoustic --cross-language-preservation-weight 1.0
 ```
+
+
+### Validate other-language retention on a separate corpus
+
+Do not add Japanese recordings to the Mandarin training dataset. Instead, keep a small, held-out Japanese dataset in its own folder and compare the original multilingual base voice with the Mandarin-finetuned output after training. The existing `evaluate` command supports repeated `--voice` arguments and renders both voices against the same Japanese validation phrases:
+
+```powershell
+trainsv evaluate --voice "path/to/original-base.nofs" --voice "path/to/mandarin-finetuned.nofs" --data "path/to/japanese-heldout-dataset" --language japanese --models acoustic --validation 0.25 --seed 42 --out "cross-language-check" --max-phrases 8
+```
+
+The command evaluates the same deterministic held-out split for each voice, writes per-voice acoustic metrics to `metrics.json`, timbre comparisons to `timbre_diagnostics.json`, and reference/render WAVs under the output folder. Keep the phoneme labels in the Japanese dataset in the Japanese phone set; do not transliterate them into Mandarin phones. Use the same F0 analysis settings for follow-up comparisons. A decrease in the Japanese metrics or a clearly worse rendered consonant/mora transition is a warning that the Mandarin adaptation is drifting from the base voice; the preservation weight is a trade-off knob, not a guarantee of zero regression.
