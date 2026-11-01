@@ -62,7 +62,7 @@ def test_joint_dataset_cli_accepts_separate_language_directories():
         "finetune",
         "--voice", "base.nofs",
         "--output", "trained.nofs",
-        "--dataset", "zh=C:/datasets/mandarin",
+        "--dataset", "ZH=C:/datasets/mandarin",
         "--dataset", "ja=C:/datasets/japanese",
     ])
     datasets = _resolve_training_datasets(args)
