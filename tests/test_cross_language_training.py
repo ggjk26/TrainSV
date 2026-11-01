@@ -76,6 +76,23 @@ def test_cross_language_preservation_freezes_non_source_language_embedding():
     assert any("monolingual mandarin" in message for message in messages)
 
 
+def test_cross_language_preservation_restores_other_language_columns_after_optimizer_momentum():
+    trainer, voice, _ = _trainer([_phrase("mandarin")])
+    embedding = voice.acoustic.language_embedding.weight
+    original = embedding.detach().clone()
+    trainer.optimizer.state[embedding] = {
+        "step": torch.tensor(1.0),
+        "exp_avg": torch.ones_like(embedding),
+        "exp_avg_sq": torch.ones_like(embedding),
+    }
+    embedding.grad = torch.zeros_like(embedding)
+    trainer.optimizer.step()
+    trainer.restore_non_source_language_embeddings()
+
+    assert torch.equal(embedding[:, 1], original[:, 1])
+    assert not torch.equal(embedding[:, 0], original[:, 0])
+
+
 def test_cross_language_preservation_penalizes_drift_in_shared_acoustic_weights():
     trainer, voice, _ = _trainer([_phrase("mandarin")])
     initial = trainer.cross_language_preservation_penalty().item()
