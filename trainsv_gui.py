@@ -2150,7 +2150,7 @@ async function init(){
     if(t.id==="voice"){syncPreserveModelsUI();checkVoice();}
     if(t.id==="t_preserve_non_acoustic_models")syncPreserveModelsUI();
     if(t.id==="dataset")checkDataset();
-    if(["t_joint_mandarin","t_joint_japanese"].includes(t.id))checkJointDatasets();
+    if(["t_joint_mandarin","t_joint_japanese","t_joint_multilingual"].includes(t.id))checkJointDatasets();
     if(["i_corpus","i_wavs","i_labs","i_wavs_names"].includes(t.id))checkSource();
     if(t.id==="t_steps")$$("input[name=preset]").forEach(r=>r.checked=false);
     if(["v_name","i_corpus","i_wavs","i_wavs_names","i_manifest"].includes(t.id))suggest();
