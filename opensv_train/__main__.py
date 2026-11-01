@@ -479,7 +479,8 @@ def finetune(arguments) -> None:
                 language_phrases, min(per_language_limit, len(language_phrases))
             ))
         if len(calibration) < min(40, len(phrases)):
-            remaining = [phrase for phrase in phrases if phrase not in calibration]
+            selected_ids = {id(phrase) for phrase in calibration}
+            remaining = [phrase for phrase in phrases if id(phrase) not in selected_ids]
             calibration.extend(random.Random(arguments.seed + 7919).sample(
                 remaining, min(40 - len(calibration), len(remaining))
             ))
