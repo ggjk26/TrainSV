@@ -149,7 +149,7 @@ def test_synthv_japanese_xsampa_maps_to_teto_romaji_inventory():
     tokens = [
         "M", "4", "4j", "4'", "N" + slash, "N" + slash + "^",
         "J", "C", "p" + slash, "kj", "s" + slash, "tj", "ts" + slash,
-        "mj", "j", "gj", "dz" + slash, "dj", "bj", "pj",
+        "mj", "j", "gj", "dz" + slash, "dj", "bj", "pj", "S", "tS", "dZ",
         "k'", "t'", "d'", "g'", "b'", "p'", "m'",
     ]
     parsed = parse_filename_phones(
@@ -160,7 +160,7 @@ def test_synthv_japanese_xsampa_maps_to_teto_romaji_inventory():
     assert parsed == [
         "sil", "u", "r", "ry", "ry", "N", "-N",
         "ny", "hy", "f", "ky", "sh", "ty", "ch",
-        "my", "y", "gy", "j", "dy", "by", "py",
+        "my", "y", "gy", "j", "dy", "by", "py", "sh", "ch", "j",
         "ky", "ty", "dy", "gy", "by", "py", "my", "sil",
     ]
 
