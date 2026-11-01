@@ -334,6 +334,7 @@ trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --
 ```
 
 This mode does **not** combine phoneme spellings or translate one language into another. Each phrase must contain exactly one language and each language needs its own valid model phone set. Duration and Pitch training additionally require usable note and word-boundary labels in every language dataset. Do not enable `--cross-language-preservation-weight` in joint mode: both languages have their own real recordings and contribute directly to the shared model.
+
 For datasets that need different symbol corrections, pass independent maps without combining their inventories:
 
 ```powershell
