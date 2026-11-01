@@ -138,6 +138,62 @@ def test_vocaloid_mandarin_maps_to_synthv_simplified_inventory():
         "sil", "e", "e/", "r", "sil"
     ]
 
+
+def test_synthv_japanese_xsampa_maps_to_teto_romaji_inventory():
+    target = {
+        "sil", "a", "i", "u", "e", "o", "N", "r", "ry", "f", "ny", "hy",
+        "ky", "ty", "dy", "gy", "by", "py", "my", "ch", "j", "y", "-N",
+        "-i", "-u", "kw", "gw", "v",
+    }
+    slash = chr(92)
+    tokens = [
+        "M", "4", "4j", "4'", "N" + slash, "N" + slash + "^",
+        "J", "C", "p" + slash, "kj", "s" + slash, "tj", "ts" + slash,
+        "mj", "j", "gj", "dz" + slash, "dj", "bj", "pj",
+        "k'", "t'", "d'", "g'", "b'", "p'", "m'",
+    ]
+    parsed = parse_filename_phones(
+        " ".join(tokens) + "_0.wav",
+        target,
+        source_system="synthv-japanese-xsampa",
+    )
+    assert parsed == [
+        "sil", "u", "r", "ry", "ry", "N", "-N",
+        "ny", "hy", "f", "ky", "sh", "ty", "ch",
+        "my", "y", "gy", "j", "dy", "by", "py",
+        "ky", "ty", "dy", "gy", "by", "py", "my", "sil",
+    ]
+
+
+def test_japanese_xsampa_does_not_guess_unknown_source_conventions():
+    with pytest.raises(ValueError, match="unknown phone"):
+        parse_filename_phones(
+            "^dZ_0.wav",
+            {"sil", "j", "ch"},
+            source_system="synthv-japanese-xsampa",
+        )
+
+
+def test_unmatched_report_preserves_apostrophe_phone_symbols(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(
+        str(wav_dir / "4'_0.wav"),
+        np.zeros(4800, dtype=np.float32),
+        48000,
+    )
+    unmatched = []
+    recordings = filename_recordings(
+        wav_dir,
+        {"sil", "a"},
+        source_system="synthv-japanese-xsampa",
+        unmatched=unmatched,
+    )
+    assert recordings == []
+    assert len(unmatched) == 1
+    assert unmatched[0]["source_token"] == "4'"
+
+
 def test_user_vocaloid_mandarin_filename_tokens_are_convertible():
     target = {
         "sil", "a", "aa", "o/", "e/", "ee", "e", "o", "u", "i", "iz", "ir", "v",
