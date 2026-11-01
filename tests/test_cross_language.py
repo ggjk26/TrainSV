@@ -4,46 +4,62 @@ from opensv_train.cross_language import audit_cross_language_coverage
 
 
 def _phone_set(name, symbols, unified, categories=None):
-    return SimpleNamespace(name=name, symbols=symbols, unified=unified,
-                           categories=categories or ["consonant"] * len(symbols))
+    return SimpleNamespace(
+        name=name,
+        symbols=symbols,
+        unified=unified,
+        categories=categories or ["consonant"] * len(symbols),
+    )
 
 
-def test_cross_language_audit_uses_unified_overlap_and_keeps_unseen_phones(tmp_path):
+def test_cross_language_audit_marks_shared_units_without_claiming_target_supervision(tmp_path):
     dataset = tmp_path / "dataset"
     dataset.mkdir()
     (dataset / "transcriptions.csv").write_text(
         "name,ph_seq,ph_dur\ntake1,k a n,0.1 0.2 0.1\ntake2,zh/k zh/a zh/n,0.1 0.2 0.1\n",
         encoding="utf-8",
     )
-    mandarin = _phone_set("Mandarin", ["k", "a", "n"], ["K", "A", "N"],
-                          ["consonant", "vowel", "consonant"])
-    japanese = _phone_set("Japanese", ["k", "a", "N", "ts", "r"],
-                          ["K", "A", "N", "TS", "R"],
-                          ["consonant", "vowel", "consonant", "consonant", "consonant"])
+    mandarin = _phone_set(
+        "Mandarin", ["k", "a", "n"], ["K", "A", "N"],
+        ["consonant", "vowel", "consonant"],
+    )
+    japanese = _phone_set(
+        "Japanese", ["k", "a", "N", "ts", "r"],
+        ["K", "A", "N", "TS", "R"],
+        ["consonant", "vowel", "consonant", "consonant", "consonant"],
+    )
     report = audit_cross_language_coverage(
-        dataset, [mandarin, japanese], ["K", "A", "N", "TS", "R"], "mandarin", "japanese"
+        dataset, [mandarin, japanese], ["K", "A", "N", "TS", "R"],
+        "mandarin", "japanese",
     )
     rows = {row["phone"]: row for row in report["target_phones"]}
-    assert report["summary"]["covered_target_phones"] == 3
-    assert report["summary"]["unseen_target_phones"] == 2
-    assert rows["k"]["source_recordings"] == 2
-    assert rows["ts"]["status"] == "unseen"
-    assert rows["r"]["status"] == "unseen"
+    assert report["monolingual_source_corpus"] is True
+    assert report["summary"]["target_phones_with_shared_unit"] == 3
+    assert report["summary"]["target_phones_without_shared_unit"] == 2
+    assert report["summary"]["target_language_supervised_phones"] == 0
+    assert rows["k"]["source_unit_recordings"] == 2
+    assert rows["k"]["status"] == "shared_unit_only"
+    assert rows["k"]["target_language_supervision"] is False
+    assert rows["ts"]["status"] == "no_shared_unit"
     assert report["summary"]["source_transition_types"] == 2
 
 
-def test_cross_language_audit_respects_explicit_language_prefixes(tmp_path):
+def test_cross_language_audit_excludes_foreign_language_tokens_instead_of_mixing(tmp_path):
     dataset = tmp_path / "dataset"
     dataset.mkdir()
     (dataset / "transcriptions.csv").write_text(
-        "name,ph_seq,ph_dur\ntake,ja/k ja/a,0.1 0.2\n", encoding="utf-8"
+        "name,ph_seq,ph_dur\ntake,zh/k ja/a,0.1 0.2\n", encoding="utf-8"
     )
     japanese = _phone_set("Japanese", ["k", "a"], ["K", "A"])
     mandarin = _phone_set("Mandarin", ["k", "a"], ["K", "A"])
     report = audit_cross_language_coverage(
         dataset, [mandarin, japanese], ["K", "A"], "mandarin", "japanese"
     )
-    assert report["summary"]["covered_target_phones"] == 2
+    assert report["monolingual_source_corpus"] is False
+    assert report["summary"]["mixed_language_tokens"] == 1
+    assert report["summary"]["target_language_supervised_phones"] == 0
+    assert report["summary"]["source_phone_occurrences"] == 1
+    assert report["mixed_language_tokens"][0]["phone"] == "ja/a"
 
 
 def test_cross_language_audit_reports_unknown_source_phone_without_guessing(tmp_path):
@@ -58,5 +74,20 @@ def test_cross_language_audit_reports_unknown_source_phone_without_guessing(tmp_
         dataset, [source, target], ["A"], "mandarin", "japanese"
     )
     assert report["summary"]["unmapped_source_tokens"] == 1
-    assert report["summary"]["covered_target_phones"] == 0
+    assert report["summary"]["target_language_supervised_phones"] == 0
     assert report["unmapped_source_tokens"][0]["phone"] == "unknown"
+
+
+def test_same_language_audit_can_report_actual_target_language_supervision(tmp_path):
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    (dataset / "transcriptions.csv").write_text(
+        "name,ph_seq,ph_dur\ntake,ja/k ja/a,0.1 0.2\n", encoding="utf-8"
+    )
+    japanese = _phone_set("Japanese", ["k", "a"], ["K", "A"])
+    report = audit_cross_language_coverage(
+        dataset, [japanese], ["K", "A"], "japanese", "japanese"
+    )
+    rows = {row["phone"]: row for row in report["target_phones"]}
+    assert report["summary"]["target_language_supervised_phones"] == 2
+    assert rows["k"]["status"] == "target_supervised"
