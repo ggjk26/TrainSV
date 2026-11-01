@@ -177,12 +177,15 @@ def test_standalone_vqm_quality_cache_is_excluded_from_dataset(tmp_path):
     wav_dir.mkdir()
     soundfile.write(str(wav_dir / "vqm_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
     soundfile.write(str(wav_dir / "vqm_1.WAV"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "vqm_2.wav"), np.zeros(4800, dtype=np.float32), 48000)
     soundfile.write(str(wav_dir / "a_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "a_1.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "a_2.wav"), np.zeros(4800, dtype=np.float32), 48000)
     unmatched = []
     recordings = filename_recordings(
         wav_dir, {"sil", "a"}, source_system="vocaloid-mandarin", unmatched=unmatched
     )
-    assert [recording[0] for recording in recordings] == ["a_0"]
+    assert [recording[0] for recording in recordings] == ["a_0", "a_1", "a_2"]
     assert unmatched == []
 
 
@@ -575,3 +578,10 @@ def test_filename_recordings_collects_mapping_report_only_for_usable_wavs(tmp_pa
     assert {row["filename"] for row in mappings} == {"p ph @U @_n_0.wav"}
     assert len(unmatched) == 1
     assert unmatched[0]["category"] == "wav_decode"
+
+def test_japanese_numbered_take_two_is_stripped_before_phone_parsing():
+    target = {"sil", "a", "b'"}
+    assert parse_filename_phones("a b'_2.wav", target) == [
+        "sil", "a", "b'", "sil"
+    ]
+
