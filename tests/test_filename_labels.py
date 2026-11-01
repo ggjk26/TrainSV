@@ -142,7 +142,7 @@ def test_vocaloid_mandarin_maps_to_synthv_simplified_inventory():
 def test_synthv_japanese_xsampa_maps_to_teto_romaji_inventory():
     target = {
         "sil", "a", "i", "u", "e", "o", "N", "r", "ry", "f", "ny", "hy",
-        "ky", "ty", "dy", "gy", "by", "py", "my", "ch", "j", "y", "-N",
+        "ky", "ty", "dy", "gy", "by", "py", "my", "ch", "sh", "j", "y", "-N",
         "-i", "-u", "kw", "gw", "v",
     }
     slash = chr(92)
