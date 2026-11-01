@@ -7,6 +7,7 @@ on:
       - "opensv_train/sfpk.py"
       - "opensv_train/__main__.py"
       - "opensv_train/audit.py"
+      - "opensv_train/cross_language.py"
       - "opensv_train/data.py"
       - "opensv_train/audio_io.py"
       - "opensv_train/audio_to_midi.py"
@@ -28,6 +29,7 @@ on:
       - "README.zh-CN.md"
       - "tests/test_data.py"
       - "tests/test_transition_audit.py"
+      - "tests/test_cross_language.py"
       - "tests/test_transition_sampling.py"
       - "tests/test_dnni_version.py"
       - "tests/test_timbre_profiles.py"
@@ -72,6 +74,7 @@ jobs:
           python -m pytest -q tests/test_audio_io.py tests/test_f0_tracking.py tests/test_audio_to_midi.py
           python -m pytest -q tests/test_gui_performance.py
           python -m pytest -q tests/test_transition_audit.py
+          python -m pytest -q tests/test_cross_language.py
           python -m pytest -q tests/test_transition_sampling.py tests/test_dnni_version.py tests/test_dnni_diagnostics.py
           python -m pytest -q tests/test_timbre_profiles.py
           python -m pytest -q tests/test_flat_dnni_v3_passthrough.py

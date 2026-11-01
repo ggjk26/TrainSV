@@ -138,6 +138,106 @@ def test_vocaloid_mandarin_maps_to_synthv_simplified_inventory():
         "sil", "e", "e/", "r", "sil"
     ]
 
+
+def test_synthv_japanese_xsampa_maps_to_teto_romaji_inventory():
+    target = {
+        "sil", "a", "i", "u", "e", "o", "N", "r", "ry", "f", "ny", "hy",
+        "ky", "ty", "dy", "gy", "by", "py", "my", "ch", "sh", "j", "y", "-N",
+        "-i", "-u", "kw", "gw", "v",
+    }
+    slash = chr(92)
+    tokens = [
+        "M", "4", "4j", "4'", "N" + slash, "N" + slash + "^",
+        "J", "C", "p" + slash, "kj", "s" + slash, "tj", "ts" + slash,
+        "mj", "j", "gj", "dz" + slash, "dj", "bj", "pj", "S", "tS", "dZ",
+        "k'", "t'", "d'", "g'", "b'", "p'", "m'",
+    ]
+    parsed = parse_filename_phones(
+        " ".join(tokens) + "_0.wav",
+        target,
+        source_system="synthv-japanese-xsampa",
+    )
+    assert parsed == [
+        "sil", "u", "r", "ry", "ry", "N", "-N",
+        "ny", "hy", "f", "ky", "sh", "ty", "ch",
+        "my", "y", "gy", "j", "dy", "by", "py", "sh", "ch", "j",
+        "ky", "ty", "dy", "gy", "by", "py", "my", "sil",
+    ]
+
+
+def test_japanese_xsampa_maps_against_kasane_teto2_actual_inventory():
+    # Exact 42-symbol Japanese phone set extracted from the uploaded Teto 2
+    # Acoustic DNNI _psv2 table (japanese-romaji-phones).
+    target = {
+        "a", "i", "u", "e", "o", "N", "cl", "t", "d", "s", "sh", "j",
+        "z", "ts", "k", "kw", "g", "gw", "h", "b", "p", "f", "ch", "ry",
+        "ky", "py", "dy", "ty", "ny", "hy", "my", "gy", "by", "n", "m",
+        "r", "w", "v", "y", "pau", "sil", "br",
+    }
+    slash = chr(92)
+    tokens = [
+        "M", "4", "4j", "4'", "N" + slash, "J", "C", "p" + slash,
+        "S", "tS", "dZ", "k'", "t'", "d'", "g'", "b'", "p'", "m'",
+        "a", "i", "u", "e", "o", "N", "d", "g", "b", "m", "p", "k", "h", "t",
+    ]
+    parsed = parse_filename_phones(
+        " ".join(tokens) + "_0.wav",
+        target,
+        source_system="synthv-japanese-xsampa",
+    )
+    assert parsed == [
+        "sil", "u", "r", "ry", "ry", "N", "ny", "hy", "f",
+        "sh", "ch", "j", "ky", "ty", "dy", "gy", "by", "py", "my",
+        "a", "i", "u", "e", "o", "N", "d", "g", "b", "m", "p", "k", "h", "t",
+        "sil",
+    ]
+    assert set(parsed) <= target
+
+
+def test_japanese_syllable_final_n_does_not_invent_unavailable_minus_n():
+    target = {
+        "a", "i", "u", "e", "o", "N", "cl", "t", "d", "s", "sh", "j",
+        "z", "ts", "k", "kw", "g", "gw", "h", "b", "p", "f", "ch", "ry",
+        "ky", "py", "dy", "ty", "ny", "hy", "my", "gy", "by", "n", "m",
+        "r", "w", "v", "y", "pau", "sil", "br",
+    }
+    with pytest.raises(ValueError, match="unknown phone"):
+        parse_filename_phones(
+            "N" + chr(92) + "^_0.wav",
+            target,
+            source_system="synthv-japanese-xsampa",
+        )
+
+
+def test_japanese_xsampa_does_not_guess_unknown_source_conventions():
+    with pytest.raises(ValueError, match="unknown phone"):
+        parse_filename_phones(
+            "^dZ_0.wav",
+            {"sil", "j", "ch"},
+            source_system="synthv-japanese-xsampa",
+        )
+
+
+def test_unmatched_report_preserves_apostrophe_phone_symbols(tmp_path):
+    wav_dir = tmp_path / "wavs"
+    wav_dir.mkdir()
+    soundfile.write(
+        str(wav_dir / "4'_0.wav"),
+        np.zeros(4800, dtype=np.float32),
+        48000,
+    )
+    unmatched = []
+    recordings = filename_recordings(
+        wav_dir,
+        {"sil", "a"},
+        source_system="synthv-japanese-xsampa",
+        unmatched=unmatched,
+    )
+    assert recordings == []
+    assert len(unmatched) == 1
+    assert unmatched[0]["source_token"] == "4'"
+
+
 def test_user_vocaloid_mandarin_filename_tokens_are_convertible():
     target = {
         "sil", "a", "aa", "o/", "e/", "ee", "e", "o", "u", "i", "iz", "ir", "v",
@@ -177,12 +277,15 @@ def test_standalone_vqm_quality_cache_is_excluded_from_dataset(tmp_path):
     wav_dir.mkdir()
     soundfile.write(str(wav_dir / "vqm_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
     soundfile.write(str(wav_dir / "vqm_1.WAV"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "vqm_2.wav"), np.zeros(4800, dtype=np.float32), 48000)
     soundfile.write(str(wav_dir / "a_0.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "a_1.wav"), np.zeros(4800, dtype=np.float32), 48000)
+    soundfile.write(str(wav_dir / "a_2.wav"), np.zeros(4800, dtype=np.float32), 48000)
     unmatched = []
     recordings = filename_recordings(
         wav_dir, {"sil", "a"}, source_system="vocaloid-mandarin", unmatched=unmatched
     )
-    assert [recording[0] for recording in recordings] == ["a_0"]
+    assert [recording[0] for recording in recordings] == ["a_0", "a_1", "a_2"]
     assert unmatched == []
 
 
@@ -575,3 +678,10 @@ def test_filename_recordings_collects_mapping_report_only_for_usable_wavs(tmp_pa
     assert {row["filename"] for row in mappings} == {"p ph @U @_n_0.wav"}
     assert len(unmatched) == 1
     assert unmatched[0]["category"] == "wav_decode"
+
+def test_japanese_numbered_take_two_is_stripped_before_phone_parsing():
+    target = {"sil", "a", "b'"}
+    assert parse_filename_phones("a b'_2.wav", target) == [
+        "sil", "a", "b'", "sil"
+    ]
+

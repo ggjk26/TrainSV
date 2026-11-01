@@ -337,6 +337,8 @@ def test_filename_import_exposes_explicit_phone_conventions():
     assert 'data-id="i_source_system"' in PAGE
     assert "Standard X-SAMPA" in PAGE
     assert "SynthV legacy X-SAMPA" in PAGE
+    assert "SynthV Japanese X-SAMPA" in PAGE
+    assert "A custom phone_table.json overrides the selected voice's phone inventory" in PAGE
     assert '"--source-phoneme-system",val("i_source_system")||"auto"' in PAGE
 
 
@@ -473,3 +475,12 @@ def test_i18n_rows_keep_simplified_chinese_and_japanese_columns_separate():
     assert not bad_chinese_targets, bad_chinese_targets[:3]
     assert not reversed_locale_rows, reversed_locale_rows[:3]
     assert any(en == "Choose the WAV folder. The filename mode creates LAB labels from space-separated phones; only a final _0/_1 retake suffix is removed." and cjk.search(zh) for en, zh, _ in rows)
+
+
+
+def test_filename_import_reads_voice_inventory_without_word_boundary_marking():
+    assert "Leave blank when using a selected voice." in PAGE
+    assert "replaces the selected voice's phone inventory" in PAGE
+    assert 'else if(!chk("i_words")&&val("voice"))a.push("--phone-table-voice",val("voice"))' in PAGE
+    assert '"--language",lang())' in PAGE
+    assert 'if(src!=="filenames")a.push("--language",lang())' in PAGE

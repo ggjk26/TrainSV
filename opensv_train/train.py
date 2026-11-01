@@ -62,6 +62,9 @@ class TrainConfig:
     transition_local_weight: float = 0.25
     transition_local_context_frames: int = 8
     brightness_weight: float = 0.0
+    cross_language_preservation_weight: float = 0.0
+    # Optional macro-balanced sampling across monolingual source datasets.
+    language_weights: dict[str, float] = field(default_factory=dict)
 
 
 def parameter_groups(voice: Voice, models, params: str) -> dict[str, list[torch.nn.Parameter]]:
@@ -83,6 +86,24 @@ def _tensor(value) -> torch.nn.Parameter:
     return value if isinstance(value, torch.nn.Parameter) else value.value
 
 
+def _phrase_language(phrase: Phrase) -> str:
+    languages = {phone.language.casefold() for phone in phrase.phones if phone.language}
+    if len(languages) != 1:
+        found = ", ".join(sorted(languages)) or "none"
+        raise ValueError(
+            "joint multilingual training requires each phrase to belong to exactly one language; "
+            f"found {found} in a phrase"
+        )
+    return next(iter(languages))
+
+
+def _group_phrases_by_language(phrases: list[Phrase]) -> dict[str, list[Phrase]]:
+    grouped: dict[str, list[Phrase]] = {}
+    for phrase in phrases:
+        grouped.setdefault(_phrase_language(phrase), []).append(phrase)
+    return grouped
+
+
 class Trainer:
     def __init__(self, voice: Voice, train: list[Phrase], validation: list[Phrase], config: TrainConfig, log=print, on_best=None, on_final=None, journal=None, on_checkpoint=None):
         self.voice = voice
@@ -93,6 +114,26 @@ class Trainer:
         self.train_phrases = train
         self.validation_phrases = validation
         self.config = config
+        self.language_weights: dict[str, float] = {}
+        self.train_by_language: dict[str, list[Phrase]] = {}
+        self.validation_by_language: dict[str, list[Phrase]] = {}
+        if config.language_weights:
+            weights = {str(name).casefold(): float(weight) for name, weight in config.language_weights.items()}
+            if any(not math.isfinite(weight) or weight <= 0 for weight in weights.values()):
+                raise ValueError("joint-training language weights must be finite and greater than zero")
+            self.train_by_language = _group_phrases_by_language(train)
+            self.validation_by_language = _group_phrases_by_language(validation) if validation else {}
+            if set(weights) != set(self.train_by_language):
+                expected = ", ".join(sorted(self.train_by_language)) or "none"
+                supplied = ", ".join(sorted(weights)) or "none"
+                raise ValueError(
+                    "joint-training language weights must match the languages in the training datasets; "
+                    f"found datasets [{expected}] and weights [{supplied}]"
+                )
+            if set(self.validation_by_language) - set(weights):
+                raise ValueError("joint-training validation data contains a language absent from the training datasets")
+            total_weight = sum(weights.values())
+            self.language_weights = {name: weight / total_weight for name, weight in weights.items()}
         if "pitch" in config.models and not getattr(voice.pitch, "supported", True):
             raise ValueError(getattr(voice.pitch, "reason", "the selected voice's Pitch model is unsupported"))
         required_roles = set(config.models)
@@ -114,6 +155,8 @@ class Trainer:
             raise ValueError("transition-local context must be at least 5 frames for the 2048-point STFT")
         if not math.isfinite(config.brightness_weight) or config.brightness_weight < 0:
             raise ValueError("brightness weight must be finite and non-negative")
+        if not math.isfinite(config.cross_language_preservation_weight) or config.cross_language_preservation_weight < 0:
+            raise ValueError("cross-language preservation weight must be finite and non-negative")
         self.log = log
         self.device = torch.device(config.device)
         voice.to(self.device)
@@ -125,6 +168,13 @@ class Trainer:
             parameter.requires_grad_(True)
         self.anchors = [parameter.detach().clone() for parameter in self.parameters]
         self.anchor_weights = [1.0 / float(anchor.pow(2).mean().clamp(min=1e-8)) / anchor.numel() / len(self.anchors) for anchor in self.anchors]
+        self._cross_language_anchors: list[tuple[torch.nn.Parameter, torch.Tensor, float]] = []
+        self._cross_language_hook = None
+        self._cross_language_embedding: torch.nn.Parameter | None = None
+        self._cross_language_embedding_anchor: torch.Tensor | None = None
+        self._cross_language_source_index: int | None = None
+        if config.cross_language_preservation_weight > 0:
+            self._configure_cross_language_preservation(train, validation)
         default_rate = 3e-3 if config.params == "embeddings" else 2e-5
         self.rate = config.learning_rate or default_rate
         self.optimizer = torch.optim.Adam(self.parameters, lr=self.rate)
@@ -281,6 +331,140 @@ class Trainer:
         weighted = self.config.pitch_melody_weight * melody + self.config.pitch_motion_weight * motion
         return {"pitch": weighted, "pitch_semitones": frame_error, "pitch_melody": melody, "pitch_motion": ratio}
 
+    def _configure_cross_language_preservation(self, train: list[Phrase], validation: list[Phrase]) -> None:
+        if "acoustic" not in self.config.models:
+            raise ValueError("cross-language preservation requires Acoustic training")
+        if self.config.params != "all":
+            raise ValueError("cross-language preservation requires --params all; identity-only training does not update the shared Acoustic network")
+
+        def languages(phrases: list[Phrase]) -> set[str]:
+            return {
+                phone.language
+                for phrase in phrases
+                for phone in phrase.phones
+                if phone.language
+            }
+
+        train_languages = languages(train)
+        validation_languages = languages(validation)
+        if len(train_languages) != 1:
+            found = ", ".join(sorted(train_languages)) or "none"
+            raise ValueError(
+                "cross-language preservation requires a monolingual training set; "
+                f"found {found}. Keep each language in a separate dataset and training run."
+            )
+        source_language = next(iter(train_languages))
+        if validation_languages - {source_language}:
+            found = ", ".join(sorted(validation_languages))
+            raise ValueError(
+                "cross-language preservation requires validation data in the same language "
+                f"as the training set ({source_language}); found {found}."
+            )
+
+        phone_sets = self.voice.acoustic.phone_sets
+        if len(phone_sets) < 2:
+            raise ValueError(
+                "cross-language preservation requires an Acoustic model with at least two language phone sets."
+            )
+        source_matches = [
+            index for index, phone_set in enumerate(phone_sets)
+            if source_language.casefold() in phone_set.name.casefold()
+        ]
+        if len(source_matches) != 1:
+            names = ", ".join(phone_set.name for phone_set in phone_sets)
+            raise ValueError(
+                f"training language {source_language!r} matches {len(source_matches)} Acoustic phone sets ({names}); "
+                "cannot determine which language embedding to preserve"
+            )
+        source_index = source_matches[0]
+        embedding = self.voice.acoustic.language_embedding.weight
+        if embedding.ndim != 2 or embedding.shape[1] != len(phone_sets):
+            raise ValueError(
+                "Acoustic language embedding width does not match the model's language phone sets; "
+                "cross-language preservation cannot safely mask language-specific columns."
+            )
+
+        # Only the selected source-language embedding column may receive gradients.
+        # The target-language columns remain untouched; no foreign-language phones
+        # are added to the training or validation phrases.
+        gradient_mask = torch.zeros_like(embedding)
+        gradient_mask[:, source_index] = 1.0
+        self._cross_language_hook = embedding.register_hook(
+            lambda gradient, mask=gradient_mask: gradient * mask
+        )
+        # Gradient masking alone is insufficient when resuming an Adam
+        # optimizer that already has momentum for these columns. Restore the
+        # protected columns after every optimizer step as a hard invariant.
+        self._cross_language_embedding = embedding
+        self._cross_language_embedding_anchor = embedding.detach().clone()
+        self._cross_language_source_index = source_index
+
+        # Speaker/style vectors are shared by all language paths in this model.
+        # Updating them from Mandarin-only supervision would also shift Japanese,
+        # so preserve them while adapting the shared network.
+        identity_vectors = [
+            self.voice.acoustic.speaker,
+            self.voice.acoustic.default_style,
+            *self.voice.acoustic.mode_styles,
+        ]
+        for vector in identity_vectors:
+            _tensor(vector).requires_grad_(False)
+
+        trainable_ids = {id(parameter) for parameter in self.parameters}
+        shared_parameters = []
+        for name, parameter in self.voice.acoustic.named_parameters():
+            if id(parameter) not in trainable_ids:
+                continue
+            if (
+                name == "language_embedding.weight"
+                or name == "speaker"
+                or name.startswith("speaker.")
+                or name == "default_style"
+                or name.startswith("default_style.")
+                or name.startswith("mode_styles.")
+            ):
+                continue
+            shared_parameters.append(parameter)
+
+        if not shared_parameters:
+            raise ValueError(
+                "no shared Acoustic network weights are selected; use --params all and include Acoustic."
+            )
+        for parameter in shared_parameters:
+            anchor = parameter.detach().clone()
+            weight = (
+                1.0
+                / float(anchor.pow(2).mean().clamp(min=1e-8))
+                / anchor.numel()
+                / len(shared_parameters)
+            )
+            self._cross_language_anchors.append((parameter, anchor, weight))
+
+        self.log(
+            f"cross-language preservation enabled for monolingual {source_language} training: "
+            f"anchoring {len(shared_parameters)} shared Acoustic tensors; "
+            "other language-embedding columns and shared speaker/style vectors are frozen"
+        )
+
+    def restore_non_source_language_embeddings(self) -> None:
+        embedding = self._cross_language_embedding
+        anchor = self._cross_language_embedding_anchor
+        source_index = self._cross_language_source_index
+        if embedding is None or anchor is None or source_index is None:
+            return
+        protected = [index for index in range(embedding.shape[1]) if index != source_index]
+        if protected:
+            with torch.no_grad():
+                embedding[:, protected] = anchor[:, protected]
+
+    def cross_language_preservation_penalty(self) -> torch.Tensor:
+        if not self._cross_language_anchors:
+            return self.parameters[0].new_zeros(())
+        return sum(
+            torch.sum((parameter - anchor) ** 2) * weight
+            for parameter, anchor, weight in self._cross_language_anchors
+        )
+
     def anchor_penalty(self) -> torch.Tensor:
         return sum(torch.sum((parameter - anchor) ** 2) * weight for parameter, anchor, weight in zip(self.parameters, self.anchors, self.anchor_weights))
 
@@ -294,7 +478,8 @@ class Trainer:
     def loss_key(self, model: str) -> str:
         return "acoustic" if model in ("acoustic", "vocoder") else model
 
-    def evaluate(self) -> dict[str, float]:
+    def evaluate(self, phrases: list[Phrase] | None = None) -> dict[str, float]:
+        phrases = self.validation_phrases if phrases is None else phrases
         totals: dict[str, list[torch.Tensor]] = {}
         pending: dict[str, list[torch.Tensor]] = {}
         counts: dict[str, int] = {}
@@ -303,7 +488,7 @@ class Trainer:
         other = [m for m in self.config.models if m in ("duration", "pitch")]
         with torch.no_grad():
             for model in audio_models + other:
-                for phrase in self.eligible(model, self.validation_phrases):
+                for phrase in self.eligible(model, phrases):
                     for key, value in self.step_terms(model, phrase, full=True).items():
                         # Reduce small chunks to bound temporary tensor retention
                         # while still avoiding a synchronization per phrase.
@@ -327,6 +512,53 @@ class Trainer:
         ]).cpu().tolist()
         return dict(zip(keys, map(float, means)))
 
+    def _validation_report(self) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
+        if not self.language_weights:
+            return self.evaluate(), {}
+        per_language = {
+            language: self.evaluate(phrases)
+            for language, phrases in self.validation_by_language.items()
+            if phrases
+        }
+        metric_names = {name for metrics in per_language.values() for name in metrics}
+        aggregate: dict[str, float] = {}
+        for name in metric_names:
+            available = [
+                (language, metrics[name])
+                for language, metrics in per_language.items()
+                if name in metrics
+            ]
+            weight_sum = sum(self.language_weights[language] for language, _ in available)
+            if weight_sum:
+                aggregate[name] = sum(
+                    self.language_weights[language] * value
+                    for language, value in available
+                ) / weight_sum
+        return aggregate, per_language
+
+    def _sample_language_phrase(
+        self,
+        model: str,
+        groups: dict[str, list[Phrase]],
+        cumulative_by_language: dict[str, list[int]],
+    ) -> Phrase:
+        available = [language for language in self.language_weights if groups.get(language)]
+        if not available:
+            raise ValueError(f"no eligible training phrases are available for model {model}")
+        language = self.random.choices(
+            available,
+            weights=[self.language_weights[name] for name in available],
+        )[0]
+        phrases = groups[language]
+        if model in ("acoustic", "vocoder"):
+            return self.random.choices(phrases, cum_weights=cumulative_by_language[language])[0]
+        return self.random.choice(phrases)
+
+    def _log_language_validation(self, per_language: dict[str, dict[str, float]]) -> None:
+        for language, metrics in sorted(per_language.items()):
+            if metrics:
+                self.log(f"  validation [{language}]: {_format(metrics)}")
+
     def run(self, resume: dict | None = None) -> list[dict]:
         config = self.config
         history = []
@@ -339,10 +571,11 @@ class Trainer:
             self.random.setstate(resume["random"])
             self.log(f"resumed at step {start}")
         elif self.validation_phrases:
-            metrics = self.evaluate()
+            metrics, per_language = self._validation_report()
             self.log(f"step 0 validation: {_format(metrics)}")
-            self._record({"step": 0, "validation": metrics})
-            history.append({"step": 0, **metrics})
+            self._log_language_validation(per_language)
+            self._record({"step": 0, "validation": metrics, **({"validation_by_language": per_language} if per_language else {})})
+            history.append({"step": 0, **metrics, **({"validation_by_language": per_language} if per_language else {})})
             best = {key: (self._selection(key, metrics), 0, self._snapshot(group)) for key, group in self.groups.items() if key in metrics}
         started = time.time()
         # Prepare eligible examples and cumulative duration weights once, not
@@ -353,9 +586,26 @@ class Trainer:
         schedule = [m for m in config.models if m in ("duration", "pitch")] + ([audio_model] if any(m in ("acoustic", "vocoder") for m in config.models) else [])
         eligible_by_model = {model: self.eligible(model, self.train_phrases) for model in schedule}
         cumulative_weights = {}
+        grouped_by_model = {}
+        cumulative_by_language = {}
         for model, phrases in eligible_by_model.items():
             if model in ("acoustic", "vocoder") and phrases:
                 cumulative_weights[model] = np.cumsum([phrase.frames for phrase in phrases]).tolist()
+            if self.language_weights:
+                grouped = _group_phrases_by_language(phrases)
+                grouped_by_model[model] = grouped
+                if model in ("acoustic", "vocoder"):
+                    cumulative_by_language[model] = {
+                        language: np.cumsum([phrase.frames for phrase in language_phrases]).tolist()
+                        for language, language_phrases in grouped.items()
+                    }
+        if self.language_weights:
+            self.log(
+                "joint multilingual sampling: " + ", ".join(
+                    f"{language}={self.language_weights[language]:.1%}"
+                    for language in sorted(self.language_weights)
+                )
+            )
         for step in range(start + 1, config.steps + 1):
             rate = learning_rate(step, config.steps, self.rate, config.warmup, config.lr_end)
             for group in self.optimizer.param_groups:
@@ -367,7 +617,13 @@ class Trainer:
                 if not phrases:
                     continue
                 for _ in range(config.batch):
-                    if model in cumulative_weights:
+                    if self.language_weights:
+                        phrase = self._sample_language_phrase(
+                            model,
+                            grouped_by_model[model],
+                            cumulative_by_language.get(model, {}),
+                        )
+                    elif model in cumulative_weights:
                         phrase = self.random.choices(phrases, cum_weights=cumulative_weights[model])[0]
                     else:
                         phrase = self.random.choices(phrases)[0]
@@ -378,13 +634,23 @@ class Trainer:
                         # when the log interval is emitted.
                         running.setdefault(key, []).append(value.detach())
             penalty = self.anchor_penalty()
-            loss = loss + config.anchor * penalty
+            preservation_penalty = self.cross_language_preservation_penalty()
+            loss = (
+                loss
+                + config.anchor * penalty
+                + config.cross_language_preservation_weight * preservation_penalty
+            )
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"non-finite loss at step {step}")
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.parameters, config.gradient_clip)
             self.optimizer.step()
+            self.restore_non_source_language_embeddings()
             running.setdefault("anchor", []).append(penalty.detach())
+            if config.cross_language_preservation_weight > 0:
+                running.setdefault(
+                    "cross_language_preservation", []
+                ).append(preservation_penalty.detach())
             if step % config.log_every == 0:
                 seconds = (time.time() - started) / (step - start)
                 # One device-to-host transfer for the whole metrics batch,
@@ -398,10 +664,11 @@ class Trainer:
                 running = {}
             if step % config.evaluate_every == 0 or step == config.steps:
                 if self.validation_phrases:
-                    metrics = self.evaluate()
+                    metrics, per_language = self._validation_report()
                     self.log(f"step {step} validation: {_format(metrics)}")
-                    self._record({"step": step, "validation": metrics})
-                    history.append({"step": step, **metrics})
+                    self._log_language_validation(per_language)
+                    self._record({"step": step, "validation": metrics, **({"validation_by_language": per_language} if per_language else {})})
+                    history.append({"step": step, **metrics, **({"validation_by_language": per_language} if per_language else {})})
                     improved = [key for key in best if self._selection(key, metrics) < best[key][0]]
                     for key in improved:
                         best[key] = (self._selection(key, metrics), step, self._snapshot(self.groups[key]))

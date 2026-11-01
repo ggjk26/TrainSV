@@ -498,3 +498,61 @@ TrainSV 会在输出文件夹内自动创建 `database/voices/<声库名>/info.<
 工具会先验证源模型引用和所选替换文件；未替换的模型保留原始字节，替换模型按内容生成新 ID，并在写入后重新检查所有引用。源 `info.nofs` 和源 DNNI 不会被覆盖。如果仍需使用命令行指定单独的 `info.nofs` 文件，路径必须位于 `.../voices/<声库名>/info.<版本>.nofs` 的目录结构中，否则程序会拒绝写入，而不是尝试创建系统级的 `models` 目录。
 
 DNNI v1/v2 会由对应角色的 TrainSV 解析器检查结构；DNNI v3 仅原样复制，不能确认其内部角色、音素表或运行兼容性。
+
+### 跨语言发音覆盖率诊断
+
+对于包含多语言音素表的 AI 声库，可以在微调前比较源训练集与目标语言的音素覆盖情况：
+
+```powershell
+trainsv cross-language-audit --voice "path/to/voice.nofs" --data "path/to/dataset" --source-language mandarin --target-language japanese
+```
+
+此诊断按**单一源语言训练集**设计。使用此诊断或单语言跨语言保留微调时，普通话和日语录音/音素标注应分别放在不同训练流程中。显式标记为其他语言的音素会被单独报告，并从源语言统计中排除，不会并入普通话统计。JSON 会逐项显示日语音素对应的统一音素单元是否也出现在普通话训练集中。统一音素单元相同只代表模型输入编码存在共通性，**不等于日语声学监督**。因此报告区分 `shared_unit_only`（只有共通编码）、`no_shared_unit`（没有共通编码）和 `target_supervised`（目标语言本身确实有训练样本），不会把共通编码误报为“日语已覆盖”。仅用普通话录音训练时，日语条件下的发音实现、拍节时序和音系组合并没有获得直接的日语训练监督。
+
+
+### 普通话与日语联合训练
+
+TrainSV 也支持在**同一次优化训练中联合训练多种语言**，但不会合并数据集目录或音素表。每种语言分别传入一个 `--dataset LANGUAGE=PATH` 参数。每个目录都保留自己的 `wavs/`、`transcriptions.csv`、音素标注、F0 缓存和语言声明。TrainSV 会检查数据集实际音素语言是否与声明一致，并分别检查模型的音素表；每种语言也会独立划分训练集与留出验证集。
+
+默认情况下，各语言拥有相同的抽样概率，不会因为某个数据集录音更多、音频帧更长就占据绝大多数训练过程。Acoustic/Vocoder 在所选语言内部仍按帧数加权抽样；Duration/Pitch 则在该语言内部按原有规则抽样。可以用正数权重调整各语言比例。验证会分别报告每种语言的结果，模型选择使用按语言权重计算的宏平均指标，避免数据量较大的语言悄悄主导验证分数。响度校准和校准样本也会按语言均衡处理。
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=path/to/mandarin-dataset" --dataset "japanese=path/to/japanese-dataset" --models acoustic --validation 0.1
+```
+
+如需调整语言训练比例，可重复传入权重参数（例如下面让日语获得普通话三倍的抽样概率）：
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=path/to/mandarin-dataset" --dataset "japanese=path/to/japanese-dataset" --language-weight mandarin=1 --language-weight japanese=3 --models acoustic
+```
+
+此模式**不会合并音素拼写，也不会把一种语言转换成另一种语言**。每个短语必须只属于一种语言，每种语言都必须在所选模型中有对应的音素表。若训练 Duration 或 Pitch，则每种语言的数据集都必须有可用的音符和词边界标注。联合训练时不要启用 `--cross-language-preservation-weight`：因为两种语言都有各自的真实录音，都会直接参与共享模型训练。
+
+如果两种语言需要不同的音素符号修正规则，可以分别提供映射文件，不需要合并音素表：
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=mandarin-dataset" --dataset "japanese=japanese-dataset" --dataset-phoneme-map "mandarin=mandarin-map.json" --dataset-phoneme-map "japanese=japanese-map.json" --models acoustic
+```
+
+仍可同时使用公共的 `--phoneme-map` 处理共用规则；语言专属映射文件只会在对应数据集中覆盖同名映射项。
+
+### 单语言微调时保留其他语言
+
+使用**单一语言**数据集微调多语言 Acoustic 底模时，可以启用可选参数 `--cross-language-preservation-weight`：它会对共享声学网络增加第二项底模约束，并冻结所有非训练语言的 language embedding 列，以及所有语言共用的歌手/音色向量。它的目的是减少普通话微调对底模原有日语等语言表现的破坏，**不是**从普通话录音中创造日语监督，也不能教会模型新的日语特有音素、拍节时序或音系组合。此功能要求训练 Acoustic、使用 `--params all`、底模至少包含两套 Acoustic 音素表，并且训练集与验证集都只包含同一种语言。启用后若训练或验证短语出现多种语言，TrainSV 会直接报错，而不是混合训练。建议先从较小的 `1.0` 开始，并使用相同的日语歌词和音符，对比原始声库与微调后声库的结果。Training 页面高级设置中也提供了此选项，默认值为 `0`（关闭）。
+
+命令行示例：
+
+```powershell
+trainsv finetune --voice "voice.nofs" --data "mandarin-dataset" --output "trained-voice.nofs" --language mandarin --models acoustic --cross-language-preservation-weight 1.0
+```
+
+
+### 使用独立日语数据验证其他语言的保留效果
+
+对于**单语言保留微调模式**，日语录音应放在独立的留出数据集中，而不是加入普通话训练集。（上面的多语言联合训练模式不同：它会在同一次训练中使用两个彼此独立的数据集。）普通话单语言微调完成后，再比较原始多语言底模和微调后的声库。现有 `evaluate` 命令支持重复传入 `--voice`，让两个声库在完全相同的日语验证短语上进行比较：
+
+```powershell
+trainsv evaluate --voice "path/to/original-base.nofs" --voice "path/to/mandarin-finetuned.nofs" --data "path/to/japanese-heldout-dataset" --language japanese --models acoustic --validation 0.25 --seed 42 --out "cross-language-check" --max-phrases 8
+```
+
+该命令会为两个声库使用相同且可复现的留出划分，将各声库的声学指标写入 `metrics.json`，将音色差异指标写入 `timbre_diagnostics.json`，并在输出目录中保存参考 WAV 和对应渲染 WAV。日语数据中的标签必须继续使用日语音素表，不要转写成普通话近似音素。后续对照时应保持 F0 分析设置一致。如果微调后日语指标变差，或渲染出的辅音/拍节过渡明显恶化，就说明普通话适配仍然影响了底模的日语表现；保护权重只是调节这一取舍的参数，不保证完全没有回归。

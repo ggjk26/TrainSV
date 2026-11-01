@@ -305,3 +305,61 @@ TrainSV creates `database/voices/<voice name>/info.<version>.nofs` and `database
 The tool validates source references and the selected replacement files, copies unchanged models byte-for-byte, creates content-derived IDs for replaced models, and checks all output references. It never overwrites the source descriptor or source DNNIs. If using the CLI with a standalone output `info.nofs` file instead, the path must follow `.../voices/<voice name>/info.<version>.nofs`; shallow paths are rejected rather than creating a system-level `models` directory.
 
 DNNI v1/v2 files are checked with the selected role's TrainSV parser. DNNI v3 is only copied opaquely; its internal role, phoneme table, and runtime compatibility cannot be verified.
+
+### Cross-language pronunciation coverage
+
+For AI voice databases that expose multiple language phone sets, compare the source corpus with a target language before fine-tuning:
+
+```powershell
+trainsv cross-language-audit --voice "path/to/voice.nofs" --data "path/to/dataset" --source-language mandarin --target-language japanese
+```
+
+The audit is designed for a **single-language source corpus**. For this audit and for monolingual preservation fine-tuning, keep Mandarin and Japanese recordings/phoneme labels in separate runs. Explicitly tagged tokens from another language are reported and excluded from the source counts; they are never mixed into the Mandarin statistics. For each Japanese phone, the JSON report shows whether its model-defined unified unit also occurs in the Mandarin corpus. A shared unit is only a common model input representation, **not Japanese acoustic supervision**: the report therefore distinguishes `shared_unit_only`, `no_shared_unit`, and `target_supervised`, instead of claiming that every shared unit is “covered”. With Mandarin-only recordings, Japanese-conditioned pronunciation, mora timing, and phonotactics receive no direct Japanese training signal.
+
+
+### Joint Mandarin and Japanese fine-tuning
+
+TrainSV can also train multiple languages **together in one optimization run** without merging their dataset folders or phoneme inventories. Pass one `--dataset LANGUAGE=PATH` argument per language. Each folder keeps its own `wavs/`, `transcriptions.csv`, labels, F0 cache, and language declaration. TrainSV rejects a dataset whose actual phone labels do not match its declared language, checks each language against the selected model's phone inventory, and makes a separate held-out split for every language.
+
+By default, each language receives equal sampling probability, even when one dataset contains many more recordings or audio frames. Acoustic/Vocoder samples remain frame-weighted **within** the selected language; Duration/Pitch phrases are sampled within their language as before. Optional positive weights control the language mix. Validation runs separately per language and the aggregate checkpoint-selection metric is a weighted macro average, so a larger corpus cannot silently dominate the validation score. Loudness calibration and calibration samples are also balanced per language.
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=path/to/mandarin-dataset" --dataset "japanese=path/to/japanese-dataset" --models acoustic --validation 0.1
+```
+
+Change the relative training mix with repeated weights (the example gives Japanese three times the sampling probability):
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=path/to/mandarin-dataset" --dataset "japanese=path/to/japanese-dataset" --language-weight mandarin=1 --language-weight japanese=3 --models acoustic
+```
+
+This mode does **not** combine phoneme spellings or translate one language into another. Each phrase must contain exactly one language and each language needs its own valid model phone set. Duration and Pitch training additionally require usable note and word-boundary labels in every language dataset. Do not enable `--cross-language-preservation-weight` in joint mode: both languages have their own real recordings and contribute directly to the shared model.
+
+For datasets that need different symbol corrections, pass independent maps without combining their inventories:
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=mandarin-dataset" --dataset "japanese=japanese-dataset" --dataset-phoneme-map "mandarin=mandarin-map.json" --dataset-phoneme-map "japanese=japanese-map.json" --models acoustic
+```
+
+A common `--phoneme-map` can still be supplied for shared corrections; a language-specific map overrides duplicate keys only for that dataset.
+
+### Preserve other languages during monolingual fine-tuning
+
+When fine-tuning a multilingual Acoustic base on a **single-language** corpus, the optional `--cross-language-preservation-weight` adds a second regularizer on the shared Acoustic network and freezes every non-source language-embedding column and the singer/style vectors shared across languages. This is intended to reduce drift in the base voice's existing other-language behavior; it does **not** create target-language supervision or teach new Japanese-specific phones, mora timing, or phonotactics from Mandarin audio. It requires Acoustic training with `--params all`, at least two Acoustic phone sets, and train/validation phrases in exactly one matching language. Mixed-language training or validation phrases are rejected when this option is enabled. Start with a small value such as `1.0`, then compare the original and fine-tuned voice on the same held-out Japanese lyrics/score. The option is available in the Training page's advanced settings and defaults to `0` (off).
+
+CLI example:
+
+```powershell
+trainsv finetune --voice "voice.nofs" --data "mandarin-dataset" --output "trained-voice.nofs" --language mandarin --models acoustic --cross-language-preservation-weight 1.0
+```
+
+
+### Validate other-language retention on a separate corpus
+
+For the **monolingual preservation workflow**, keep Japanese recordings in a separate held-out dataset rather than adding them to the Mandarin training dataset. (The joint multilingual mode above is different: it explicitly trains from both separate datasets at once.) Compare the original multilingual base voice with the Mandarin-finetuned output after monolingual training. The existing `evaluate` command supports repeated `--voice` arguments and renders both voices against the same Japanese validation phrases:
+
+```powershell
+trainsv evaluate --voice "path/to/original-base.nofs" --voice "path/to/mandarin-finetuned.nofs" --data "path/to/japanese-heldout-dataset" --language japanese --models acoustic --validation 0.25 --seed 42 --out "cross-language-check" --max-phrases 8
+```
+
+The command evaluates the same deterministic held-out split for each voice, writes per-voice acoustic metrics to `metrics.json`, timbre comparisons to `timbre_diagnostics.json`, and reference/render WAVs under the output folder. Keep the phoneme labels in the Japanese dataset in the Japanese phone set; do not transliterate them into Mandarin phones. Use the same F0 analysis settings for follow-up comparisons. A decrease in the Japanese metrics or a clearly worse rendered consonant/mora transition is a warning that the Mandarin adaptation is drifting from the base voice; the preservation weight is a trade-off knob, not a guarantee of zero regression.
