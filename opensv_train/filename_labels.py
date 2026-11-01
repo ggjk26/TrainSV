@@ -120,6 +120,60 @@ def _map_xsampa_mandarin(
     return None
 
 
+# Dreamtonics' Japanese phone-change table: X-SAMPA -> romaji phone labels.
+# Keep this separate from Mandarin/English X-SAMPA, where symbols such as M,
+# 4, J, C and p\ have different language-specific meanings.
+JAPANESE_XSAMPA_TO_ROMAJI: dict[str, str] = {
+    "M": "u",
+    "N\\": "N",
+    "N\\^": "-N",
+    "i^": "-i",
+    "u^": "-u",
+    "4": "r",
+    "4j": "ry",
+    "kj": "ky",
+    "s\\": "sh",
+    "tj": "ty",
+    "ts\\": "ch",
+    "J": "ny",
+    "C": "hy",
+    "p\\": "f",
+    "mj": "my",
+    "j": "y",
+    "gj": "gy",
+    "dz\\": "j",
+    "dj": "dy",
+    "bj": "by",
+    "pj": "py",
+    "kw": "kw",
+    "gw": "gw",
+    "v": "v",
+}
+
+# X-SAMPA permits an apostrophe as an alternate palatalization marker. The
+# supplied WAV names use this spelling (for example, 4' and b') instead of 4j/bj.
+JAPANESE_XSAMPA_APOSTROPHE_ALIASES: dict[str, str] = {
+    "4'": "ry",
+    "k'": "ky",
+    "t'": "ty",
+    "d'": "dy",
+    "g'": "gy",
+    "b'": "by",
+    "p'": "py",
+    "m'": "my",
+}
+
+
+def _map_synthv_japanese_xsampa(token: str, valid: set[str]) -> list[str] | None:
+    """Map a documented Japanese X-SAMPA source symbol to a target romaji phone."""
+    target = JAPANESE_XSAMPA_APOSTROPHE_ALIASES.get(token)
+    if target is None:
+        target = JAPANESE_XSAMPA_TO_ROMAJI.get(token)
+    if target is None or target not in valid:
+        return None
+    return [target]
+
+
 # Candidate target spellings for VOCALOID Mandarin tokens. The first
 # available candidate is preferred; this supports simplified and X-SAMPA-style
 # SynthV phone inventories without a user-maintained phone_table.json.
@@ -379,6 +433,15 @@ def parse_filename_phones(
                 f"{source_system} to SynthV 1.11.2 mapping exists in the target inventory"
             )
 
+        # Japanese source recordings may use X-SAMPA while the selected voice
+        # exposes romaji labels. Apply this before exact matches (notably j -> y).
+        if source_system == "synthv-japanese-xsampa":
+            converted = _map_synthv_japanese_xsampa(token, valid)
+            if converted is not None:
+                phones.extend(converted)
+                record_mapping([token], converted, "synthv-japanese-xsampa-map")
+                continue
+
         # For the rhoticized at-vowel, prefer the explicit X-SAMPA sequence
         # @ + r\ when supported, otherwise use the compatible 3 phone.
         # Consume an expanded at-vowel + rhotic pair together before mapping
@@ -523,7 +586,9 @@ def parse_filename_phones(
         # Explicit source conventions must never be heuristically split into
         # plausible-looking but phonetically incorrect phones. Their valid
         # conversions are all table-driven above.
-        pieces = None if source_system in {"xsampa", "synthv-xsampa", "vocaloid-mandarin"} else _segment(token, valid)
+        pieces = None if source_system in {
+            "xsampa", "synthv-xsampa", "vocaloid-mandarin", "synthv-japanese-xsampa"
+        } else _segment(token, valid)
         if pieces is None:
             raise ValueError(
                 f"{Path(filename).name}: unknown phone {token!r}; it is not in "
@@ -677,13 +742,20 @@ def filename_recordings(
             if unmatched is None:
                 raise
             message = str(error)
-            token_match = re.search(r"unknown phone ['\"](.+?)['\"]", message)
+            literal_pattern = r"""(?P<literal>'(?:\\.|[^'])*'|"(?:\\.|[^"])*")"""
+            token_match = re.search(r"unknown phone " + literal_pattern, message)
             if token_match is None:
                 # Preserve the blocking token for errors such as a rhoticized
                 # vowel that cannot be represented by the selected inventory.
-                token_match = re.search(r": ['\"]([^'\"]+)['\"]", message)
+                token_match = re.search(r": " + literal_pattern, message)
 
-            source_token = token_match.group(1) if token_match else ""
+            source_token = ""
+            if token_match is not None:
+                try:
+                    import ast
+                    source_token = ast.literal_eval(token_match.group("literal"))
+                except (SyntaxError, ValueError):
+                    source_token = token_match.group("literal")[1:-1]
             # If the generated rhotic component is the blocker, report the
             # original source token (@ plus grave accent), not its escaped
             # Python repr (which doubles the backslash in CSV summaries).
@@ -691,7 +763,7 @@ def filename_recordings(
             if source_stem.endswith(("_0", "_1", "_2")):
                 source_stem = source_stem[:-2]
             if (
-                source_token == "r" + chr(92) * 2
+                source_token == "r" + chr(92)
                 and ("@" + chr(96)) in source_stem.split()
             ):
                 source_token = "@" + chr(96)
