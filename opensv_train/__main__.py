@@ -836,7 +836,7 @@ def audio_to_midi_command(arguments) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 def cross_language_audit_command(arguments) -> None:
-    voice = load_voice(arguments.voice)
+    voice = Voice.load(arguments.voice)
     if not getattr(voice.acoustic, "supported", True):
         raise SystemExit(getattr(voice.acoustic, "reason", "selected Acoustic model is unsupported"))
     report = audit_cross_language_coverage(
