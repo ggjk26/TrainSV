@@ -6,7 +6,7 @@ import pytest
 import torch
 from torch import nn
 
-from opensv_train.__main__ import _resolve_language_weights, _resolve_training_datasets, parser
+from opensv_train.__main__ import _resolve_dataset_phoneme_maps, _resolve_language_weights, _resolve_training_datasets, parser
 from opensv_train.train import TrainConfig, Trainer
 
 
@@ -211,3 +211,44 @@ def test_joint_validation_reports_each_language_and_uses_macro_weighting():
         "japanese": {"acoustic": 0.6},
     }
     assert aggregate["acoustic"] == pytest.approx(0.5)
+
+def test_joint_training_accepts_separate_phoneme_maps_per_language():
+    args = Namespace(
+        dataset=["mandarin=zh-data", "japanese=ja-data"],
+        dataset_phoneme_map=["mandarin=zh-map.json", "ja=ja-map.json"],
+        data=None,
+        language=None,
+        language_weight=[],
+    )
+    datasets = _resolve_training_datasets(args)
+    assert _resolve_dataset_phoneme_maps(args, datasets) == {
+        "mandarin": "zh-map.json",
+        "japanese": "ja-map.json",
+    }
+
+
+def test_language_specific_phoneme_map_cannot_reference_an_absent_language():
+    args = Namespace(
+        dataset=["mandarin=zh-data", "japanese=ja-data"],
+        dataset_phoneme_map=["english=en-map.json"],
+        data=None,
+        language=None,
+        language_weight=[],
+    )
+    datasets = _resolve_training_datasets(args)
+    with pytest.raises(SystemExit, match="has no --dataset"):
+        _resolve_dataset_phoneme_maps(args, datasets)
+
+
+def test_language_specific_phoneme_map_cannot_be_repeated():
+    args = Namespace(
+        dataset=["mandarin=zh-data", "japanese=ja-data"],
+        dataset_phoneme_map=["mandarin=one.json", "zh=two.json"],
+        data=None,
+        language=None,
+        language_weight=[],
+    )
+    datasets = _resolve_training_datasets(args)
+    with pytest.raises(SystemExit, match="duplicate --dataset-phoneme-map"):
+        _resolve_dataset_phoneme_maps(args, datasets)
+
