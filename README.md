@@ -315,3 +315,14 @@ trainsv cross-language-audit --voice "path/to/voice.nofs" --data "path/to/datase
 ```
 
 The audit is designed for a **single-language source corpus**: keep Mandarin and Japanese recordings/phoneme labels in separate training datasets and separate training runs. Explicitly tagged tokens from another language are reported and excluded from the source counts; they are never mixed into the Mandarin statistics. For each Japanese phone, the JSON report shows whether its model-defined unified unit also occurs in the Mandarin corpus. A shared unit is only a common model input representation, **not Japanese acoustic supervision**: the report therefore distinguishes `shared_unit_only`, `no_shared_unit`, and `target_supervised`, instead of claiming that every shared unit is “covered”. With Mandarin-only recordings, Japanese-conditioned pronunciation, mora timing, and phonotactics receive no direct Japanese training signal.
+
+
+### Preserve other languages during monolingual fine-tuning
+
+When fine-tuning a multilingual Acoustic base on a **single-language** corpus, the optional `--cross-language-preservation-weight` adds a second regularizer on the shared Acoustic network and freezes every non-source language-embedding column. This is intended to reduce drift in the base voice's existing other-language behavior; it does **not** create target-language supervision or teach new Japanese-specific phones, mora timing, or phonotactics from Mandarin audio. It requires Acoustic training with `--params all`, at least two Acoustic phone sets, and train/validation phrases in exactly one matching language. Mixed-language training or validation phrases are rejected when this option is enabled. Start with a small value such as `1.0`, then compare the original and fine-tuned voice on the same held-out Japanese lyrics/score. The option is available in the Training page's advanced settings and defaults to `0` (off).
+
+CLI example:
+
+```powershell
+trainsv finetune --voice "voice.nofs" --data "mandarin-dataset" --output "trained-voice.nofs" --language mandarin --models acoustic --cross-language-preservation-weight 1.0
+```
