@@ -91,6 +91,12 @@ def _resolve_training_datasets(arguments) -> list[tuple[str, str]]:
             raise SystemExit("joint multilingual training requires at least two datasets with different languages")
         if len(set(languages)) != len(languages):
             raise SystemExit("provide only one --dataset per language; combine that language's recordings in its own dataset folder")
+        normalized_paths = [
+            os.path.normcase(os.path.abspath(os.path.expanduser(path)))
+            for _, path in datasets
+        ]
+        if len(set(normalized_paths)) != len(normalized_paths):
+            raise SystemExit("joint multilingual training requires a different physical dataset folder for every language")
         return datasets
     if not arguments.data or not arguments.language:
         raise SystemExit("single-language training requires both --data and --language; joint training uses repeated --dataset LANGUAGE=PATH")
@@ -292,7 +298,7 @@ def finetune(arguments) -> None:
                 f"dataset {dataset_path} was declared as {dataset_language}, but its labels contain [{found}]. "
                 "Keep language-specific phone labels in their own dataset; foreign-language prefixes are not merged."
             )
-        if arguments.validation > 0 and len(language_phrases) < 2:
+        if joint_multilingual and arguments.validation > 0 and len(language_phrases) < 2:
             raise SystemExit(
                 f"the {dataset_language} dataset needs at least two phrases for a held-out validation split; "
                 "add more recordings or set --validation 0 to disable validation"
@@ -302,6 +308,14 @@ def finetune(arguments) -> None:
         )
         if not language_train:
             raise SystemExit(f"the {dataset_language} dataset has no training phrases after validation splitting")
+        if joint_multilingual and "duration" in models and not any(phrase.syllables for phrase in language_train):
+            raise SystemExit(f"Duration joint training needs usable note/word-boundary labels in the {dataset_language} training split")
+        if joint_multilingual and "pitch" in models and not any(phrase.pitch_example() is not None for phrase in language_train):
+            raise SystemExit(f"Pitch joint training needs usable note_seq/note_dur and ph_num labels in the {dataset_language} training split")
+        if joint_multilingual and language_validation and "duration" in models and not any(phrase.syllables for phrase in language_validation):
+            raise SystemExit(f"Duration joint validation needs usable note/word-boundary labels in the {dataset_language} validation split")
+        if joint_multilingual and language_validation and "pitch" in models and not any(phrase.pitch_example() is not None for phrase in language_validation):
+            raise SystemExit(f"Pitch joint validation needs usable note_seq/note_dur and ph_num labels in the {dataset_language} validation split")
         utterances.extend(language_utterances)
         phrases.extend(language_phrases)
         train.extend(language_train)
@@ -385,6 +399,10 @@ def finetune(arguments) -> None:
     device = torch.device(arguments.device)
     run = Path(arguments.run) if arguments.run else None
     resume = None
+    dataset_identity = {
+        language: os.path.normcase(str(Path(path).expanduser().resolve()))
+        for language, path in dataset_specs
+    }
     if arguments.resume:
         if run is None:
             raise SystemExit("--resume continues the state.pt of a --run directory")
@@ -392,6 +410,16 @@ def finetune(arguments) -> None:
             resume = torch.load(run / "state.pt", map_location=device)
             if (resume["models"], resume["params"]) != (list(models), arguments.params):
                 raise SystemExit(f"{run / 'state.pt'} trained --models {','.join(resume['models'])} --params {resume['params']}; resume with the same")
+            if joint_multilingual and (
+                resume.get("datasets") != dataset_identity
+                or resume.get("language_weights") != language_weights
+            ):
+                raise SystemExit(
+                    "the saved run uses different language datasets or sampling weights; "
+                    "start a new --run directory instead of resuming with a changed language mix"
+                )
+            if not joint_multilingual and resume.get("datasets") and resume["datasets"] != dataset_identity:
+                raise SystemExit("the saved run uses a different dataset path; start a new --run directory")
     voice.to(device)
     if not arguments.keep_level:
         if language_weights:
@@ -491,7 +519,13 @@ def finetune(arguments) -> None:
             log_file.flush()
 
         def on_checkpoint(state):
-            torch.save({"models": list(models), "params": arguments.params, **state}, run / "state.pt.tmp")
+            torch.save({
+                "models": list(models),
+                "params": arguments.params,
+                "datasets": dataset_identity,
+                "language_weights": language_weights,
+                **state,
+            }, run / "state.pt.tmp")
             os.replace(run / "state.pt.tmp", run / "state.pt")
 
     trainer = Trainer(voice, train, validation, config, on_best=save if arguments.save_best else None, on_final=on_final, journal=journal, on_checkpoint=on_checkpoint)
