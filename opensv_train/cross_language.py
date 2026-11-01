@@ -10,7 +10,16 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from .common import find_language
+def _find_phone_set(phone_sets: list, language: str) -> int:
+    normalized = language.casefold()
+    matches = [
+        index for index, phone_set in enumerate(phone_sets)
+        if normalized in phone_set.name.casefold()
+    ]
+    if len(matches) != 1:
+        names = ", ".join(phone_set.name for phone_set in phone_sets)
+        raise ValueError(f"language {language!r} matches {len(matches)} phone sets ({names})")
+    return matches[0]
 
 
 def audit_cross_language_coverage(
@@ -26,8 +35,8 @@ def audit_cross_language_coverage(
     explicitly select a language. Shared units indicate possible articulation
     transfer, not proof that language-specific pronunciation has been learned.
     """
-    source_index = find_language(phone_sets, source_language)
-    target_index = find_language(phone_sets, target_language)
+    source_index = _find_phone_set(phone_sets, source_language)
+    target_index = _find_phone_set(phone_sets, target_language)
     source_set, target_set = phone_sets[source_index], phone_sets[target_index]
     unified_index = {symbol: index for index, symbol in enumerate(unified_symbols)}
     aliases = {"zh": "mandarin", "ja": "japanese", "en": "english",
@@ -49,7 +58,7 @@ def audit_cross_language_coverage(
                     prefix, symbol = token.split("/", 1)
                     language = aliases.get(prefix, prefix)
                 try:
-                    language_index = find_language(phone_sets, language)
+                    language_index = _find_phone_set(phone_sets, language)
                     phone_set = phone_sets[language_index]
                     position = phone_set.symbols.index(symbol)
                     unified = phone_set.unified[position]
