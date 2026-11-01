@@ -105,6 +105,23 @@ def _resolve_training_datasets(arguments) -> list[tuple[str, str]]:
     return [(language_name(arguments.language).casefold(), arguments.data)]
 
 
+def _resolve_dataset_phoneme_maps(arguments, datasets: list[tuple[str, str]]) -> dict[str, str]:
+    if not arguments.dataset_phoneme_map:
+        return {}
+    if not arguments.dataset:
+        raise SystemExit("--dataset-phoneme-map is available only with repeated --dataset arguments")
+    languages = {language for language, _ in datasets}
+    maps: dict[str, str] = {}
+    for raw in arguments.dataset_phoneme_map:
+        language, path = _parse_language_assignment(raw, "--dataset-phoneme-map")
+        if language not in languages:
+            raise SystemExit(f"--dataset-phoneme-map refers to {language}, which has no --dataset")
+        if language in maps:
+            raise SystemExit(f"duplicate --dataset-phoneme-map for {language}")
+        maps[language] = path
+    return maps
+
+
 def _resolve_language_weights(arguments, datasets: list[tuple[str, str]]) -> dict[str, float]:
     languages = [language for language, _ in datasets]
     if len(languages) == 1:
@@ -135,6 +152,8 @@ def finetune(arguments) -> None:
     _validate_pitch_options(arguments)
     dataset_specs = _resolve_training_datasets(arguments)
     language_weights = _resolve_language_weights(arguments, dataset_specs)
+    dataset_phoneme_maps = _resolve_dataset_phoneme_maps(arguments, dataset_specs)
+    global_phoneme_map = read_phoneme_map(arguments.phoneme_map)
     joint_multilingual = len(dataset_specs) > 1
     if joint_multilingual and arguments.cross_language_preservation_weight > 0:
         raise SystemExit(
@@ -272,10 +291,13 @@ def finetune(arguments) -> None:
     phrases_by_language: dict[str, list] = {}
     utterances_by_language: dict[str, list] = {}
     for dataset_index, (dataset_language, dataset_path) in enumerate(dataset_specs):
+        language_phoneme_map = dict(global_phoneme_map)
+        if dataset_language in dataset_phoneme_maps:
+            language_phoneme_map.update(read_phoneme_map(dataset_phoneme_maps[dataset_language]))
         language_utterances = load_dataset(
             dataset_path,
             dataset_language,
-            read_phoneme_map(arguments.phoneme_map),
+            language_phoneme_map,
             f0_range=(f0_floor, f0_ceiling),
             f0_voicing_threshold=f0_threshold,
             f0_smoothing=arguments.f0_smoothing,
@@ -1067,6 +1089,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--voice", required=True, help="voice.nofs or info.<version>.nofs")
     command.add_argument("--data", help="single-language dataset directory with wavs/ and transcriptions.csv")
     command.add_argument("--dataset", action="append", default=[], metavar="LANG=PATH", help="joint training dataset; repeat once per language, e.g. --dataset mandarin=path --dataset japanese=path (each directory remains separate)")
+    command.add_argument("--dataset-phoneme-map", action="append", default=[], metavar="LANG=PATH", help="optional language-specific phoneme map JSON; repeat for languages that need a mapping (overrides duplicate entries in --phoneme-map)")
     command.add_argument("--language-weight", action="append", default=[], metavar="LANG=WEIGHT", help="optional joint-training sampling weight; repeat for every dataset language, defaults to equal weighting")
     command.add_argument("--output", required=True, help="voice.nofs path, or databases/<name>/ directory for info voices")
     command.add_argument("--language", type=language_name, help="language for single-dataset training, e.g. japanese or ja; omit when using repeated --dataset arguments")
