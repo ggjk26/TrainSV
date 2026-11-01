@@ -357,7 +357,10 @@ class Trainer:
                 continue
             if (
                 name == "language_embedding.weight"
-                or name in ("speaker", "default_style")
+                or name == "speaker"
+                or name.startswith("speaker.")
+                or name == "default_style"
+                or name.startswith("default_style.")
                 or name.startswith("mode_styles.")
             ):
                 continue
