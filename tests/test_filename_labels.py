@@ -165,6 +165,50 @@ def test_synthv_japanese_xsampa_maps_to_teto_romaji_inventory():
     ]
 
 
+def test_japanese_xsampa_maps_against_kasane_teto2_actual_inventory():
+    # Exact 42-symbol Japanese phone set extracted from the uploaded Teto 2
+    # Acoustic DNNI _psv2 table (japanese-romaji-phones).
+    target = {
+        "a", "i", "u", "e", "o", "N", "cl", "t", "d", "s", "sh", "j",
+        "z", "ts", "k", "kw", "g", "gw", "h", "b", "p", "f", "ch", "ry",
+        "ky", "py", "dy", "ty", "ny", "hy", "my", "gy", "by", "n", "m",
+        "r", "w", "v", "y", "pau", "sil", "br",
+    }
+    slash = chr(92)
+    tokens = [
+        "M", "4", "4j", "4'", "N" + slash, "J", "C", "p" + slash,
+        "S", "tS", "dZ", "k'", "t'", "d'", "g'", "b'", "p'", "m'",
+        "a", "i", "u", "e", "o", "N", "d", "g", "b", "m", "p", "k", "h", "t",
+    ]
+    parsed = parse_filename_phones(
+        " ".join(tokens) + "_0.wav",
+        target,
+        source_system="synthv-japanese-xsampa",
+    )
+    assert parsed == [
+        "sil", "u", "r", "ry", "ry", "N", "ny", "hy", "f",
+        "sh", "ch", "j", "ky", "ty", "dy", "gy", "by", "py", "my",
+        "a", "i", "u", "e", "o", "N", "d", "g", "b", "m", "p", "k", "h", "t",
+        "sil",
+    ]
+    assert set(parsed) <= target
+
+
+def test_japanese_syllable_final_n_does_not_invent_unavailable_minus_n():
+    target = {
+        "a", "i", "u", "e", "o", "N", "cl", "t", "d", "s", "sh", "j",
+        "z", "ts", "k", "kw", "g", "gw", "h", "b", "p", "f", "ch", "ry",
+        "ky", "py", "dy", "ty", "ny", "hy", "my", "gy", "by", "n", "m",
+        "r", "w", "v", "y", "pau", "sil", "br",
+    }
+    with pytest.raises(ValueError, match="unknown phone"):
+        parse_filename_phones(
+            "N" + chr(92) + "^_0.wav",
+            target,
+            source_system="synthv-japanese-xsampa",
+        )
+
+
 def test_japanese_xsampa_does_not_guess_unknown_source_conventions():
     with pytest.raises(ValueError, match="unknown phone"):
         parse_filename_phones(
