@@ -716,6 +716,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
           <div class="field" data-id="t_joint_japanese_pmap" data-kind="path" data-mode="file" data-ext="json" data-label="Japanese phoneme map (optional)" data-hint="A JSON map applied only to the Japanese dataset. If the common phoneme map is also set, this file overrides duplicate keys for Japanese."></div>
         </div>
         <p class="hint">Every dataset is split into its own training and validation partitions. Training reports separate validation metrics for Mandarin and Japanese. Duration and Pitch training require usable note and word-boundary labels in both datasets.</p>
+        <p class="status" id="jointDatasetStatus" role="status"></p>
       </div>
       <div class="field" data-id="t_cross_language_preservation" data-label="Other-language preservation weight" data-value="0" data-hint="0 表示关闭；从 1.0 开始尝试。只适用于单语言 Acoustic 训练：额外约束共享声学网络接近底模，并冻结非训练语言嵌入及跨语言共享的歌手/音色向量。它只能尽量保留底模已有的其他语言能力，不能凭普通话录音学出日语特有发音。"></div>
       <div class="field" data-id="t_val" data-label="Recordings held back for testing" data-ph="0.1" data-hint="A fraction (0.1 = 10%) or a count (5)."></div>
@@ -1688,7 +1689,8 @@ function refresh(){
   $("#e_models").textContent="It will check: "+trainedModels().map(x=>MODEL_NAME[x]).join(", ")+" (the same as in Train), using the same held-out recordings as training.";
   $$("#steps li").forEach(li=>{
     const s=li.dataset.step;
-    const done=s==="voice"?VOICE_OK&&!!val("language"):s==="data"?!!(DS&&DS.rows>0&&DS.has_wavs):s==="train"?EXTRA.trained:EXTRA.evaluated;
+    const joint=chk("t_joint_multilingual");
+    const done=s==="voice"?VOICE_OK&&(joint||!!val("language")):s==="data"?(joint?JOINT_DATA_OK:!!(DS&&DS.rows>0&&DS.has_wavs)):s==="train"?EXTRA.trained:EXTRA.evaluated;
     li.classList.toggle("done",!!done);
     const dot=$(".dot",li);if(dot)dot.textContent=done?"✓":({voice:1,data:2,train:3,results:4})[s];
   });
@@ -1765,6 +1767,39 @@ async function runDatasetAudit(){
       (s.missing_wavs||0)+" missing WAVs, "+(s.invalid_rows||0)+" invalid rows, "+
       (report.rare_transitions||[]).length+" rare transitions. Details below.");
   }catch(e){box.textContent=e.message;say("dataset_st","bad","Dataset audit failed.")}
+}
+let tJoint;
+let jointCheckKey="";
+let JOINT_DATA_OK=false;
+function checkJointDatasets(){
+  clearTimeout(tJoint);
+  const status=$("#jointDatasetStatus");
+  if(!chk("t_joint_multilingual")){JOINT_DATA_OK=false;jointCheckKey="";if(status)status.textContent="";return}
+  const paths=[["Mandarin",val("t_joint_mandarin")],["Japanese",val("t_joint_japanese")]];
+  const key=paths.map(([,path])=>path).join("\\0");
+  if(key===jointCheckKey)return;
+  jointCheckKey=key;JOINT_DATA_OK=false;
+  if(!paths.every(([,path])=>path)){
+    if(status)status.textContent="Choose both separate dataset folders.";
+    return;
+  }
+  if(status)status.textContent="Checking both dataset folders…";
+  tJoint=setTimeout(async()=>{
+    try{
+      const results=await Promise.all(paths.map(([,path])=>api("check-dataset?path="+enc(path))));
+      if(key!==paths.map(([name])=>name?val(name==="Mandarin"?"t_joint_mandarin":"t_joint_japanese"):"").join("\\0"))return;
+      const lines=results.map((result,index)=>{
+        const label=paths[index][0];
+        if(!result.exists)return label+": folder not found.";
+        if(!result.has_csv||!result.has_wavs)return label+": needs both wavs/ and transcriptions.csv.";
+        if(result.error)return label+": "+result.error;
+        return label+": "+result.rows+" recordings, "+(result.notes||0)+" with note labels.";
+      });
+      JOINT_DATA_OK=results.every(result=>result.exists&&result.has_csv&&result.has_wavs&&!result.error&&result.rows>0);
+      if(status)status.textContent=lines.join("  ");
+    }catch(error){if(status)status.textContent="Could not check the joint datasets: "+error.message;JOINT_DATA_OK=false}
+    refresh();
+  },250);
 }
 function checkDataset(){
   clearTimeout(tData);tData=setTimeout(async()=>{
@@ -2104,7 +2139,7 @@ async function init(){
   add("Python "+ENV.python,"");
   const dev=add("Checking graphics card…","");
   api("device").then(d=>{if(d.ok){dev.textContent=d.kind==="cpu"?"CPU only (training will be slow)":d.name;dev.className="chip "+(d.kind==="cpu"?"warn":"ok")}else{dev.textContent="PyTorch not working";dev.className="chip bad";dev.title=d.error}}).catch(()=>{dev.textContent="Device unknown"});
-  setMode();suggest();syncPreserveModelsUI();
+  setMode();suggest();syncPreserveModelsUI();checkJointDatasets();
   document.addEventListener("input",e=>{
     const t=e.target;if(!t.matches||!t.matches("[data-s]"))return;
     if(AUTO.includes(t.id))EXTRA.manual[t.id]=t.value.trim()!=="";
@@ -2115,6 +2150,7 @@ async function init(){
     if(t.id==="voice"){syncPreserveModelsUI();checkVoice();}
     if(t.id==="t_preserve_non_acoustic_models")syncPreserveModelsUI();
     if(t.id==="dataset")checkDataset();
+    if(["t_joint_mandarin","t_joint_japanese"].includes(t.id))checkJointDatasets();
     if(["i_corpus","i_wavs","i_labs","i_wavs_names"].includes(t.id))checkSource();
     if(t.id==="t_steps")$$("input[name=preset]").forEach(r=>r.checked=false);
     if(["v_name","i_corpus","i_wavs","i_wavs_names","i_manifest"].includes(t.id))suggest();
