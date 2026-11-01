@@ -712,6 +712,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
           <div class="field" data-id="t_joint_japanese" data-kind="path" data-mode="dir" data-label="Japanese dataset folder" data-hint="A separate folder with its own wavs/ and transcriptions.csv. Labels must use the Japanese phone set."></div>
           <div class="field" data-id="t_joint_mandarin_weight" data-label="Mandarin sampling weight" data-value="1" data-hint="Relative language sampling weight. Equal weights mean each language receives about half of the training samples, independent of dataset size."></div>
           <div class="field" data-id="t_joint_japanese_weight" data-label="Japanese sampling weight" data-value="1" data-hint="Relative language sampling weight. For example, 1 and 2 gives Japanese twice the sampling probability of Mandarin."></div>
+          <div class="field" data-id="t_joint_mandarin_pmap" data-kind="path" data-mode="file" data-ext="json" data-label="Mandarin phoneme map (optional)" data-hint="A JSON map applied only to the Mandarin dataset. If the common phoneme map is also set, this file overrides duplicate keys for Mandarin."></div>
+          <div class="field" data-id="t_joint_japanese_pmap" data-kind="path" data-mode="file" data-ext="json" data-label="Japanese phoneme map (optional)" data-hint="A JSON map applied only to the Japanese dataset. If the common phoneme map is also set, this file overrides duplicate keys for Japanese."></div>
         </div>
         <p class="hint">Every dataset is split into its own training and validation partitions. Training reports separate validation metrics for Mandarin and Japanese. Duration and Pitch training require usable note and word-boundary labels in both datasets.</p>
       </div>
@@ -1492,6 +1494,9 @@ const B={
     if(joint){
       a.push("--dataset","mandarin="+val("t_joint_mandarin"),"--dataset","japanese="+val("t_joint_japanese"));
       a.push("--language-weight","mandarin="+val("t_joint_mandarin_weight"),"--language-weight","japanese="+val("t_joint_japanese_weight"));
+      [["mandarin","t_joint_mandarin_pmap"],["japanese","t_joint_japanese_pmap"]].forEach(([language,id])=>{
+        const path=val(id);if(path){if(!/\.json$/i.test(path))p.push(language+" phoneme map must be a .json file.");else a.push("--dataset-phoneme-map",language+"="+path);}
+      });
     }else a.push("--data",val("dataset"),"--language",lang());
     a.push("--output",val("t_output"),"--models",models.join(","),"--name",val("v_name"));
     if(preserve){
