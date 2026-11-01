@@ -1860,7 +1860,7 @@ async function startJob(kind){
   const r=B[kind]();if(r.p.length)return;
   try{
     await api("run",{command:r.cmd,args:r.args,label:r.label});
-    JOB={kind,label:r.label,status:"running",lines:[],next:null,since:0,log:!!r.log,logNeedsSync:true,logDropped:0,logRendered:0,step:0,total:0,sps:0,val0:null,valN:null,saved:"",dataLine:"",elapsed:0};
+    JOB={kind,label:r.label,status:"running",lines:[],next:null,since:0,log:!!r.log,logNeedsSync:true,logDropped:0,logRendered:0,step:0,total:0,sps:0,val0:null,valN:null,valLang0:{},valLangN:{},saved:"",dataLine:"",elapsed:0};
     $("#activity").classList.remove("collapsed");$("#actToggle").textContent="Hide details";$("#actLog").open=false;
     renderJob();refresh();poll();
   }catch(e){alert(e.message)}
@@ -1870,6 +1870,7 @@ function ingest(lines){
   for(const l of lines){let m;
     if(m=l.match(/^step (\d+)\/(\d+) \(([\d.]+)s\/step\)/)){JOB.step=+m[1];JOB.total=+m[2];JOB.sps=+m[3]}
     else if(m=l.match(/^step (\d+) validation: (.*)$/)){const v=pairs(m[2]);if(!JOB.val0)JOB.val0=v;JOB.valN=v}
+    else if(m=l.match(/^\s+validation \[([^\]]+)\]: (.*)$/)){const language=m[1].toLowerCase(),v=pairs(m[2]);if(!JOB.valLang0[language])JOB.valLang0[language]=v;JOB.valLangN[language]=v}
     else if(m=l.match(/^resumed at step (\d+)/))JOB.step=+m[1];
     else if(m=l.match(/^saved (.+?)(?: \(step \d+\))?$/))JOB.saved=m[1];
     else if(/^\d+ utterances,/.test(l))JOB.dataLine=l;
@@ -1938,8 +1939,14 @@ function renderJob(){
   const mt=$("#actMetrics");
   if(JOB.valN&&JOB.kind==="finetune"){
     mt.hidden=false;
-    mt.innerHTML="<tr><th>Test score</th><th>At start</th><th>Latest</th><th></th></tr>"+Object.keys(JOB.valN).map(k=>{
-      const [n,h]=METRIC[k]||[k,""];return`<tr><td>${esc(n)}</td><td class="n">${fmtNum(JOB.val0?.[k])}</td><td class="n">${fmtNum(JOB.valN[k])}</td><td>${esc(h)}</td></tr>`}).join("");
+    const rows=metrics=>Object.keys(metrics||{}).map(k=>{
+      const [n,h]=METRIC[k]||[k,""];return`<tr><td>${esc(n)}</td><td class="n">${fmtNum(metrics===JOB.valN?JOB.val0?.[k]:JOB.valLang0?.[language]?.[k])}</td><td class="n">${fmtNum(metrics[k])}</td><td>${esc(h)}</td></tr>`}).join("");
+    mt.innerHTML="<tr><th>Test score</th><th>At start</th><th>Latest</th><th></th></tr>"+rows(JOB.valN);
+    for(const [language,metrics] of Object.entries(JOB.valLangN||{})){
+      mt.innerHTML+="<tr><th colspan='4'>"+esc(language)+" validation</th></tr>";
+      mt.innerHTML+=Object.keys(metrics||{}).map(k=>{
+        const [n,h]=METRIC[k]||[k,""];return`<tr><td>${esc(n)}</td><td class="n">${fmtNum(JOB.valLang0?.[language]?.[k])}</td><td class="n">${fmtNum(metrics[k])}</td><td>${esc(h)}</td></tr>`}).join("");
+    }
   }else mt.hidden=true;
   const nx=$("#actNext");
   if(JOB.next&&st==="done"){nx.hidden=false;nx.textContent=JOB.next.text;nx.onclick=()=>{const n=JOB.next;go(n.go);if(n.to)setTimeout(()=>$(n.to).scrollIntoView({behavior:"smooth",block:"start"}),50)}}else nx.hidden=true;
