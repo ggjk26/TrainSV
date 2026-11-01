@@ -527,6 +527,13 @@ trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --
 ```
 
 此模式**不会合并音素拼写，也不会把一种语言转换成另一种语言**。每个短语必须只属于一种语言，每种语言都必须在所选模型中有对应的音素表。若训练 Duration 或 Pitch，则每种语言的数据集都必须有可用的音符和词边界标注。联合训练时不要启用 `--cross-language-preservation-weight`：因为两种语言都有各自的真实录音，都会直接参与共享模型训练。
+如果两种语言需要不同的音素符号修正规则，可以分别提供映射文件，不需要合并音素表：
+
+```powershell
+trainsv finetune --voice "voice.nofs" --output "mandarin-japanese-voice.nofs" --dataset "mandarin=mandarin-dataset" --dataset "japanese=japanese-dataset" --dataset-phoneme-map "mandarin=mandarin-map.json" --dataset-phoneme-map "japanese=japanese-map.json" --models acoustic
+```
+
+仍可同时使用公共的 `--phoneme-map` 处理共用规则；语言专属映射文件只会在对应数据集中覆盖同名映射项。
 
 ### 单语言微调时保留其他语言
 
@@ -541,7 +548,7 @@ trainsv finetune --voice "voice.nofs" --data "mandarin-dataset" --output "traine
 
 ### 使用独立日语数据验证其他语言的保留效果
 
-不要把日语录音加入普通话训练集。应将一小份**独立留出的日语数据集**放在另一个文件夹中，在普通话训练完成后，再比较原始多语言底模和普通话微调后的声库。现有 `evaluate` 命令支持重复传入 `--voice`，让两个声库在完全相同的日语验证短语上进行比较：
+对于**单语言保留微调模式**，日语录音应放在独立的留出数据集中，而不是加入普通话训练集。（上面的多语言联合训练模式不同：它会在同一次训练中使用两个彼此独立的数据集。）普通话单语言微调完成后，再比较原始多语言底模和微调后的声库。现有 `evaluate` 命令支持重复传入 `--voice`，让两个声库在完全相同的日语验证短语上进行比较：
 
 ```powershell
 trainsv evaluate --voice "path/to/original-base.nofs" --voice "path/to/mandarin-finetuned.nofs" --data "path/to/japanese-heldout-dataset" --language japanese --models acoustic --validation 0.25 --seed 42 --out "cross-language-check" --max-phrases 8
