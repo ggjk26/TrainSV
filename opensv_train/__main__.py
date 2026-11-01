@@ -292,6 +292,7 @@ def finetune(arguments) -> None:
         transition_sampling_probability=arguments.transition_sampling_probability,
         transition_local_weight=arguments.transition_local_weight,
         brightness_weight=arguments.brightness_weight,
+        cross_language_preservation_weight=arguments.cross_language_preservation_weight,
     )
     calibration = random.Random(arguments.seed).sample(phrases, min(40, len(phrases)))
     models_root = Path(arguments.output).expanduser().parent.parent / "models"
@@ -896,6 +897,7 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--transition-local-weight", type=float, default=0.25, help="extra multi-resolution spectral loss weight on a boundary-centered crop; 0 disables")
     command.add_argument("--acoustic-dnni-version", choices=(1, 2), type=int, default=2, help="DNNI container version when saving the acoustic model; v2 by default, v1 for legacy compatibility")
     command.add_argument("--brightness-weight", type=float, default=0.0, help="optional loss weight for matching target high/mid spectral balance; 0 disables it")
+    command.add_argument("--cross-language-preservation-weight", type=float, default=0.0, help="extra anchor on shared Acoustic network weights during monolingual fine-tuning; freezes other language-embedding columns; 0 disables it")
     command.add_argument("--validation", type=float, default=0.1, help="phrases held out: a fraction, or a count when 1 or more")
     command.add_argument("--evaluate-every", "--val-every", type=int, default=250)
     command.add_argument("--log-every", type=int, default=25)
