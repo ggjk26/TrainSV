@@ -1708,7 +1708,10 @@ function syncJointMultilingualUI(){
   const active=chk("t_joint_multilingual");
   const panel=$("#t_joint_multilingual_panel");if(panel)panel.hidden=!active;
   const preservation=document.querySelector('.field[data-id="t_cross_language_preservation"] input');
-  if(preservation)preservation.disabled=active;
+  if(preservation){
+    if(active)preservation.value="0";
+    preservation.disabled=active;
+  }
 }
 
 function syncPreserveModelsUI(){
