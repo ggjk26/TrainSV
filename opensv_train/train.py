@@ -323,7 +323,17 @@ class Trainer:
             raise ValueError(
                 "cross-language preservation requires an Acoustic model with at least two language phone sets."
             )
-        source_index = find_language(phone_sets, source_language)
+        source_matches = [
+            index for index, phone_set in enumerate(phone_sets)
+            if source_language.casefold() in phone_set.name.casefold()
+        ]
+        if len(source_matches) != 1:
+            names = ", ".join(phone_set.name for phone_set in phone_sets)
+            raise ValueError(
+                f"training language {source_language!r} matches {len(source_matches)} Acoustic phone sets ({names}); "
+                "cannot determine which language embedding to preserve"
+            )
+        source_index = source_matches[0]
         embedding = self.voice.acoustic.language_embedding.weight
         if embedding.ndim != 2 or embedding.shape[1] != len(phone_sets):
             raise ValueError(
