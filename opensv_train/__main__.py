@@ -15,6 +15,7 @@ import soundfile
 import torch
 
 from .audit import audit_dataset
+from .common import find_language
 from .acoustic import TimedPhoneme
 from .calibration import fit_input_ranges
 from .data import F0_PROFILES, LANGUAGE_CODES, SAMPLE_RATE, load_dataset, make_phrases, read_phoneme_map, resolve_f0_profile, split
@@ -69,8 +70,71 @@ def _require_supported_models(voice: Voice, roles, operation: str) -> None:
             raise SystemExit(f"{operation} is unavailable: {reason}")
 
 
+def _parse_language_assignment(value: str, label: str) -> tuple[str, str]:
+    if "=" not in value:
+        raise SystemExit(f"{label} must use LANGUAGE=VALUE syntax: {value!r}")
+    language, assigned = value.split("=", 1)
+    language = language_name(language.strip())
+    assigned = assigned.strip()
+    if not language or not assigned:
+        raise SystemExit(f"{label} must include both a language and a value: {value!r}")
+    return language.casefold(), assigned
+
+
+def _resolve_training_datasets(arguments) -> list[tuple[str, str]]:
+    if arguments.dataset:
+        if arguments.data or arguments.language:
+            raise SystemExit("use either repeated --dataset LANGUAGE=PATH arguments or the single-language --data + --language pair, not both")
+        datasets = [_parse_language_assignment(value, "--dataset") for value in arguments.dataset]
+        languages = [language for language, _ in datasets]
+        if len(datasets) < 2 or len(set(languages)) < 2:
+            raise SystemExit("joint multilingual training requires at least two datasets with different languages")
+        if len(set(languages)) != len(languages):
+            raise SystemExit("provide only one --dataset per language; combine that language's recordings in its own dataset folder")
+        return datasets
+    if not arguments.data or not arguments.language:
+        raise SystemExit("single-language training requires both --data and --language; joint training uses repeated --dataset LANGUAGE=PATH")
+    if arguments.language_weight:
+        raise SystemExit("--language-weight is available only with repeated --dataset arguments")
+    return [(language_name(arguments.language).casefold(), arguments.data)]
+
+
+def _resolve_language_weights(arguments, datasets: list[tuple[str, str]]) -> dict[str, float]:
+    languages = [language for language, _ in datasets]
+    if len(languages) == 1:
+        return {}
+    if not arguments.language_weight:
+        return {language: 1.0 for language in languages}
+    weights: dict[str, float] = {}
+    for raw in arguments.language_weight:
+        language, value = _parse_language_assignment(raw, "--language-weight")
+        if language in weights:
+            raise SystemExit(f"duplicate --language-weight for {language}")
+        try:
+            weight = float(value)
+        except ValueError as error:
+            raise SystemExit(f"language weight for {language} must be numeric") from error
+        if not math.isfinite(weight) or weight <= 0:
+            raise SystemExit(f"language weight for {language} must be finite and greater than zero")
+        weights[language] = weight
+    if set(weights) != set(languages):
+        raise SystemExit(
+            "when specifying --language-weight, provide exactly one positive weight for every dataset language; "
+            f"expected: {', '.join(languages)}"
+        )
+    return weights
+
+
 def finetune(arguments) -> None:
     _validate_pitch_options(arguments)
+    dataset_specs = _resolve_training_datasets(arguments)
+    language_weights = _resolve_language_weights(arguments, dataset_specs)
+    joint_multilingual = len(dataset_specs) > 1
+    if joint_multilingual and arguments.cross_language_preservation_weight > 0:
+        raise SystemExit(
+            "--cross-language-preservation-weight is for monolingual fine-tuning only; "
+            "joint multilingual training learns each supplied language directly and uses balanced sampling instead"
+        )
     if arguments.preserve_non_acoustic_models and not is_info_voice(arguments.voice):
         raise SystemExit("--preserve-non-acoustic-models requires an info.nofs shared-model voicebank; regular voice.nofs files cannot use it")
     model_overrides = {
@@ -195,65 +259,129 @@ def finetune(arguments) -> None:
         ceiling=arguments.f0_ceiling,
         voicing_threshold=arguments.f0_voicing_threshold,
     )
-    utterances = load_dataset(
-        arguments.data,
-        arguments.language,
-        read_phoneme_map(arguments.phoneme_map),
-        f0_range=(f0_floor, f0_ceiling),
-        f0_voicing_threshold=f0_threshold,
-        f0_smoothing=arguments.f0_smoothing,
-        f0_octave_correction=arguments.f0_octave_correction,
-        f0_shift_semitones=arguments.f0_shift_semitones,
-        f0_reference_cents=arguments.f0_reference_cents,
-    )
-    phrases = [phrase for utterance in utterances for phrase in make_phrases(utterance)]
-    problems = [phrase.problem for phrase in phrases if phrase.problem]
-    no_f0 = [utterance.name for utterance in utterances if not np.any(np.isfinite(utterance.f0_values) & (utterance.f0_values > 0))]
-    if no_f0:
-        print(
-            f"F0 note: {len(no_f0)} utterance(s) have no measurable voiced frames; "
-            "they are retained for acoustic training and are not counted as damaged WAVs. "
-            f"Examples: {', '.join(no_f0[:5])}"
+    utterances = []
+    phrases = []
+    train = []
+    validation = []
+    phrases_by_language: dict[str, list] = {}
+    utterances_by_language: dict[str, list] = {}
+    for dataset_index, (dataset_language, dataset_path) in enumerate(dataset_specs):
+        language_utterances = load_dataset(
+            dataset_path,
+            dataset_language,
+            read_phoneme_map(arguments.phoneme_map),
+            f0_range=(f0_floor, f0_ceiling),
+            f0_voicing_threshold=f0_threshold,
+            f0_smoothing=arguments.f0_smoothing,
+            f0_octave_correction=arguments.f0_octave_correction,
+            f0_shift_semitones=arguments.f0_shift_semitones,
+            f0_reference_cents=arguments.f0_reference_cents,
         )
-    print(f"{len(utterances)} utterances, {len(phrases)} phrases, {sum(p.frames for p in phrases) * 0.005 / 60:.1f} min")
-    total_f0_frames = sum(len(utterance.f0_values) for utterance in utterances)
-    voiced_f0 = np.concatenate(
-        [utterance.f0_values[utterance.f0_values > 0] for utterance in utterances if np.any(utterance.f0_values > 0)]
-    ) if any(np.any(utterance.f0_values > 0) for utterance in utterances) else np.empty(0, dtype=np.float32)
-    voiced_percent = 100.0 * sum(int(np.count_nonzero(utterance.f0_values > 0)) for utterance in utterances) / max(total_f0_frames, 1)
-    median_f0 = float(np.median(voiced_f0)) if voiced_f0.size else 0.0
+        language_phrases = [phrase for utterance in language_utterances for phrase in make_phrases(utterance)]
+        if not language_utterances or not language_phrases:
+            raise SystemExit(f"{dataset_language} dataset contains no usable utterances or phrases: {dataset_path}")
+        observed_languages = {
+            phone.language.casefold()
+            for phrase in language_phrases
+            for phone in phrase.phones
+            if phone.language
+        }
+        if observed_languages != {dataset_language}:
+            found = ", ".join(sorted(observed_languages)) or "none"
+            raise SystemExit(
+                f"dataset {dataset_path} was declared as {dataset_language}, but its labels contain [{found}]. "
+                "Keep language-specific phone labels in their own dataset; foreign-language prefixes are not merged."
+            )
+        if arguments.validation > 0 and len(language_phrases) < 2:
+            raise SystemExit(
+                f"the {dataset_language} dataset needs at least two phrases for a held-out validation split; "
+                "add more recordings or set --validation 0 to disable validation"
+            )
+        language_train, language_validation = split(
+            language_phrases, arguments.validation, arguments.seed + dataset_index * 100003
+        )
+        if not language_train:
+            raise SystemExit(f"the {dataset_language} dataset has no training phrases after validation splitting")
+        utterances.extend(language_utterances)
+        phrases.extend(language_phrases)
+        train.extend(language_train)
+        validation.extend(language_validation)
+        phrases_by_language[dataset_language] = language_phrases
+        utterances_by_language[dataset_language] = language_utterances
+
+        language_minutes = sum(phrase.frames for phrase in language_phrases) * 0.005 / 60
+        language_f0_frames = sum(len(item.f0_values) for item in language_utterances)
+        language_voiced_frames = sum(int(np.count_nonzero(item.f0_values > 0)) for item in language_utterances)
+        language_voiced = [
+            item.f0_values[item.f0_values > 0]
+            for item in language_utterances if np.any(item.f0_values > 0)
+        ]
+        language_median_f0 = float(np.median(np.concatenate(language_voiced))) if language_voiced else 0.0
+        language_percent = 100.0 * language_voiced_frames / max(language_f0_frames, 1)
+        print(
+            f"[{dataset_language}] {len(language_utterances)} utterances, {len(language_phrases)} phrases, "
+            f"{language_minutes:.1f} min; F0 voiced {language_percent:.1f}%"
+            + (f", median {language_median_f0:.1f} Hz" if language_median_f0 else "")
+        )
+        language_no_f0 = [
+            item.name for item in language_utterances
+            if not np.any(np.isfinite(item.f0_values) & (item.f0_values > 0))
+        ]
+        if language_no_f0:
+            print(
+                f"[{dataset_language}] F0 note: {len(language_no_f0)} utterance(s) have no measurable voiced frames; "
+                "they remain available for Acoustic training. Examples: "
+                + ", ".join(language_no_f0[:5])
+            )
+
+    problems = [phrase.problem for phrase in phrases if phrase.problem]
     print(
-        f"F0 tracking: {arguments.f0_profile} preset, {f0_floor:g}-{f0_ceiling:g} Hz, "
-        f"voicing threshold {f0_threshold:g}; voiced {voiced_percent:.1f}% of frames"
-        + (f", median voiced F0 {median_f0:.1f} Hz" if median_f0 else ", no voiced F0 frames detected")
+        f"Combined dataset: {len(utterances)} utterances, {len(phrases)} phrases, "
+        f"{sum(phrase.frames for phrase in phrases) * 0.005 / 60:.1f} min; "
+        f"training={len(train)}, validation={len(validation)}"
     )
     print(
-        f"F0 processing: median smoothing={arguments.f0_smoothing} frames, "
+        f"F0 processing: {arguments.f0_profile} preset, {f0_floor:g}-{f0_ceiling:g} Hz, "
+        f"voicing threshold {f0_threshold:g}, median smoothing={arguments.f0_smoothing} frames, "
         f"isolated-octave correction={'on' if arguments.f0_octave_correction else 'off'}, "
         f"target shift={arguments.f0_shift_semitones:+g} semitones"
     )
-    has_pitch_examples = any(phrase.pitch_example() is not None for phrase in phrases)
-    if "pitch" in models and not has_pitch_examples:
+    has_pitch_examples_by_language = {
+        language: any(phrase.pitch_example() is not None for phrase in language_phrases)
+        for language, language_phrases in phrases_by_language.items()
+    }
+    has_pitch_examples = any(has_pitch_examples_by_language.values())
+    if "pitch" in models and not all(has_pitch_examples_by_language.values()):
+        missing = ", ".join(language for language, available in has_pitch_examples_by_language.items() if not available)
         raise SystemExit(
-            "Pitch training requires note_seq/note_dur (and usable ph_num word boundaries); "
-            "phoneme-only LAB labels cannot train a Pitch model. Train acoustic only, or import note-labelled data."
+            "Pitch training needs note_seq/note_dur and ph_num labels in every language dataset; "
+            f"missing usable Pitch examples for: {missing}. Phoneme-only LAB labels cannot train Pitch."
         )
+    if "duration" in models:
+        missing_duration = [
+            language for language, language_phrases in phrases_by_language.items()
+            if not any(phrase.syllables for phrase in language_phrases)
+        ]
+        if missing_duration:
+            raise SystemExit(
+                "Duration training needs note and word-boundary labels in every language dataset; "
+                f"missing usable Duration examples for: {', '.join(missing_duration)}"
+            )
     if not has_pitch_examples and "pitch" not in models:
         print(
-            "Pitch note: this dataset has no usable note_seq/note_dur + ph_num targets, so this run will not update "
+            "Pitch note: no dataset has usable note_seq/note_dur + ph_num targets, so this run will not update "
             "the Pitch network. Acoustic/Sound training can improve phoneme realization and timbre, but it cannot "
-            "learn score-to-F0 prediction or correct the base voice's note intonation. F0 presets only analyze the "
-            "reference WAV."
+            "learn score-to-F0 prediction or correct the base voice's note intonation. F0 presets only analyze "
+            "the reference WAV."
         )
     if problems and set(models) & {"duration", "pitch"}:
-        print(f"{len(problems)} phrases lack usable notes and train the acoustic model only; first: {problems[0]}")
-    _check_phonemes(voice, phrases)
+        print(f"{len(problems)} phrases lack usable notes and train Acoustic only; first: {problems[0]}")
+    _check_phonemes(voice, phrases, models)
     if arguments.vocal_modes is not None:
         voice.set_vocal_modes([name for name in arguments.vocal_modes.split(",") if name])
     styles = {utterance.style for utterance in utterances} - {None}
     if hasattr(voice, "acoustic") and (unknown := styles - set(voice.acoustic.vocal_modes)):
         raise SystemExit(f"dataset styles that are not vocal modes of the voice (add them with --vocal-modes): {', '.join(sorted(unknown))}")
-    train, validation = split(phrases, arguments.validation, arguments.seed)
     device = torch.device(arguments.device)
     run = Path(arguments.run) if arguments.run else None
     resume = None
@@ -266,7 +394,26 @@ def finetune(arguments) -> None:
                 raise SystemExit(f"{run / 'state.pt'} trained --models {','.join(resume['models'])} --params {resume['params']}; resume with the same")
     voice.to(device)
     if not arguments.keep_level:
-        if arguments.gain is not None:
+        if language_weights:
+            gain_label = []
+            for language in sorted(language_weights):
+                language_phrases = phrases_by_language[language]
+                if arguments.gain is not None:
+                    gain = arguments.gain
+                    source = "given"
+                elif arguments.preserve_non_acoustic_models:
+                    gain = 1.0
+                    source = "preserving the original Vocoder; automatic loudness calibration skipped"
+                elif arguments.level_reference:
+                    gain = level_gain(Voice.load(arguments.level_reference).to(device), language_phrases, device)
+                    source = "reference voice"
+                else:
+                    gain = level_gain(voice, language_phrases, device)
+                    source = "starting voice"
+                apply_gain(language_phrases, gain)
+                gain_label.append(f"{language}={gain:.3f} ({source})")
+            print("recordings scaled per language: " + "; ".join(gain_label))
+        elif arguments.gain is not None:
             gain, source = arguments.gain, "given"
             apply_gain(phrases, gain)
         elif arguments.preserve_non_acoustic_models:
@@ -293,8 +440,23 @@ def finetune(arguments) -> None:
         transition_local_weight=arguments.transition_local_weight,
         brightness_weight=arguments.brightness_weight,
         cross_language_preservation_weight=arguments.cross_language_preservation_weight,
+        language_weights=language_weights,
     )
-    calibration = random.Random(arguments.seed).sample(phrases, min(40, len(phrases)))
+    if language_weights:
+        calibration = []
+        per_language_limit = max(1, 40 // len(language_weights))
+        for language in sorted(language_weights):
+            language_phrases = phrases_by_language[language]
+            calibration.extend(random.Random(arguments.seed + len(calibration)).sample(
+                language_phrases, min(per_language_limit, len(language_phrases))
+            ))
+        if len(calibration) < min(40, len(phrases)):
+            remaining = [phrase for phrase in phrases if phrase not in calibration]
+            calibration.extend(random.Random(arguments.seed + 7919).sample(
+                remaining, min(40 - len(calibration), len(remaining))
+            ))
+    else:
+        calibration = random.Random(arguments.seed).sample(phrases, min(40, len(phrases)))
     models_root = Path(arguments.output).expanduser().parent.parent / "models"
     preexisting = set(models_root.glob("*/*.dnni"))
     previous: set[Path] = set()
@@ -352,19 +514,31 @@ def _referenced_models(models_root: Path) -> set[Path]:
     return referenced
 
 
-def _check_phonemes(voice: Voice, phrases) -> None:
-    if not hasattr(voice, "acoustic"):
-        print("Phoneme inventory check skipped: the source Acoustic model is preserved and was not loaded.", flush=True)
+def _check_phonemes(voice: Voice, phrases, models=()) -> None:
+    roles = [role for role in ("acoustic", "duration", "pitch") if role in set(models) and hasattr(voice, role)]
+    if not roles:
+        print("Phoneme inventory check skipped: no trainable language-conditioned model is loaded.", flush=True)
         return
-    missing = set()
-    for phrase in phrases:
-        for phone in phrase.phones:
-            try:
-                voice.acoustic.phoneme_indices([TimedPhoneme(phone.language, phone.symbol, 1)])
-            except ValueError:
-                missing.add(f"{phone.language}/{phone.symbol}")
-    if missing:
-        raise SystemExit(f"phonemes not in the voice's phone sets (map them with --phoneme-map): {', '.join(sorted(missing))}")
+    missing: dict[str, set[str]] = {role: set() for role in roles}
+    for role in roles:
+        phone_sets = getattr(getattr(voice, role), "phone_sets", [])
+        for phrase in phrases:
+            for phone in phrase.phones:
+                try:
+                    index = find_language(phone_sets, phone.language)
+                    if phone.symbol not in phone_sets[index].symbols:
+                        raise ValueError("unknown phone")
+                except (ValueError, IndexError):
+                    missing[role].add(f"{phone.language}/{phone.symbol}")
+    failures = [
+        f"{role}: {', '.join(sorted(values))}"
+        for role, values in missing.items() if values
+    ]
+    if failures:
+        raise SystemExit(
+            "phonemes missing from the selected model phone sets (keep each dataset's language labels intact and "
+            "use a language-appropriate --phoneme-map where needed): " + " | ".join(failures)
+        )
 
 
 def import_lab(arguments) -> None:
@@ -856,9 +1030,11 @@ def parser() -> argparse.ArgumentParser:
 
     command = commands.add_parser("finetune", help="finetune a voice on a DiffSinger-style dataset")
     command.add_argument("--voice", required=True, help="voice.nofs or info.<version>.nofs")
-    command.add_argument("--data", required=True, help="directory with wavs/ and transcriptions.csv")
+    command.add_argument("--data", help="single-language dataset directory with wavs/ and transcriptions.csv")
+    command.add_argument("--dataset", action="append", default=[], metavar="LANG=PATH", help="joint training dataset; repeat once per language, e.g. --dataset mandarin=path --dataset japanese=path (each directory remains separate)")
+    command.add_argument("--language-weight", action="append", default=[], metavar="LANG=WEIGHT", help="optional joint-training sampling weight; repeat for every dataset language, defaults to equal weighting")
     command.add_argument("--output", required=True, help="voice.nofs path, or databases/<name>/ directory for info voices")
-    command.add_argument("--language", required=True, type=language_name, help="default phoneme language, e.g. japanese or ja")
+    command.add_argument("--language", type=language_name, help="language for single-dataset training, e.g. japanese or ja; omit when using repeated --dataset arguments")
     command.add_argument("--models", default="acoustic", help=f"comma-separated subset of {','.join(MODELS)}")
     command.add_argument("--preserve-non-acoustic-models", "--preserve-original-models", dest="preserve_non_acoustic_models", action="store_true", help="info.nofs only: train Acoustic from --custom-acoustic-dnni, use --custom-vocoder-dnni for waveform loss/output, and preserve unselected Duration/Pitch models")
     command.add_argument("--params", choices=("all", "embeddings"), default="all", help="train every weight, or only the per-voice speaker/style/vocal-mode vectors")
