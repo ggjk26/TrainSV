@@ -1939,9 +1939,9 @@ function renderJob(){
   const mt=$("#actMetrics");
   if(JOB.valN&&JOB.kind==="finetune"){
     mt.hidden=false;
-    const rows=metrics=>Object.keys(metrics||{}).map(k=>{
-      const [n,h]=METRIC[k]||[k,""];return`<tr><td>${esc(n)}</td><td class="n">${fmtNum(metrics===JOB.valN?JOB.val0?.[k]:JOB.valLang0?.[language]?.[k])}</td><td class="n">${fmtNum(metrics[k])}</td><td>${esc(h)}</td></tr>`}).join("");
-    mt.innerHTML="<tr><th>Test score</th><th>At start</th><th>Latest</th><th></th></tr>"+rows(JOB.valN);
+    const baseRows=Object.keys(JOB.valN).map(k=>{
+      const [n,h]=METRIC[k]||[k,""];return`<tr><td>${esc(n)}</td><td class="n">${fmtNum(JOB.val0?.[k])}</td><td class="n">${fmtNum(JOB.valN[k])}</td><td>${esc(h)}</td></tr>`}).join("");
+    mt.innerHTML="<tr><th>Test score</th><th>At start</th><th>Latest</th><th></th></tr>"+baseRows;
     for(const [language,metrics] of Object.entries(JOB.valLangN||{})){
       mt.innerHTML+="<tr><th colspan='4'>"+esc(language)+" validation</th></tr>";
       mt.innerHTML+=Object.keys(metrics||{}).map(k=>{
